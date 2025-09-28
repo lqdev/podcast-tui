@@ -5,33 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - Sprint 0 Complete
+## [Unreleased] - Sprint 1 Complete
 
 ### Added
-- **Project Foundation**: Complete Rust project structure with Cargo.toml and all dependencies
-- **Storage Layer**: Comprehensive JSON-based storage implementation with abstraction trait
-  - Podcast and Episode CRUD operations  
-  - Atomic file operations for data integrity
-  - Proper error handling and comprehensive test coverage
-- **Data Models**: Rich domain models for Podcast, Episode, and configuration
-  - Episode status tracking (New, Downloading, Downloaded, Played)
-  - Chapter support and metadata handling
-  - User notes and playback position tracking
-- **Configuration System**: JSON-based configuration with sensible defaults
-  - Audio, download, keybinding, storage, and UI settings
-  - Automatic config file creation and validation
-- **Utilities**: Helper modules for file system, time formatting, and validation
-- **Testing**: 19 unit tests covering storage operations, models, and utilities
-- **Development Environment**: DevContainer with all necessary tools and dependencies
+- **Core UI Framework**: Complete Emacs-style TUI framework implementation
+  - Comprehensive UIAction system with 20+ action types for navigation and control
+  - Full event handling system with crossterm integration and async support
+  - Sophisticated keybinding system with prefix key support (C-x, C-h, C-c sequences)
+  - Emacs-style navigation keys (C-n/C-p/C-f/C-b) with arrow key alternatives
+- **Buffer Management System**: True Emacs-style buffer paradigm
+  - Buffer trait for extensible content types with proper lifecycle management
+  - BufferManager with buffer switching, next/previous navigation
+  - Help buffer with scrollable keybinding documentation and custom content support
+  - Placeholder podcast list and episode list buffers for upcoming RSS functionality
+- **UI Components**: Professional-grade terminal UI components
+  - **Minibuffer**: Full input handling, command history, cursor movement, message display
+  - **Status Bar**: Real-time buffer name display, key sequence feedback, contextual help hints
+  - **Theme System**: 4 complete themes (dark, light, high-contrast, solarized) with consistent styling
+- **Main Application Loop**: Robust async application framework
+  - Complete UIApp with 60fps event loop, efficient rendering, comprehensive action handling
+  - Command execution system supporting M-x Emacs-style commands (quit, help, theme, buffer)
+  - Dynamic theme switching, buffer switching, integrated help system
+  - Proper async event handling with terminal cleanup and error recovery
+- **Sprint 0 Foundation**: Complete Rust project structure and backend systems
+  - **Storage Layer**: Comprehensive JSON-based storage with abstraction trait
+  - **Data Models**: Rich domain models for Podcast, Episode, and configuration  
+  - **Configuration System**: JSON-based configuration with sensible defaults
+  - **Utilities**: Helper modules for file system, time formatting, and validation
 
 ### Changed
-- Updated implementation plan to reflect completed Sprint 0 objectives
-- Enhanced README with current MVP progress status
+- Updated implementation plan to reflect completed Sprint 0 and Sprint 1 objectives
+- Enhanced README with current MVP progress status showing Sprint 1 completion
+- Improved git repository hygiene with proper .gitignore for Rust projects
 
-### Fixed
+### Fixed  
 - Episode `is_played()` logic now correctly respects status vs historical play count
 - Storage layer properly handles serialization errors without anyhow dependencies
-- Documentation formatting for compatibility with doctests
+- Git repository size issues by removing build artifacts and adding comprehensive .gitignore
+- All compilation errors in UI framework with proper async/trait implementations
+- Theme system now supports "default" theme alias for better backwards compatibility
 
 ## Sprint Progress
 
@@ -52,7 +64,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rich domain models supporting MVP feature requirements
 - Proper async/await implementation throughout
 
-**Next Up: Sprint 1 - Core UI Framework**
+### Sprint 1: Core UI Framework (Week 2) - ✅ **COMPLETE**
+**Completed Objectives:**
+- ✅ Complete Emacs-style TUI framework with ratatui and crossterm
+- ✅ Comprehensive event handling system with async support
+- ✅ Sophisticated keybinding system with prefix keys (C-x, C-h, C-c)
+- ✅ Buffer management system following Emacs paradigms
+- ✅ Professional UI components (minibuffer, status bar, themes)
+- ✅ Main application loop with 60fps rendering and proper cleanup
+- ✅ Command execution system (M-x commands)
+- ✅ Multi-theme support with dynamic switching
+
+**Key Achievements:**
+- **60 passing unit tests** covering all UI framework components
+- Complete Emacs-style navigation (C-n, C-p, C-f, C-b) with alternatives
+- Robust async event loop with proper terminal management
+- Extensible buffer system ready for RSS/podcast content
+- Professional theming system with accessibility considerations
+- Comprehensive error handling and recovery throughout UI stack
+- Full integration testing of UI workflows and interactions
+
+**Next Up: Sprint 2 - RSS & Podcast Functionality**
 
 ## [1.0.0-mvp] - TBD
 
@@ -83,13 +115,16 @@ Target release date: 8 weeks from project start
 - [x] Basic application structure
 - [x] Documentation framework
 
-#### Sprint 1: Core UI (Week 2) - 🚧 In Progress
-- [ ] Emacs-style navigation implementation
-- [ ] Buffer management system
-- [ ] Basic UI components
-- [ ] Help system foundation
+#### Sprint 1: Core UI (Week 2) - ✅ **COMPLETE**
+- [x] Emacs-style navigation implementation
+- [x] Buffer management system
+- [x] Professional UI components (minibuffer, status bar, themes)
+- [x] Help system foundation
+- [x] Main application loop with event handling
+- [x] Command execution system (M-x commands)
+- [x] Multi-theme support with dynamic switching
 
-#### Sprint 2: RSS & Podcasts (Week 3) - 📋 Planned
+#### Sprint 2: RSS & Podcasts (Week 3) - 📋 **NEXT**
 - [ ] RSS feed parsing integration
 - [ ] Subscription management
 - [ ] Podcast listing UI

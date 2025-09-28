@@ -8,3 +8,4 @@ pub mod utils;
 // Re-export commonly used types
 pub use app::App;
 pub use config::Config;
+pub use ui::UIApp;

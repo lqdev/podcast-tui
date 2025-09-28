@@ -5,30 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - MVP Development
+## [Unreleased] - Sprint 0 Complete
 
 ### Added
-- Initial project structure and DevContainer setup
-- Storage abstraction layer with JSON implementation
-- Emacs-style keybinding system foundation
-- Basic application architecture and event system
-- GitHub issue templates and project management structure
-- Comprehensive documentation (PRD, Implementation Plan, Contributing)
+- **Project Foundation**: Complete Rust project structure with Cargo.toml and all dependencies
+- **Storage Layer**: Comprehensive JSON-based storage implementation with abstraction trait
+  - Podcast and Episode CRUD operations  
+  - Atomic file operations for data integrity
+  - Proper error handling and comprehensive test coverage
+- **Data Models**: Rich domain models for Podcast, Episode, and configuration
+  - Episode status tracking (New, Downloading, Downloaded, Played)
+  - Chapter support and metadata handling
+  - User notes and playback position tracking
+- **Configuration System**: JSON-based configuration with sensible defaults
+  - Audio, download, keybinding, storage, and UI settings
+  - Automatic config file creation and validation
+- **Utilities**: Helper modules for file system, time formatting, and validation
+- **Testing**: 19 unit tests covering storage operations, models, and utilities
+- **Development Environment**: DevContainer with all necessary tools and dependencies
 
 ### Changed
-- N/A (Initial release)
-
-### Deprecated
-- N/A
-
-### Removed
-- N/A
+- Updated implementation plan to reflect completed Sprint 0 objectives
+- Enhanced README with current MVP progress status
 
 ### Fixed
-- N/A
+- Episode `is_played()` logic now correctly respects status vs historical play count
+- Storage layer properly handles serialization errors without anyhow dependencies
+- Documentation formatting for compatibility with doctests
 
-### Security
-- N/A
+## Sprint Progress
+
+### Sprint 0: Project Setup (Week 1) - ✅ **COMPLETE**
+**Completed Objectives:**
+- ✅ Project structure with modern Rust tooling
+- ✅ Storage abstraction layer with comprehensive JSON backend
+- ✅ Rich data models with full test coverage
+- ✅ Configuration management system
+- ✅ Application architecture foundation
+- ✅ Development environment and CI setup
+
+**Key Achievements:**
+- 19 passing unit tests covering core functionality
+- Comprehensive error handling following Rust best practices  
+- Clean separation of concerns (Storage trait abstraction)
+- Atomic file operations for data consistency
+- Rich domain models supporting MVP feature requirements
+- Proper async/await implementation throughout
+
+**Next Up: Sprint 1 - Core UI Framework**
 
 ## [1.0.0-mvp] - TBD
 

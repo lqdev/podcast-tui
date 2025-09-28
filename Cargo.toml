@@ -1,0 +1,64 @@
+[package]
+name = "podcast-tui"
+version = "1.0.0-mvp"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "A cross-platform terminal user interface for podcast management"
+license = "MIT"
+repository = "https://github.com/yourusername/podcast-tui"
+keywords = ["podcast", "tui", "terminal", "rss", "audio"]
+categories = ["command-line-utilities", "multimedia::audio"]
+
+[dependencies]
+# UI Framework
+ratatui = "0.29"
+crossterm = "0.29"
+
+# Async Runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# HTTP and RSS
+reqwest = { version = "0.12", features = ["json", "stream"] }
+feed-rs = "2.0"
+
+# Audio
+rodio = "0.21"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI
+clap = { version = "4.0", features = ["derive"] }
+
+# Error Handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Async traits
+async-trait = "0.1"
+
+# UUID generation
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Directory handling
+directories = "5.0"
+
+# Additional utilities
+dirs = "5.0"
+url = "2.0"
+
+[dev-dependencies]
+mockall = "0.11"
+tokio-test = "0.4"
+tempfile = "3.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

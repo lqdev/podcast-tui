@@ -187,13 +187,21 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 ## 📋 Roadmap
 
 ### MVP (Current Focus)
-- [x] Basic subscription and episode management
-- [x] Download system with progress tracking
-- [x] Audio playback with basic controls
-- [x] OPML import/export
-- [x] Episode notes and filtering
-- [ ] Cross-platform testing and optimization
-- [ ] Documentation and release preparation
+- [x] **Project Setup** - Basic Rust project structure, dependencies, and tooling
+- [x] **Storage Layer** - JSON-based storage with abstraction trait
+- [x] **Data Models** - Podcast, Episode, and configuration models with comprehensive tests
+- [x] **Configuration System** - JSON-based configuration with defaults
+- [x] **Basic Application Structure** - Main app orchestration and placeholder UI
+- [ ] **RSS Subscription Management** - Subscribe to podcasts via RSS feeds  
+- [ ] **OPML Import/Export** - Non-destructive import and export of subscriptions
+- [ ] **Episode Management** - Browse, search, and filter episodes
+- [ ] **Download System** - Parallel episode downloads with progress tracking
+- [ ] **Audio Playback** - Basic playback controls with chapter support
+- [ ] **Playlist Creation** - Create and manage custom episode playlists
+- [ ] **Episode Notes** - Add personal notes to episodes
+- [ ] **Statistics Tracking** - Listen time and download statistics
+- [ ] **Emacs-style Navigation** - Familiar keybindings for Emacs users
+- [ ] **Cross-platform Testing** - Windows and Linux compatibility verification
 
 ### Post-MVP (v1.1+)
 - [ ] SQLite storage backend option

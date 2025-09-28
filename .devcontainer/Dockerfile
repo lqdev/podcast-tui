@@ -28,9 +28,5 @@ RUN rustup component add clippy rustfmt \
 # Set up working directory
 WORKDIR /workspace
 
-# Create non-root user
-RUN groupadd --gid 1000 vscode \
-    && useradd --uid 1000 --gid vscode --shell /bin/bash --create-home vscode \
-    && echo "vscode ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-
+# The base image already has a vscode user, so just switch to it
 USER vscode

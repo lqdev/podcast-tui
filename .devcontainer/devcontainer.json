@@ -1,0 +1,38 @@
+{
+    "name": "Podcast TUI Development",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "features": {
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/github-cli:1": {}
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "serayuzgur.crates",
+                "vadimcn.vscode-lldb",
+                "tamasfe.even-better-toml",
+                "ms-vscode.vscode-json",
+                "streetsidesoftware.code-spell-checker"
+            ],
+            "settings": {
+                "rust-analyzer.cargo.features": "all",
+                "rust-analyzer.checkOnSave.command": "clippy",
+                "editor.formatOnSave": true,
+                "files.watcherExclude": {
+                    "**/target/**": true
+                }
+            }
+        }
+    },
+    "forwardPorts": [],
+    "postCreateCommand": "rustc --version && cargo --version",
+    "remoteUser": "vscode",
+    "mounts": [
+        "source=/var/run/docker.sock,target=/var/run/docker-host.sock,type=bind",
+        "source=${localWorkspaceFolder}/target,target=/workspace/target,type=bind,consistency=cached"
+    ]
+}

@@ -1,0 +1,94 @@
+name: Sprint Task
+description: Task for sprint planning and tracking
+title: "[Sprint X] "
+labels: ["sprint-task"]
+body:
+  - type: dropdown
+    id: sprint
+    attributes:
+      label: Sprint Number
+      description: Which sprint does this task belong to?
+      options:
+        - Sprint 0 - Project Setup
+        - Sprint 1 - Core UI Framework
+        - Sprint 2 - RSS and Podcasts
+        - Sprint 3 - Episodes and Downloads
+        - Sprint 4 - Playback System
+        - Sprint 5 - Enhanced Features
+        - Sprint 6 - Statistics and Cleanup
+        - Sprint 7 - Polish and Cross-Platform
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: Task priority within the sprint
+      options:
+        - P0 - Critical (MVP blocker)
+        - P1 - High (Important for sprint goals)
+        - P2 - Medium (Nice to have)
+        - P3 - Low (If time permits)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: estimate
+    attributes:
+      label: Effort Estimate
+      description: How much effort do you estimate this will take?
+      options:
+        - XS - 1-2 hours
+        - S - Half day (2-4 hours)
+        - M - Full day (6-8 hours)
+        - L - 2-3 days
+        - XL - More than 3 days (consider splitting)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Task Description
+      description: Detailed description of what needs to be done
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Define what "done" looks like for this task
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+        - [ ] Criterion 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: List any tasks or issues this depends on
+      placeholder: "Depends on: #123, #456"
+
+  - type: textarea
+    id: implementation-notes
+    attributes:
+      label: Implementation Notes
+      description: Any specific implementation details, constraints, or considerations
+
+  - type: checkboxes
+    id: definition-of-done
+    attributes:
+      label: Definition of Done Checklist
+      options:
+        - label: Functionality implemented according to requirements
+        - label: Unit tests written and passing
+        - label: Code passes linting (clippy) with no warnings
+        - label: Code formatted with rustfmt
+        - label: Cross-platform compatibility verified (if applicable)
+        - label: Documentation updated (if applicable)
+        - label: Manual testing completed

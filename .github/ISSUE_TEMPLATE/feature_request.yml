@@ -1,0 +1,80 @@
+name: Feature Request
+description: Request a new feature for the podcast TUI application
+title: "[Feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to request a feature! Please fill out this template to help us understand your request.
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority Level
+      description: How important is this feature to you?
+      options:
+        - Low - Nice to have
+        - Medium - Would improve workflow
+        - High - Essential for my use case
+        - Critical - Blocking current usage
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      description: What area of the application does this feature relate to?
+      options:
+        - UI/UX - User interface and experience
+        - Audio - Playback and audio handling
+        - Downloads - Episode download management
+        - RSS/Feeds - Feed parsing and subscription management
+        - Storage - Data persistence and configuration
+        - Performance - Speed and resource usage
+        - Cross-platform - Windows/Linux compatibility
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Feature Description
+      description: Describe the feature you'd like to see implemented
+      placeholder: "I would like to be able to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: Explain how you would use this feature
+      placeholder: "This would help me to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or workarounds you've considered
+      placeholder: "I've considered..."
+
+  - type: checkboxes
+    id: mvp-scope
+    attributes:
+      label: MVP Scope
+      description: Is this feature essential for the MVP release?
+      options:
+        - label: This feature is critical for MVP functionality
+        - label: This feature would be nice for MVP but not essential
+        - label: This feature can wait for post-MVP releases
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or examples that might be helpful

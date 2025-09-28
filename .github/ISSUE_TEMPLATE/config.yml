@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📋 Project Board
+    url: https://github.com/yourusername/podcast-tui/projects
+    about: View current sprint progress and project roadmap
+  - name: 📚 Documentation  
+    url: https://github.com/yourusername/podcast-tui/tree/main/docs
+    about: Read project documentation, PRD, and implementation plan
+  - name: 💬 Discussions
+    url: https://github.com/yourusername/podcast-tui/discussions
+    about: Ask questions, share ideas, or discuss the project

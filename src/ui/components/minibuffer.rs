@@ -26,7 +26,13 @@ pub enum MinibufferContent {
     /// Display an error
     Error(String),
     
-    /// Show a prompt for user input
+    /// Show a prompt for user input (simple version)
+    Input {
+        prompt: String,
+        input: String,
+    },
+    
+    /// Show a prompt for user input (full control)
     Prompt {
         prompt: String,
         input: String,
@@ -315,12 +321,15 @@ impl Minibuffer {
         match &self.content {
             MinibufferContent::None => String::new(),
             MinibufferContent::Message(msg) => msg.clone(),
-            MinibufferContent::Error(err) => format!("Error: {}", err),
+            MinibufferContent::Error(err) => format!("Error: {err}"),
             MinibufferContent::Status(status) => status.clone(),
             MinibufferContent::CommandPrompt => "M-x ".to_string(),
             MinibufferContent::Hidden => String::new(),
+            MinibufferContent::Input { prompt, input } => {
+                format!("{prompt}{input}█")
+            }
             MinibufferContent::Prompt { prompt, input, cursor_pos } => {
-                let mut text = format!("{}{}", prompt, input);
+                let mut text = format!("{prompt}{input}");
                 if self.focused && *cursor_pos <= input.len() {
                     // Simple cursor representation
                     if *cursor_pos == input.len() {
@@ -330,7 +339,7 @@ impl Minibuffer {
                 text
             }
             MinibufferContent::Command { input, cursor_pos } => {
-                let mut text = format!("M-x {}", input);
+                let mut text = format!("M-x {input}");
                 if self.focused && *cursor_pos <= input.len() {
                     // Simple cursor representation
                     if *cursor_pos == input.len() {

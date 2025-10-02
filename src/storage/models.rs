@@ -14,6 +14,31 @@ impl PodcastId {
     pub fn from_string(s: &str) -> Result<Self, uuid::Error> {
         Ok(Self(Uuid::parse_str(s)?))
     }
+
+    /// Create a PodcastId from a feed URL by hashing it
+    pub fn from_url(url: &str) -> Self {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        url.hash(&mut hasher);
+        let hash = hasher.finish();
+        
+        // Create a deterministic UUID from the hash
+        // This ensures the same URL always generates the same ID
+        let uuid = Uuid::from_u64_pair(hash, hash);
+        Self(uuid)
+    }
+
+    /// Get the string representation of the ID
+    pub fn as_str(&self) -> &str {
+        // This is a workaround - we return the Display formatted string
+        // For a proper implementation, we'd store the string separately
+        // or use a different ID type
+        unsafe {
+            std::mem::transmute(Box::leak(Box::new(self.0.to_string())).as_str())
+        }
+    }
 }
 
 impl Default for PodcastId {

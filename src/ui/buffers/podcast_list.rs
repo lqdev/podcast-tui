@@ -12,13 +12,15 @@ use ratatui::{
 };
 
 use crate::{
-    podcast::Podcast,
+    podcast::{subscription::SubscriptionManager, Podcast},
+    storage::JsonStorage,
     ui::{
         buffers::{Buffer, BufferId},
         themes::Theme,
         UIAction, UIComponent,
     },
 };
+use std::sync::Arc;
 
 /// State of the podcast list buffer
 #[derive(Debug, Clone)]
@@ -36,6 +38,7 @@ pub struct PodcastListBuffer {
     theme: Theme,
     state: PodcastListState,
     status_message: Option<String>,
+    subscription_manager: Option<Arc<SubscriptionManager<JsonStorage>>>,
 }
 
 impl PodcastListBuffer {
@@ -49,6 +52,34 @@ impl PodcastListBuffer {
             theme: Theme::default(),
             state: PodcastListState::Ready,
             status_message: None,
+            subscription_manager: None,
+        }
+    }
+
+    /// Set the subscription manager
+    pub fn set_subscription_manager(&mut self, manager: Arc<SubscriptionManager<JsonStorage>>) {
+        self.subscription_manager = Some(manager);
+    }
+
+    /// Load podcasts from storage (for MVP - simplified)
+    pub async fn load_podcasts(&mut self) -> Result<(), String> {
+        if let Some(ref manager) = self.subscription_manager {
+            self.state = PodcastListState::Loading;
+            match manager.list_subscriptions().await {
+                Ok(podcasts) => {
+                    self.set_podcasts(podcasts);
+                    self.state = PodcastListState::Ready;
+                    Ok(())
+                }
+                Err(e) => {
+                    self.state = PodcastListState::Error(e.to_string());
+                    Err(e.to_string())
+                }
+            }
+        } else {
+            // For MVP, just show empty list if no manager
+            self.set_podcasts(Vec::new());
+            Ok(())
         }
     }
 
@@ -333,17 +364,17 @@ mod tests {
 
     #[test]
     fn test_set_podcasts() {
-        use chrono::Utc;
         use crate::storage::PodcastId;
-        
+        use chrono::Utc;
+
         let mut buffer = PodcastListBuffer::new();
-        
+
         // Create mock podcasts
         let podcasts = vec![
             Podcast::new("Podcast 1".to_string(), "http://example.com/1".to_string()),
             Podcast::new("Podcast 2".to_string(), "http://example.com/2".to_string()),
         ];
-        
+
         buffer.set_podcasts(podcasts);
         assert_eq!(buffer.podcast_count(), 2);
         assert_eq!(buffer.selected_index, Some(0)); // Auto-selects first
@@ -352,9 +383,9 @@ mod tests {
     #[test]
     fn test_navigation_with_podcasts() {
         use chrono::Utc;
-        
+
         let mut buffer = PodcastListBuffer::new();
-        
+
         // Add mock podcasts
         let podcasts = vec![
             Podcast::new("Podcast 1".to_string(), "http://example.com/1".to_string()),
@@ -362,7 +393,7 @@ mod tests {
             Podcast::new("Podcast 3".to_string(), "http://example.com/3".to_string()),
         ];
         buffer.set_podcasts(podcasts);
-        
+
         // Test moving down
         let action = buffer.handle_action(UIAction::MoveDown);
         assert_eq!(action, UIAction::Render);

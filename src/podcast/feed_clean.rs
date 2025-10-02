@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 use crate::podcast::{Episode, EpisodeStatus, Podcast};
-use crate::storage::models::{EpisodeId, PodcastId};
+use crate::storage::models::PodcastId;
 use crate::utils::{time::parse_duration, validation::validate_feed_url};
 
 /// RSS feed parser and manager
@@ -93,19 +93,20 @@ impl FeedParser {
             return Err(FeedError::NoEpisodes);
         }
 
-        // Create the podcast  
+        // Create the podcast
         let podcast = Podcast {
             id: podcast_id,
             title: metadata.title,
-            url: feed_url.to_string(),
             description: metadata.description,
             author: metadata.author,
-            image_url: metadata.image_url,
             language: metadata.language,
-            categories: Vec::new(), // TODO: Extract from feed
-            explicit: false, // TODO: Extract from iTunes extensions
+            image_url: metadata.image_url,
+            website_url: metadata.website_url,
+            feed_url: feed_url.to_string(),
             last_updated: Utc::now(),
-            episodes: Vec::new(), // Episodes IDs will be added as they're saved
+            subscription_date: Utc::now(),
+            auto_download: false,
+            download_limit: None,
         };
 
         Ok(podcast)
@@ -146,11 +147,7 @@ impl FeedParser {
 
     /// Download feed content from URL
     async fn download_feed(&self, feed_url: &str) -> Result<String, FeedError> {
-        let response = self
-            .http_client
-            .get(feed_url)
-            .send()
-            .await?;
+        let response = self.http_client.get(feed_url).send().await?;
 
         if !response.status().is_success() {
             return Err(FeedError::Network(reqwest::Error::from(
@@ -191,9 +188,10 @@ impl FeedParser {
         podcast_id: &PodcastId,
         index: usize,
     ) -> Result<Episode> {
-        // Generate a new Episode ID
-        // We could try to make it deterministic based on GUID, but for MVP just use new UUID
-        let id = EpisodeId::new();
+        let id = entry.id.clone().unwrap_or_else(|| {
+            // Generate ID from title and published date if no ID exists
+            format!("episode-{}-{}", podcast_id.as_str(), index)
+        });
 
         let title = entry
             .title
@@ -204,8 +202,8 @@ impl FeedParser {
         let description = entry
             .summary
             .as_ref()
-            .map(|t| t.content.clone())
-            .or_else(|| entry.content.as_ref().map(|c| c.body.clone().unwrap_or_default()));
+            .or_else(|| entry.content.first())
+            .map(|d| d.content.clone());
 
         // Find audio enclosure
         let audio_url = entry
@@ -229,40 +227,20 @@ impl FeedParser {
             .find(|link| link.length.is_some())
             .and_then(|link| link.length);
 
-        // Get published date
-        let published = entry.published.or(entry.updated).unwrap_or_else(Utc::now);
-
-        // Convert duration to seconds if present
-        let duration_secs = duration.map(|d| d.num_seconds() as u32);
-
-        // Create the audio URL - use empty string if not found, will be validated later
-        let audio_url = audio_url.unwrap_or_else(String::new);
-
         let episode = Episode {
-            id,
+            id: id.into(),
             podcast_id: podcast_id.clone(),
             title,
             description,
             audio_url,
-            published,
-            duration: duration_secs,
+            published_date: entry.published.or(entry.updated),
+            duration,
             file_size,
-            mime_type: entry.links.iter()
-                .find(|link| link.media_type.is_some())
-                .and_then(|link| link.media_type.clone()),
-            guid: if entry.id.is_empty() { None } else { Some(entry.id.clone()) },
-            link: entry.links.first().map(|l| l.href.clone()),
-            image_url: None, // TODO: Extract from entry if available
-            explicit: false, // TODO: Extract from iTunes extensions
-            season: None,
-            episode_number: None,
-            episode_type: None,
             status: EpisodeStatus::New,
-            local_path: None,
-            last_played_position: None,
-            play_count: 0,
+            file_path: None,
+            played_duration: None,
             notes: None,
-            chapters: Vec::new(),
+            chapters: None,
             transcript: None,
         };
 
@@ -270,9 +248,18 @@ impl FeedParser {
     }
 
     /// Extract duration from feed entry
-    fn extract_duration(&self, _entry: &feed_rs::model::Entry) -> Option<chrono::Duration> {
-        // TODO: Parse duration from iTunes extensions when feed-rs supports it
-        // For now, return None
+    fn extract_duration(&self, entry: &feed_rs::model::Entry) -> Option<chrono::Duration> {
+        // Try to find duration in iTunes extensions
+        for extension in &entry.extensions {
+            if extension.name == "duration" {
+                if let Some(duration_str) = extension.value.as_ref() {
+                    if let Ok(duration) = parse_duration(duration_str) {
+                        return Some(duration);
+                    }
+                }
+            }
+        }
+
         None
     }
 }

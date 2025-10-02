@@ -198,7 +198,25 @@ impl KeyHandler {
 
         // Refresh
         self.bind_key(KeyChord::ctrl(KeyCode::Char('l')), UIAction::Refresh);
+
+        // Podcast management
+        self.bind_sequence(
+            KeySequence::from_chord_and_key(
+                KeyChord::ctrl(KeyCode::Char('x')),
+                KeyChord::none(KeyCode::Char('a')),
+            ),
+            UIAction::AddPodcast,
+        );
+        self.bind_key(KeyChord::none(KeyCode::Char('d')), UIAction::DeletePodcast);
+        self.bind_key(KeyChord::none(KeyCode::Char('r')), UIAction::RefreshPodcast);
+        self.bind_key(KeyChord::shift(KeyCode::Char('R')), UIAction::RefreshAll);
         self.bind_key(KeyChord::none(KeyCode::F(5)), UIAction::Refresh);
+        self.bind_key(KeyChord::none(KeyCode::Char('r')), UIAction::Refresh);
+        self.bind_key(KeyChord::shift(KeyCode::Char('R')), UIAction::RefreshAll);
+
+        // Podcast management
+        self.bind_key(KeyChord::none(KeyCode::Char('a')), UIAction::AddPodcast);
+        self.bind_key(KeyChord::none(KeyCode::Char('d')), UIAction::DeletePodcast);
     }
 
     /// Add a prefix key

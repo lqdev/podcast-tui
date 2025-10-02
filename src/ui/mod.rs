@@ -85,6 +85,14 @@ pub enum UIAction {
     ShowMinibuffer(String),
     HideMinibuffer,
     MinibufferInput(String),
+    PromptInput(String),
+    SubmitInput(String),
+
+    // Podcast management actions
+    AddPodcast,
+    DeletePodcast,
+    RefreshPodcast,
+    RefreshAll,
 
     // Render request
     Render,

@@ -11,6 +11,8 @@ use ratatui::layout::Rect;
 use std::collections::HashMap;
 
 use crate::ui::{UIAction, UIComponent, UIError, UIResult};
+use crate::{podcast::subscription::SubscriptionManager, storage::JsonStorage};
+use std::sync::Arc;
 
 /// Unique identifier for buffers
 pub type BufferId = String;
@@ -234,9 +236,27 @@ impl BufferManager {
     }
 
     /// Create podcast list buffer
-    pub fn create_podcast_list_buffer(&mut self) {
-        let podcast_buffer = Box::new(crate::ui::buffers::podcast_list::PodcastListBuffer::new());
-        let _ = self.add_buffer(podcast_buffer);
+    pub fn create_podcast_list_buffer(
+        &mut self,
+        subscription_manager: Arc<SubscriptionManager<JsonStorage>>,
+    ) {
+        let mut podcast_buffer = crate::ui::buffers::podcast_list::PodcastListBuffer::new();
+        podcast_buffer.set_subscription_manager(subscription_manager);
+        let _ = self.add_buffer(Box::new(podcast_buffer));
+    }
+
+    /// Get mutable reference to podcast list buffer
+    pub fn get_podcast_list_buffer_mut(
+        &mut self,
+    ) -> Option<&mut crate::ui::buffers::podcast_list::PodcastListBuffer> {
+        let podcast_id = "podcast-list".to_string();
+        self.get_buffer(&podcast_id).and_then(|buffer| {
+            // This is safe because we know podcast-list buffer is always PodcastListBuffer
+            let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
+            unsafe {
+                (raw_ptr as *mut crate::ui::buffers::podcast_list::PodcastListBuffer).as_mut()
+            }
+        })
     }
 
     /// Handle a UI action, dispatching to the active buffer if appropriate

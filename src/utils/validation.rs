@@ -5,18 +5,22 @@ pub fn is_valid_url(url_str: &str) -> bool {
     Url::parse(url_str).is_ok()
 }
 
-/// Validate if a string is a valid RSS/podcast feed URL
-pub fn is_valid_feed_url(url_str: &str) -> bool {
-    if !is_valid_url(url_str) {
-        return false;
+/// Check if a URL is a valid feed URL (RSS/Atom)
+pub fn is_valid_feed_url(url: &str) -> bool {
+    is_valid_url(url) && (url.starts_with("http://") || url.starts_with("https://"))
+}
+
+/// Validate a feed URL and return a Result
+pub fn validate_feed_url(url: &str) -> Result<(), String> {
+    if url.trim().is_empty() {
+        return Err("Feed URL cannot be empty".to_string());
     }
 
-    // Basic scheme validation - must be HTTP or HTTPS
-    if let Ok(url) = Url::parse(url_str) {
-        matches!(url.scheme(), "http" | "https")
-    } else {
-        false
+    if !is_valid_feed_url(url) {
+        return Err("Invalid feed URL format".to_string());
     }
+
+    Ok(())
 }
 
 /// Validate episode title (must not be empty, reasonable length)

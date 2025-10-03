@@ -196,6 +196,11 @@ impl UIApp {
     async fn handle_event(&mut self, event: UIEvent) -> UIResult<bool> {
         match event {
             UIEvent::Key(key_event) => {
+                // Check if minibuffer is in input mode and handle input
+                if self.minibuffer.is_input_mode() {
+                    return self.handle_minibuffer_key(key_event).await;
+                }
+
                 // Handle key event through keybinding system
                 let action = self.key_handler.handle_key(key_event);
                 self.handle_action(action).await
@@ -268,6 +273,26 @@ impl UIApp {
                 self.minibuffer.clear();
                 Ok(true)
             }
+            UIAction::ShowMinibuffer(prompt) => {
+                // If the prompt ends with a space, it's a key sequence indicator, not an input prompt
+                if prompt.trim_end().ends_with("C-x")
+                    || prompt.trim_end().ends_with("C-c")
+                    || prompt.trim_end().ends_with("C-h")
+                {
+                    self.show_message(prompt);
+                } else {
+                    // This is an actual input prompt
+                    self.minibuffer.set_content(MinibufferContent::Input {
+                        prompt,
+                        input: String::new(),
+                    });
+                }
+                Ok(true)
+            }
+            UIAction::SubmitInput(input) => {
+                self.handle_minibuffer_input(input);
+                Ok(true)
+            }
             UIAction::AddPodcast => {
                 self.minibuffer.set_content(MinibufferContent::Input {
                     prompt: "Add podcast URL: ".to_string(),
@@ -276,25 +301,48 @@ impl UIApp {
                 Ok(true)
             }
             UIAction::DeletePodcast => {
-                // For MVP, just show a message that action is triggered
-                // The actual async operation would need a different architecture
-                self.show_message(
-                    "Delete subscription action triggered (async operation not implemented in MVP)"
-                        .to_string(),
-                );
+                if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
+                    if let Some(podcast) = podcast_buffer.selected_podcast() {
+                        let podcast_id = podcast.id.clone();
+                        let podcast_title = podcast.title.clone();
+
+                        // Show confirmation prompt
+                        self.minibuffer.set_content(MinibufferContent::Input {
+                            prompt: format!("Delete podcast '{}' (y/n)? ", podcast_title),
+                            input: String::new(),
+                        });
+                        // Store the podcast ID for deletion confirmation
+                        // For MVP, we'll implement a simple confirmation flow
+                    } else {
+                        self.show_error("No podcast selected for deletion".to_string());
+                    }
+                } else {
+                    self.show_error("Podcast list not available".to_string());
+                }
                 Ok(true)
             }
             UIAction::RefreshPodcast => {
-                // For MVP, just show a message that action is triggered
-                self.show_message(
-                    "Refresh podcast action triggered (async operation not implemented in MVP)"
-                        .to_string(),
-                );
+                if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
+                    if let Some(podcast) = podcast_buffer.selected_podcast() {
+                        let podcast_id = podcast.id.clone();
+                        let podcast_title = podcast.title.clone();
+
+                        // Show loading state
+                        self.show_message(format!("Refreshing '{}'...", podcast_title));
+
+                        // Trigger async refresh
+                        self.trigger_async_refresh_single(podcast_id);
+                    } else {
+                        self.show_error("No podcast selected for refresh".to_string());
+                    }
+                } else {
+                    self.show_error("Podcast list not available".to_string());
+                }
                 Ok(true)
             }
             UIAction::RefreshAll => {
-                // For MVP, just show a message that action is triggered
-                self.show_message("Refresh all podcasts action triggered (async operation not implemented in MVP)".to_string());
+                self.show_message("Refreshing all podcasts...".to_string());
+                self.trigger_async_refresh_all();
                 Ok(true)
             }
             // Buffer-specific actions
@@ -360,10 +408,8 @@ impl UIApp {
             "add-podcast" => {
                 if parts.len() > 1 {
                     let url = parts[1].to_string();
-                    self.show_message(format!(
-                        "Add podcast URL: {} (async operation not implemented in MVP)",
-                        url
-                    ));
+                    self.show_message(format!("Adding podcast: {}...", url));
+                    self.trigger_async_add_podcast(url);
                     Ok(true)
                 } else {
                     self.show_error("Usage: add-podcast <URL>".to_string());
@@ -446,6 +492,162 @@ impl UIApp {
     fn update_status_bar(&mut self) {
         if let Some(buffer_name) = self.buffer_manager.current_buffer_name() {
             self.status_bar.set_buffer_name(buffer_name);
+        }
+    }
+
+    /// Trigger async podcast addition
+    fn trigger_async_add_podcast(&mut self, url: String) {
+        let subscription_manager = self.subscription_manager.clone();
+
+        // For MVP, spawn a simple async task
+        tokio::spawn(async move {
+            match subscription_manager.subscribe(&url).await {
+                Ok(podcast) => {
+                    // TODO: Send success event back to UI
+                    println!("Successfully added podcast: {}", podcast.title);
+                    // For now, we'll just print success - in a full implementation
+                    // we'd send an event back to the UI to refresh the podcast list
+                }
+                Err(e) => {
+                    // TODO: Send error event back to UI
+                    eprintln!("Failed to add podcast: {}", e);
+                }
+            }
+        });
+
+        // Show immediate feedback
+        self.show_message("Subscription request sent...".to_string());
+    }
+
+    /// Trigger async single podcast refresh
+    fn trigger_async_refresh_single(&mut self, podcast_id: crate::storage::PodcastId) {
+        let subscription_manager = self.subscription_manager.clone();
+
+        tokio::spawn(async move {
+            match subscription_manager.refresh_feed(&podcast_id).await {
+                Ok(new_episodes) => {
+                    println!(
+                        "Refreshed podcast, found {} new episodes",
+                        new_episodes.len()
+                    );
+                }
+                Err(e) => {
+                    eprintln!("Failed to refresh podcast: {}", e);
+                }
+            }
+        });
+    }
+
+    /// Trigger async refresh of all podcasts
+    fn trigger_async_refresh_all(&mut self) {
+        let subscription_manager = self.subscription_manager.clone();
+
+        tokio::spawn(async move {
+            match subscription_manager.refresh_all().await {
+                Ok(total_new_episodes) => {
+                    println!(
+                        "Refreshed all podcasts, found {} new episodes total",
+                        total_new_episodes
+                    );
+                }
+                Err(e) => {
+                    eprintln!("Failed to refresh podcasts: {}", e);
+                }
+            }
+        });
+    }
+
+    /// Handle minibuffer input submission
+    fn handle_minibuffer_input(&mut self, input: String) {
+        let input = input.trim();
+
+        if input.is_empty() {
+            self.minibuffer.clear();
+            return;
+        }
+
+        // Check if this looks like a URL (basic heuristic for podcast addition)
+        if input.starts_with("http://") || input.starts_with("https://") {
+            self.show_message(format!("Adding podcast: {}...", input));
+            self.trigger_async_add_podcast(input.to_string());
+        } else if input.to_lowercase() == "y" || input.to_lowercase() == "yes" {
+            self.show_message("Podcast deletion confirmed (not implemented in MVP)".to_string());
+        } else if input.to_lowercase() == "n" || input.to_lowercase() == "no" {
+            self.show_message("Podcast deletion cancelled".to_string());
+        } else {
+            // Check if this is a buffer name
+            let buffer_names = self.buffer_manager.buffer_names();
+            let matching_buffer = buffer_names.iter().find(|(_, name)| {
+                name.to_lowercase().contains(&input.to_lowercase())
+                    || name.to_lowercase() == input.to_lowercase()
+            });
+
+            if let Some((buffer_id, buffer_name)) = matching_buffer {
+                if let Err(_) = self.buffer_manager.switch_to_buffer(&buffer_id) {
+                    self.show_error(format!("Failed to switch to buffer: {}", buffer_name));
+                } else {
+                    self.update_status_bar();
+                    self.show_message(format!("Switched to buffer: {}", buffer_name));
+                }
+            } else {
+                // Treat as a command
+                let _ = self.execute_command_direct(input.to_string());
+            }
+        }
+
+        self.minibuffer.clear();
+    }
+
+    /// Handle key events when minibuffer is in input mode
+    async fn handle_minibuffer_key(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+    ) -> UIResult<bool> {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        match (key_event.code, key_event.modifiers) {
+            // Submit input on Enter
+            (KeyCode::Enter, _) => {
+                if let Some(input) = self.minibuffer.submit() {
+                    self.handle_minibuffer_input(input);
+                }
+                Ok(true)
+            }
+            // Cancel on Ctrl+G or Escape
+            (KeyCode::Esc, _) | (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
+                self.minibuffer.clear();
+                Ok(true)
+            }
+            // Backspace
+            (KeyCode::Backspace, _) => {
+                self.minibuffer.backspace();
+                Ok(true)
+            }
+            // Cursor movement
+            (KeyCode::Left, _) | (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
+                self.minibuffer.cursor_left();
+                Ok(true)
+            }
+            (KeyCode::Right, _) | (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
+                self.minibuffer.cursor_right();
+                Ok(true)
+            }
+            // History navigation
+            (KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+                self.minibuffer.history_up();
+                Ok(true)
+            }
+            (KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+                self.minibuffer.history_down();
+                Ok(true)
+            }
+            // Regular character input
+            (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+                self.minibuffer.add_char(c);
+                Ok(true)
+            }
+            // Ignore other keys in input mode
+            _ => Ok(true),
         }
     }
 

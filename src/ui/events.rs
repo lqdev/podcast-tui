@@ -121,7 +121,8 @@ pub enum AppEvent {
     /// Episodes loaded successfully
     EpisodesLoaded {
         podcast_id: crate::storage::PodcastId,
-        episode_count: usize,
+        podcast_name: String,
+        episodes: Vec<crate::podcast::Episode>,
     },
 
     /// Episodes loading failed

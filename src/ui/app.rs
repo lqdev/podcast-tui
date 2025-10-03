@@ -534,23 +534,16 @@ impl UIApp {
                 self.show_error(format!("Failed to delete podcast: {}", error));
             }
             AppEvent::EpisodesLoaded {
-                podcast_id,
-                episode_count,
+                podcast_id: _,
+                podcast_name,
+                episodes,
             } => {
-                // Try to find the episode buffer and reload episodes
-                let current_buffer_id = self.buffer_manager.active_buffer_id().cloned();
-                if let Some(buffer_id) = current_buffer_id {
-                    if buffer_id.starts_with("episodes-") {
-                        // We're in an episode buffer, try to load episodes directly
-                        if let Some(episode_buffer) = self.buffer_manager.get_buffer(&buffer_id) {
-                            // For now, just show the message; proper episode loading would require more refactoring
-                            self.show_message(format!("Loaded {} episodes", episode_count));
-                        }
-                    } else {
-                        self.show_message(format!("Loaded {} episodes", episode_count));
-                    }
+                // Update the episode buffer with the loaded episodes
+                if let Some(episode_buffer) = self.buffer_manager.get_episode_list_buffer_mut(&podcast_name) {
+                    episode_buffer.set_episodes(episodes.clone());
+                    self.show_message(format!("Loaded {} episodes", episodes.len()));
                 } else {
-                    self.show_message(format!("Loaded {} episodes", episode_count));
+                    self.show_message(format!("Loaded {} episodes", episodes.len()));
                 }
             }
             AppEvent::EpisodesLoadFailed {
@@ -807,6 +800,7 @@ impl UIApp {
         let subscription_manager = self.subscription_manager.clone();
         let app_event_tx = self.app_event_tx.clone();
         let podcast_id_clone = podcast_id.clone();
+        let podcast_name_clone = podcast_name.clone();
 
         tokio::spawn(async move {
             match subscription_manager
@@ -817,7 +811,8 @@ impl UIApp {
                 Ok(episodes) => {
                     let _ = app_event_tx.send(AppEvent::EpisodesLoaded {
                         podcast_id: podcast_id_clone,
-                        episode_count: episodes.len(),
+                        podcast_name: podcast_name_clone,
+                        episodes,
                     });
                 }
                 Err(e) => {

@@ -400,13 +400,22 @@ impl UIApp {
                     let result_action = current_buffer.handle_action(action);
                     // If the buffer returns an action, handle it
                     match result_action {
-                        UIAction::OpenEpisodeList { podcast_name, podcast_id } => {
+                        UIAction::OpenEpisodeList {
+                            podcast_name,
+                            podcast_id,
+                        } => {
                             // Handle this specific action directly to avoid recursion
-                            let episode_buffer_id =
-                                format!("episodes-{}", podcast_name.replace(' ', "-").to_lowercase());
+                            let episode_buffer_id = format!(
+                                "episodes-{}",
+                                podcast_name.replace(' ', "-").to_lowercase()
+                            );
 
                             // Check if buffer already exists
-                            if !self.buffer_manager.get_buffer_ids().contains(&episode_buffer_id) {
+                            if !self
+                                .buffer_manager
+                                .get_buffer_ids()
+                                .contains(&episode_buffer_id)
+                            {
                                 self.buffer_manager.create_episode_list_buffer(
                                     podcast_name.clone(),
                                     podcast_id.clone(),

@@ -1,5 +1,6 @@
 use crate::ui::UIApp;
 use crate::{
+    download::DownloadManager,
     podcast::subscription::SubscriptionManager,
     storage::{JsonStorage, Storage},
     Config,
@@ -12,6 +13,7 @@ pub struct App {
     config: Config,
     storage: Arc<JsonStorage>,
     subscription_manager: Arc<SubscriptionManager<JsonStorage>>,
+    download_manager: Arc<DownloadManager<JsonStorage>>,
     ui: UIApp,
 }
 
@@ -33,23 +35,31 @@ impl App {
         // Create subscription manager
         let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
 
-        // Initialize UI with config and subscription manager
-        let ui = UIApp::new(config.clone(), subscription_manager.clone())
-            .map_err(|e| anyhow::anyhow!("Failed to initialize UI: {e}"))?;
+        // Create download manager with configured downloads directory
+        let downloads_dir = shellexpand::tilde(&config.downloads.directory)
+            .into_owned()
+            .into();
+        let download_manager = Arc::new(DownloadManager::new(storage.clone(), downloads_dir)?);
+
+        // Initialize UI with config and managers
+        let ui = UIApp::new(
+            config.clone(),
+            subscription_manager.clone(),
+            download_manager.clone(),
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to initialize UI: {e}"))?;
 
         Ok(Self {
             config,
             storage,
             subscription_manager,
+            download_manager,
             ui,
         })
     }
 
     /// Run the main application loop
     pub async fn run(&mut self) -> Result<()> {
-        println!("Starting Podcast TUI v1.0.0-mvp");
-        println!("Storage initialized at: {:?}", self.storage.data_dir);
-
         // Run the UI application
         self.ui
             .run()

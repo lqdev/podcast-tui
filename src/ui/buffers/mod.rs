@@ -11,7 +11,11 @@ use ratatui::layout::Rect;
 use std::collections::HashMap;
 
 use crate::ui::{UIAction, UIComponent, UIError, UIResult};
-use crate::{podcast::subscription::SubscriptionManager, storage::JsonStorage};
+use crate::{
+    download::DownloadManager,
+    podcast::subscription::SubscriptionManager,
+    storage::{JsonStorage, PodcastId},
+};
 use std::sync::Arc;
 
 /// Unique identifier for buffers
@@ -257,6 +261,20 @@ impl BufferManager {
                 (raw_ptr as *mut crate::ui::buffers::podcast_list::PodcastListBuffer).as_mut()
             }
         })
+    }
+
+    /// Create episode list buffer for a podcast
+    pub fn create_episode_list_buffer(
+        &mut self,
+        podcast_name: String,
+        podcast_id: PodcastId,
+        subscription_manager: Arc<SubscriptionManager<JsonStorage>>,
+        download_manager: Arc<DownloadManager<JsonStorage>>,
+    ) {
+        let mut episode_buffer = 
+            crate::ui::buffers::episode_list::EpisodeListBuffer::new(podcast_name, podcast_id);
+        episode_buffer.set_managers(subscription_manager, download_manager);
+        let _ = self.add_buffer(Box::new(episode_buffer));
     }
 
     /// Handle a UI action, dispatching to the active buffer if appropriate

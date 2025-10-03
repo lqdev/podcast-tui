@@ -22,6 +22,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     config::Config,
+    download::DownloadManager,
     podcast::subscription::SubscriptionManager,
     storage::JsonStorage,
     ui::{
@@ -45,6 +46,9 @@ pub struct UIApp {
 
     /// Subscription manager
     subscription_manager: Arc<SubscriptionManager<JsonStorage>>,
+
+    /// Download manager
+    download_manager: Arc<DownloadManager<JsonStorage>>,
 
     /// Buffer manager
     buffer_manager: BufferManager,
@@ -76,6 +80,7 @@ impl UIApp {
     pub fn new(
         config: Config,
         subscription_manager: Arc<SubscriptionManager<JsonStorage>>,
+        download_manager: Arc<DownloadManager<JsonStorage>>,
     ) -> UIResult<Self> {
         let theme = Theme::from_name(&config.ui.theme)?;
         let buffer_manager = BufferManager::new();
@@ -90,6 +95,7 @@ impl UIApp {
             config,
             theme,
             subscription_manager,
+            download_manager,
             buffer_manager,
             status_bar,
             minibuffer,
@@ -124,17 +130,29 @@ impl UIApp {
 
         // Main event loop
         let result = loop {
-            // Handle events
-            while let Ok(ui_event) = event_rx.try_recv() {
-                match self.handle_event(ui_event).await {
-                    Ok(should_continue) => {
-                        if !should_continue {
-                            break;
+            // Wait for events or timeout
+            tokio::select! {
+                // Handle incoming events
+                ui_event = event_rx.recv() => {
+                    match ui_event {
+                        Some(event) => {
+                            match self.handle_event(event).await {
+                                Ok(should_continue) => {
+                                    if !should_continue {
+                                        break Ok(());
+                                    }
+                                }
+                                Err(e) => {
+                                    self.show_error(format!("Event handling error: {}", e));
+                                }
+                            }
                         }
+                        None => break Ok(()), // Channel closed
                     }
-                    Err(e) => {
-                        self.show_error(format!("Event handling error: {}", e));
-                    }
+                }
+                // Render timeout
+                _ = tokio::time::sleep(Duration::from_millis(16)) => {
+                    // Continue to rendering
                 }
             }
 
@@ -151,9 +169,6 @@ impl UIApp {
                 }
                 Err(e) => break Err(UIError::Render(e.to_string())),
             }
-
-            // Small delay to prevent excessive CPU usage
-            tokio::time::sleep(Duration::from_millis(16)).await; // ~60 FPS
         };
 
         // Cleanup terminal
@@ -345,6 +360,36 @@ impl UIApp {
                 self.trigger_async_refresh_all();
                 Ok(true)
             }
+            UIAction::DownloadEpisode => {
+                self.show_message("Download functionality not yet integrated into UI".to_string());
+                Ok(true)
+            }
+            UIAction::DeleteDownloadedEpisode => {
+                self.show_message(
+                    "Delete download functionality not yet integrated into UI".to_string(),
+                );
+                Ok(true)
+            }
+            UIAction::OpenEpisodeList {
+                podcast_name,
+                podcast_id,
+            } => {
+                // Create and switch to episode list buffer
+                self.buffer_manager.create_episode_list_buffer(
+                    podcast_name.clone(),
+                    podcast_id,
+                    self.subscription_manager.clone(),
+                    self.download_manager.clone(),
+                );
+
+                // Switch to the new buffer
+                let episode_buffer_id =
+                    format!("episodes-{}", podcast_name.replace(' ', "-").to_lowercase());
+                let _ = self.buffer_manager.switch_to_buffer(&episode_buffer_id);
+                self.update_status_bar();
+                self.show_message(format!("Opened episodes for: {}", podcast_name));
+                Ok(true)
+            }
             // Buffer-specific actions
             action => {
                 if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
@@ -504,8 +549,7 @@ impl UIApp {
             match subscription_manager.subscribe(&url).await {
                 Ok(podcast) => {
                     // TODO: Send success event back to UI
-                    println!("Successfully added podcast: {}", podcast.title);
-                    // For now, we'll just print success - in a full implementation
+                    // For now, we'll just log success - in a full implementation
                     // we'd send an event back to the UI to refresh the podcast list
                 }
                 Err(e) => {
@@ -526,10 +570,7 @@ impl UIApp {
         tokio::spawn(async move {
             match subscription_manager.refresh_feed(&podcast_id).await {
                 Ok(new_episodes) => {
-                    println!(
-                        "Refreshed podcast, found {} new episodes",
-                        new_episodes.len()
-                    );
+                    // Silent success for MVP
                 }
                 Err(e) => {
                     eprintln!("Failed to refresh podcast: {}", e);
@@ -545,10 +586,7 @@ impl UIApp {
         tokio::spawn(async move {
             match subscription_manager.refresh_all().await {
                 Ok(total_new_episodes) => {
-                    println!(
-                        "Refreshed all podcasts, found {} new episodes total",
-                        total_new_episodes
-                    );
+                    // Silent success for MVP
                 }
                 Err(e) => {
                     eprintln!("Failed to refresh podcasts: {}", e);
@@ -660,7 +698,7 @@ impl UIApp {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(0),    // Main content area
-                Constraint::Length(1), // Minibuffer
+                Constraint::Length(2), // Minibuffer (1 for border + 1 for text)
                 Constraint::Length(1), // Status bar
             ])
             .split(size);
@@ -693,7 +731,7 @@ impl UIApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::UiConfig;
+    use crate::{config::UiConfig, download::DownloadManager};
 
     #[tokio::test]
     async fn test_ui_app_creation() {
@@ -707,9 +745,11 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
-        let subscription_manager = Arc::new(SubscriptionManager::new(storage));
+        let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
+        let download_manager =
+            Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
 
-        let app = UIApp::new(config, subscription_manager);
+        let app = UIApp::new(config, subscription_manager, download_manager);
         assert!(app.is_ok());
 
         let app = app.unwrap();
@@ -726,9 +766,11 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
-        let subscription_manager = Arc::new(SubscriptionManager::new(storage));
+        let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
+        let download_manager =
+            Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
 
-        let mut app = UIApp::new(config, subscription_manager).unwrap();
+        let mut app = UIApp::new(config, subscription_manager, download_manager).unwrap();
 
         let result = app.handle_action(UIAction::Quit).await;
         assert!(result.is_ok());
@@ -745,9 +787,11 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
-        let subscription_manager = Arc::new(SubscriptionManager::new(storage));
+        let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
+        let download_manager =
+            Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
 
-        let mut app = UIApp::new(config, subscription_manager).unwrap();
+        let mut app = UIApp::new(config, subscription_manager, download_manager).unwrap();
         app.initialize().await.unwrap();
 
         let result = app.handle_action(UIAction::ShowHelp).await;
@@ -767,9 +811,11 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
-        let subscription_manager = Arc::new(SubscriptionManager::new(storage));
+        let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
+        let download_manager =
+            Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
 
-        let mut app = UIApp::new(config, subscription_manager).unwrap();
+        let mut app = UIApp::new(config, subscription_manager, download_manager).unwrap();
         app.initialize().await.unwrap();
 
         // Test quit command
@@ -796,9 +842,11 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
-        let subscription_manager = Arc::new(SubscriptionManager::new(storage));
+        let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
+        let download_manager =
+            Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
 
-        let mut app = UIApp::new(config, subscription_manager).unwrap();
+        let mut app = UIApp::new(config, subscription_manager, download_manager).unwrap();
 
         let result = app.set_theme_direct("light");
         assert!(result.is_ok());

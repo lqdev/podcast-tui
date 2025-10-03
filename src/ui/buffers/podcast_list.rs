@@ -174,8 +174,11 @@ impl UIComponent for PodcastListBuffer {
             }
             UIAction::SelectItem => {
                 if let Some(podcast) = self.selected_podcast() {
-                    // TODO: In a future sprint, open episode list buffer
-                    UIAction::ShowMessage(format!("Selected: {}", podcast.title))
+                    // Create action to open episode list for this podcast
+                    UIAction::OpenEpisodeList {
+                        podcast_name: podcast.title.clone(),
+                        podcast_id: podcast.id.clone(),
+                    }
                 } else {
                     UIAction::ShowMessage("No podcast selected".to_string())
                 }

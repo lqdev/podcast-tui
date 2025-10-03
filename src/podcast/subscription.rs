@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 /// Subscription manager that handles podcast subscriptions
 pub struct SubscriptionManager<S: Storage> {
-    storage: Arc<S>,
+    pub storage: Arc<S>,
     feed_parser: FeedParser,
 }
 

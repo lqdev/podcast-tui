@@ -90,7 +90,17 @@ pub enum UIAction {
 
     // Podcast management actions
     AddPodcast,
+    /// Delete podcast subscription
     DeletePodcast,
+    /// Download current episode
+    DownloadEpisode,
+    /// Delete downloaded episode file
+    DeleteDownloadedEpisode,
+    /// Open episode list for a podcast
+    OpenEpisodeList {
+        podcast_name: String,
+        podcast_id: crate::storage::PodcastId,
+    },
     RefreshPodcast,
     RefreshAll,
 

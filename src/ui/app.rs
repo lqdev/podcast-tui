@@ -394,42 +394,46 @@ impl UIApp {
                 );
                 Ok(true)
             }
-            UIAction::OpenEpisodeList {
-                podcast_name,
-                podcast_id,
-            } => {
-                // Create and switch to episode list buffer
-                let episode_buffer_id =
-                    format!("episodes-{}", podcast_name.replace(' ', "-").to_lowercase());
-
-                // Check if buffer already exists
-                if !self
-                    .buffer_manager
-                    .get_buffer_ids()
-                    .contains(&episode_buffer_id)
-                {
-                    self.buffer_manager.create_episode_list_buffer(
-                        podcast_name.clone(),
-                        podcast_id.clone(),
-                        self.subscription_manager.clone(),
-                        self.download_manager.clone(),
-                    );
-                }
-
-                // Switch to the buffer
-                let _ = self.buffer_manager.switch_to_buffer(&episode_buffer_id);
-                self.update_status_bar();
-
-                // Trigger async loading of episodes
-                self.trigger_async_load_episodes(podcast_id, podcast_name.clone());
-
-                self.show_message(format!("Loading episodes for: {}", podcast_name));
-                Ok(true)
-            }
             // Buffer-specific actions
             action => {
                 if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
-                    current_buffer.handle_action(action);
+                    let result_action = current_buffer.handle_action(action);
+                    // If the buffer returns an action, handle it
+                    match result_action {
+                        UIAction::OpenEpisodeList { podcast_name, podcast_id } => {
+                            // Handle this specific action directly to avoid recursion
+                            let episode_buffer_id =
+                                format!("episodes-{}", podcast_name.replace(' ', "-").to_lowercase());
+
+                            // Check if buffer already exists
+                            if !self.buffer_manager.get_buffer_ids().contains(&episode_buffer_id) {
+                                self.buffer_manager.create_episode_list_buffer(
+                                    podcast_name.clone(),
+                                    podcast_id.clone(),
+                                    self.subscription_manager.clone(),
+                                    self.download_manager.clone(),
+                                );
+                            }
+
+                            // Switch to the buffer
+                            let _ = self.buffer_manager.switch_to_buffer(&episode_buffer_id);
+                            self.update_status_bar();
+
+                            // Trigger async loading of episodes
+                            self.trigger_async_load_episodes(podcast_id, podcast_name.clone());
+
+                            self.show_message(format!("Loading episodes for: {}", podcast_name));
+                        }
+                        UIAction::ShowMessage(msg) => {
+                            self.show_message(msg);
+                        }
+                        UIAction::ShowError(msg) => {
+                            self.show_error(msg);
+                        }
+                        _ => {
+                            // Ignore other actions to avoid infinite recursion
+                        }
+                    }
                 }
                 Ok(true)
             }

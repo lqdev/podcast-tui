@@ -258,7 +258,7 @@ impl UIComponent for PodcastListBuffer {
 
                 frame.render_widget(error_text, chunks[0]);
             }
-            PodcastListState::Loading | PodcastListState::Ready => {
+            PodcastListState::Ready => {
                 if self.podcasts.is_empty() {
                     let empty_block = Block::default()
                         .title("Podcasts")

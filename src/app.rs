@@ -1,4 +1,4 @@
-use crate::ui::UIApp;
+use crate::ui::{UIApp, events::AppEvent};
 use crate::{
     download::DownloadManager,
     podcast::subscription::SubscriptionManager,
@@ -7,6 +7,7 @@ use crate::{
 };
 use anyhow::Result;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 /// Main application state and orchestration
 pub struct App {
@@ -41,11 +42,15 @@ impl App {
             .into();
         let download_manager = Arc::new(DownloadManager::new(storage.clone(), downloads_dir)?);
 
+        // Create app event channel for async communication
+        let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
+
         // Initialize UI with config and managers
         let ui = UIApp::new(
             config.clone(),
             subscription_manager.clone(),
             download_manager.clone(),
+            app_event_tx,
         )
         .map_err(|e| anyhow::anyhow!("Failed to initialize UI: {e}"))?;
 
@@ -60,9 +65,21 @@ impl App {
 
     /// Run the main application loop
     pub async fn run(&mut self) -> Result<()> {
-        // Run the UI application
+        // Create app event channel for async communication
+        let (app_event_tx, app_event_rx) = mpsc::unbounded_channel();
+
+        // Recreate UI with the new app event sender
+        self.ui = UIApp::new(
+            self.config.clone(),
+            self.subscription_manager.clone(),
+            self.download_manager.clone(),
+            app_event_tx,
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to initialize UI: {e}"))?;
+
+        // Run the UI application with the app event receiver
         self.ui
-            .run()
+            .run(app_event_rx)
             .await
             .map_err(|e| anyhow::anyhow!("UI error: {e}"))
     }

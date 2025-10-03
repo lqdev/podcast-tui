@@ -28,7 +28,7 @@ use crate::{
     ui::{
         buffers::BufferManager,
         components::{minibuffer::Minibuffer, minibuffer::MinibufferContent, statusbar::StatusBar},
-        events::{UIEvent, UIEventHandler},
+        events::{AppEvent, UIEvent, UIEventHandler},
         keybindings::KeyHandler,
         themes::Theme,
         UIAction, UIComponent, UIError, UIResult,
@@ -65,6 +65,9 @@ pub struct UIApp {
     /// Event handler
     event_handler: UIEventHandler,
 
+    /// App event sender for async communication
+    app_event_tx: mpsc::UnboundedSender<AppEvent>,
+
     /// Whether the application should quit
     should_quit: bool,
 
@@ -81,6 +84,7 @@ impl UIApp {
         config: Config,
         subscription_manager: Arc<SubscriptionManager<JsonStorage>>,
         download_manager: Arc<DownloadManager<JsonStorage>>,
+        app_event_tx: mpsc::UnboundedSender<AppEvent>,
     ) -> UIResult<Self> {
         let theme = Theme::from_name(&config.ui.theme)?;
         let buffer_manager = BufferManager::new();
@@ -101,6 +105,7 @@ impl UIApp {
             minibuffer,
             key_handler,
             event_handler,
+            app_event_tx,
             should_quit: false,
             last_render: Instant::now(),
             frame_count: 0,
@@ -108,7 +113,10 @@ impl UIApp {
     }
 
     /// Run the UI application
-    pub async fn run(&mut self) -> UIResult<()> {
+    pub async fn run(
+        &mut self,
+        mut app_event_rx: mpsc::UnboundedReceiver<AppEvent>,
+    ) -> UIResult<()> {
         // Initialize terminal
         enable_raw_mode().map_err(UIError::Terminal)?;
         let mut stdout = io::stdout();
@@ -132,7 +140,7 @@ impl UIApp {
         let result = loop {
             // Wait for events or timeout
             tokio::select! {
-                // Handle incoming events
+                // Handle incoming UI events
                 ui_event = event_rx.recv() => {
                     match ui_event {
                         Some(event) => {
@@ -148,6 +156,17 @@ impl UIApp {
                             }
                         }
                         None => break Ok(()), // Channel closed
+                    }
+                }
+                // Handle incoming app events (from async tasks)
+                app_event = app_event_rx.recv() => {
+                    match app_event {
+                        Some(event) => {
+                            if let Err(e) = self.handle_app_event(event).await {
+                                self.show_error(format!("App event handling error: {}", e));
+                            }
+                        }
+                        None => {} // Channel closed, continue
                     }
                 }
                 // Render timeout
@@ -413,6 +432,63 @@ impl UIApp {
         Ok(true)
     }
 
+    /// Handle app events from async tasks
+    async fn handle_app_event(&mut self, event: AppEvent) -> UIResult<()> {
+        match event {
+            AppEvent::PodcastSubscribed { podcast } => {
+                // Refresh the podcast list
+                if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
+                    if let Err(e) = podcast_buffer.load_podcasts().await {
+                        self.show_error(format!("Failed to refresh podcast list: {}", e));
+                    }
+                }
+                self.show_message(format!("Successfully subscribed to: {}", podcast.title));
+            }
+            AppEvent::PodcastSubscriptionFailed { url, error } => {
+                self.show_error(format!("Failed to subscribe to {}: {}", url, error));
+            }
+            AppEvent::PodcastRefreshed {
+                podcast_id: _,
+                new_episode_count,
+            } => {
+                // Refresh the podcast list (or specific podcast view)
+                if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
+                    if let Err(e) = podcast_buffer.load_podcasts().await {
+                        self.show_error(format!("Failed to refresh podcast list: {}", e));
+                    }
+                }
+                if new_episode_count > 0 {
+                    self.show_message(format!("Found {} new episode(s)", new_episode_count));
+                } else {
+                    self.show_message("No new episodes found".to_string());
+                }
+            }
+            AppEvent::PodcastRefreshFailed {
+                podcast_id: _,
+                error,
+            } => {
+                self.show_error(format!("Failed to refresh podcast: {}", error));
+            }
+            AppEvent::AllPodcastsRefreshed { total_new_episodes } => {
+                // Refresh the podcast list
+                if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
+                    if let Err(e) = podcast_buffer.load_podcasts().await {
+                        self.show_error(format!("Failed to refresh podcast list: {}", e));
+                    }
+                }
+                if total_new_episodes > 0 {
+                    self.show_message(format!(
+                        "Refresh completed. Found {} new episode(s) total",
+                        total_new_episodes
+                    ));
+                } else {
+                    self.show_message("Refresh completed. No new episodes found".to_string());
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Execute a command directly without recursion
     fn execute_command_direct(&mut self, command: String) -> UIResult<bool> {
         let parts: Vec<&str> = command.trim().split_whitespace().collect();
@@ -543,37 +619,49 @@ impl UIApp {
     /// Trigger async podcast addition
     fn trigger_async_add_podcast(&mut self, url: String) {
         let subscription_manager = self.subscription_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let url_clone = url.clone();
 
-        // For MVP, spawn a simple async task
+        // Spawn async task to add the podcast
         tokio::spawn(async move {
-            match subscription_manager.subscribe(&url).await {
+            match subscription_manager.subscribe(&url_clone).await {
                 Ok(podcast) => {
-                    // TODO: Send success event back to UI
-                    // For now, we'll just log success - in a full implementation
-                    // we'd send an event back to the UI to refresh the podcast list
+                    // Send success event back to UI
+                    let _ = app_event_tx.send(AppEvent::PodcastSubscribed { podcast });
                 }
                 Err(e) => {
-                    // TODO: Send error event back to UI
-                    eprintln!("Failed to add podcast: {}", e);
+                    // Send error event back to UI
+                    let _ = app_event_tx.send(AppEvent::PodcastSubscriptionFailed {
+                        url: url_clone.clone(),
+                        error: e.to_string(),
+                    });
                 }
             }
         });
 
         // Show immediate feedback
-        self.show_message("Subscription request sent...".to_string());
+        self.show_message(format!("Adding podcast: {}...", url));
     }
 
     /// Trigger async single podcast refresh
     fn trigger_async_refresh_single(&mut self, podcast_id: crate::storage::PodcastId) {
         let subscription_manager = self.subscription_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let podcast_id_clone = podcast_id.clone();
 
         tokio::spawn(async move {
             match subscription_manager.refresh_feed(&podcast_id).await {
                 Ok(new_episodes) => {
-                    // Silent success for MVP
+                    let _ = app_event_tx.send(AppEvent::PodcastRefreshed {
+                        podcast_id: podcast_id_clone,
+                        new_episode_count: new_episodes.len(),
+                    });
                 }
                 Err(e) => {
-                    eprintln!("Failed to refresh podcast: {}", e);
+                    let _ = app_event_tx.send(AppEvent::PodcastRefreshFailed {
+                        podcast_id: podcast_id_clone,
+                        error: e.to_string(),
+                    });
                 }
             }
         });
@@ -582,13 +670,16 @@ impl UIApp {
     /// Trigger async refresh of all podcasts
     fn trigger_async_refresh_all(&mut self) {
         let subscription_manager = self.subscription_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
 
         tokio::spawn(async move {
             match subscription_manager.refresh_all().await {
                 Ok(total_new_episodes) => {
-                    // Silent success for MVP
+                    let _ =
+                        app_event_tx.send(AppEvent::AllPodcastsRefreshed { total_new_episodes });
                 }
                 Err(e) => {
+                    // For all refresh, we'll just show a general error
                     eprintln!("Failed to refresh podcasts: {}", e);
                 }
             }
@@ -749,7 +840,8 @@ mod tests {
         let download_manager =
             Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
 
-        let app = UIApp::new(config, subscription_manager, download_manager);
+        let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
+        let app = UIApp::new(config, subscription_manager, download_manager, app_event_tx);
         assert!(app.is_ok());
 
         let app = app.unwrap();
@@ -770,7 +862,9 @@ mod tests {
         let download_manager =
             Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
 
-        let mut app = UIApp::new(config, subscription_manager, download_manager).unwrap();
+        let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
+        let mut app =
+            UIApp::new(config, subscription_manager, download_manager, app_event_tx).unwrap();
 
         let result = app.handle_action(UIAction::Quit).await;
         assert!(result.is_ok());
@@ -791,7 +885,9 @@ mod tests {
         let download_manager =
             Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
 
-        let mut app = UIApp::new(config, subscription_manager, download_manager).unwrap();
+        let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
+        let mut app =
+            UIApp::new(config, subscription_manager, download_manager, app_event_tx).unwrap();
         app.initialize().await.unwrap();
 
         let result = app.handle_action(UIAction::ShowHelp).await;
@@ -815,7 +911,9 @@ mod tests {
         let download_manager =
             Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
 
-        let mut app = UIApp::new(config, subscription_manager, download_manager).unwrap();
+        let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
+        let mut app =
+            UIApp::new(config, subscription_manager, download_manager, app_event_tx).unwrap();
         app.initialize().await.unwrap();
 
         // Test quit command
@@ -846,7 +944,9 @@ mod tests {
         let download_manager =
             Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
 
-        let mut app = UIApp::new(config, subscription_manager, download_manager).unwrap();
+        let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
+        let mut app =
+            UIApp::new(config, subscription_manager, download_manager, app_event_tx).unwrap();
 
         let result = app.set_theme_direct("light");
         assert!(result.is_ok());

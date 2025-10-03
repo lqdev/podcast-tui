@@ -4,8 +4,8 @@
 // converting them to UI actions, and managing the event loop.
 
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
-use tokio::sync::mpsc;
 use std::time::{Duration, Instant};
+use tokio::sync::mpsc;
 
 use crate::ui::{UIAction, UIError, UIResult};
 
@@ -17,21 +17,20 @@ pub struct UIEventHandler {
 
 impl UIEventHandler {
     /// Create a new event handler with the specified tick rate
-    pub fn new(tick_rate: Duration) -> Self {        
-        Self {
-            tick_rate,
-        }
+    pub fn new(tick_rate: Duration) -> Self {
+        Self { tick_rate }
     }
-    
+
     /// Run the event loop, sending events to the provided channel
     pub async fn run(&self, event_tx: mpsc::UnboundedSender<UIEvent>) {
         let mut last_tick = Instant::now();
-        
+
         loop {
-            let timeout = self.tick_rate
+            let timeout = self
+                .tick_rate
                 .checked_sub(last_tick.elapsed())
                 .unwrap_or(Duration::ZERO);
-            
+
             if event::poll(timeout).unwrap_or(false) {
                 match event::read() {
                     Ok(crossterm_event) => {
@@ -43,7 +42,7 @@ impl UIEventHandler {
                     Err(_) => break,
                 }
             }
-            
+
             if last_tick.elapsed() >= self.tick_rate {
                 if event_tx.send(UIEvent::Tick).is_err() {
                     break;
@@ -52,7 +51,7 @@ impl UIEventHandler {
             }
         }
     }
-    
+
     /// Convert crossterm events to UI events
     fn convert_event(event: Event) -> UIEvent {
         match event {
@@ -69,16 +68,41 @@ impl UIEventHandler {
 pub enum UIEvent {
     /// Keyboard input
     Key(crossterm::event::KeyEvent),
-    
+
     /// Mouse input
     Mouse(crossterm::event::MouseEvent),
-    
+
     /// Terminal resize
     Resize(u16, u16),
-    
+
     /// Periodic tick
     Tick,
-    
+
     /// Application should quit
     Quit,
+}
+
+/// Application events for async communication
+#[derive(Debug, Clone)]
+pub enum AppEvent {
+    /// Podcast subscription completed successfully
+    PodcastSubscribed { podcast: crate::podcast::Podcast },
+
+    /// Podcast subscription failed
+    PodcastSubscriptionFailed { url: String, error: String },
+
+    /// Podcast refresh completed
+    PodcastRefreshed {
+        podcast_id: crate::storage::PodcastId,
+        new_episode_count: usize,
+    },
+
+    /// Podcast refresh failed
+    PodcastRefreshFailed {
+        podcast_id: crate::storage::PodcastId,
+        error: String,
+    },
+
+    /// All podcasts refresh completed
+    AllPodcastsRefreshed { total_new_episodes: usize },
 }

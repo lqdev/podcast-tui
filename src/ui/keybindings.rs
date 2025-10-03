@@ -87,6 +87,13 @@ impl KeyHandler {
         // Tab navigation
         self.bind_key(KeyChord::none(KeyCode::Tab), UIAction::NextBuffer);
         self.bind_key(KeyChord::shift(KeyCode::Tab), UIAction::PreviousBuffer);
+        // Some terminals send BackTab for Shift+Tab
+        self.bind_key(KeyChord::none(KeyCode::BackTab), UIAction::PreviousBuffer);
+        self.bind_key(KeyChord::shift(KeyCode::BackTab), UIAction::PreviousBuffer);
+
+        // Alternative buffer navigation (more reliable)
+        self.bind_key(KeyChord::ctrl(KeyCode::PageUp), UIAction::PreviousBuffer);
+        self.bind_key(KeyChord::ctrl(KeyCode::PageDown), UIAction::NextBuffer);
 
         // Basic interaction
         self.bind_key(KeyChord::none(KeyCode::Enter), UIAction::SelectItem);

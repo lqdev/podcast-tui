@@ -263,6 +263,21 @@ impl BufferManager {
         })
     }
 
+    /// Get mutable reference to episode list buffer by podcast name
+    pub fn get_episode_list_buffer_mut(
+        &mut self,
+        podcast_name: &str,
+    ) -> Option<&mut crate::ui::buffers::episode_list::EpisodeListBuffer> {
+        let episode_id = format!("episodes-{}", podcast_name.replace(' ', "-").to_lowercase());
+        self.get_buffer(&episode_id).and_then(|buffer| {
+            // This is safe because we know episode buffer is always EpisodeListBuffer
+            let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
+            unsafe {
+                (raw_ptr as *mut crate::ui::buffers::episode_list::EpisodeListBuffer).as_mut()
+            }
+        })
+    }
+
     /// Create episode list buffer for a podcast
     pub fn create_episode_list_buffer(
         &mut self,

@@ -105,4 +105,28 @@ pub enum AppEvent {
 
     /// All podcasts refresh completed
     AllPodcastsRefreshed { total_new_episodes: usize },
+
+    /// Podcast deleted successfully
+    PodcastDeleted {
+        podcast_id: crate::storage::PodcastId,
+        podcast_title: String,
+    },
+
+    /// Podcast deletion failed
+    PodcastDeletionFailed {
+        podcast_id: crate::storage::PodcastId,
+        error: String,
+    },
+
+    /// Episodes loaded successfully
+    EpisodesLoaded {
+        podcast_id: crate::storage::PodcastId,
+        episode_count: usize,
+    },
+
+    /// Episodes loading failed
+    EpisodesLoadFailed {
+        podcast_id: crate::storage::PodcastId,
+        error: String,
+    },
 }

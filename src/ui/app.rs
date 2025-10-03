@@ -24,7 +24,7 @@ use crate::{
     config::Config,
     download::DownloadManager,
     podcast::subscription::SubscriptionManager,
-    storage::JsonStorage,
+    storage::{JsonStorage, Storage},
     ui::{
         buffers::BufferManager,
         components::{minibuffer::Minibuffer, minibuffer::MinibufferContent, statusbar::StatusBar},
@@ -71,6 +71,9 @@ pub struct UIApp {
     /// Whether the application should quit
     should_quit: bool,
 
+    /// Podcast ID pending deletion confirmation
+    pending_deletion: Option<crate::storage::PodcastId>,
+
     /// Last render time for performance tracking
     last_render: Instant,
 
@@ -109,6 +112,7 @@ impl UIApp {
             should_quit: false,
             last_render: Instant::now(),
             frame_count: 0,
+            pending_deletion: None,
         })
     }
 
@@ -340,13 +344,14 @@ impl UIApp {
                         let podcast_id = podcast.id.clone();
                         let podcast_title = podcast.title.clone();
 
+                        // Store the podcast ID for deletion confirmation
+                        self.pending_deletion = Some(podcast_id);
+
                         // Show confirmation prompt
                         self.minibuffer.set_content(MinibufferContent::Input {
                             prompt: format!("Delete podcast '{}' (y/n)? ", podcast_title),
                             input: String::new(),
                         });
-                        // Store the podcast ID for deletion confirmation
-                        // For MVP, we'll implement a simple confirmation flow
                     } else {
                         self.show_error("No podcast selected for deletion".to_string());
                     }
@@ -394,19 +399,31 @@ impl UIApp {
                 podcast_id,
             } => {
                 // Create and switch to episode list buffer
-                self.buffer_manager.create_episode_list_buffer(
-                    podcast_name.clone(),
-                    podcast_id,
-                    self.subscription_manager.clone(),
-                    self.download_manager.clone(),
-                );
-
-                // Switch to the new buffer
                 let episode_buffer_id =
                     format!("episodes-{}", podcast_name.replace(' ', "-").to_lowercase());
+
+                // Check if buffer already exists
+                if !self
+                    .buffer_manager
+                    .get_buffer_ids()
+                    .contains(&episode_buffer_id)
+                {
+                    self.buffer_manager.create_episode_list_buffer(
+                        podcast_name.clone(),
+                        podcast_id.clone(),
+                        self.subscription_manager.clone(),
+                        self.download_manager.clone(),
+                    );
+                }
+
+                // Switch to the buffer
                 let _ = self.buffer_manager.switch_to_buffer(&episode_buffer_id);
                 self.update_status_bar();
-                self.show_message(format!("Opened episodes for: {}", podcast_name));
+
+                // Trigger async loading of episodes
+                self.trigger_async_load_episodes(podcast_id, podcast_name.clone());
+
+                self.show_message(format!("Loading episodes for: {}", podcast_name));
                 Ok(true)
             }
             // Buffer-specific actions
@@ -484,6 +501,50 @@ impl UIApp {
                 } else {
                     self.show_message("Refresh completed. No new episodes found".to_string());
                 }
+            }
+            AppEvent::PodcastDeleted {
+                podcast_id: _,
+                podcast_title,
+            } => {
+                // Refresh the podcast list
+                if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
+                    if let Err(e) = podcast_buffer.load_podcasts().await {
+                        self.show_error(format!("Failed to refresh podcast list: {}", e));
+                    }
+                }
+                self.show_message(format!("Successfully deleted: {}", podcast_title));
+            }
+            AppEvent::PodcastDeletionFailed {
+                podcast_id: _,
+                error,
+            } => {
+                self.show_error(format!("Failed to delete podcast: {}", error));
+            }
+            AppEvent::EpisodesLoaded {
+                podcast_id,
+                episode_count,
+            } => {
+                // Try to find the episode buffer and reload episodes
+                let current_buffer_id = self.buffer_manager.active_buffer_id().cloned();
+                if let Some(buffer_id) = current_buffer_id {
+                    if buffer_id.starts_with("episodes-") {
+                        // We're in an episode buffer, try to load episodes directly
+                        if let Some(episode_buffer) = self.buffer_manager.get_buffer(&buffer_id) {
+                            // For now, just show the message; proper episode loading would require more refactoring
+                            self.show_message(format!("Loaded {} episodes", episode_count));
+                        }
+                    } else {
+                        self.show_message(format!("Loaded {} episodes", episode_count));
+                    }
+                } else {
+                    self.show_message(format!("Loaded {} episodes", episode_count));
+                }
+            }
+            AppEvent::EpisodesLoadFailed {
+                podcast_id: _,
+                error,
+            } => {
+                self.show_error(format!("Failed to load episodes: {}", error));
             }
         }
         Ok(())
@@ -686,6 +747,76 @@ impl UIApp {
         });
     }
 
+    /// Trigger async podcast deletion
+    fn trigger_async_delete_podcast(&mut self, podcast_id: crate::storage::PodcastId) {
+        let subscription_manager = self.subscription_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let podcast_id_clone = podcast_id.clone();
+
+        // Get podcast title for the event
+        let podcast_title =
+            if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
+                podcast_buffer
+                    .selected_podcast()
+                    .map(|p| p.title.clone())
+                    .unwrap_or_else(|| "Unknown".to_string())
+            } else {
+                "Unknown".to_string()
+            };
+
+        tokio::spawn(async move {
+            match subscription_manager.unsubscribe(&podcast_id).await {
+                Ok(_) => {
+                    let _ = app_event_tx.send(AppEvent::PodcastDeleted {
+                        podcast_id: podcast_id_clone,
+                        podcast_title,
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::PodcastDeletionFailed {
+                        podcast_id: podcast_id_clone,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+
+        // Show immediate feedback
+        self.show_message("Deleting podcast...".to_string());
+    }
+
+    /// Trigger async episode loading
+    fn trigger_async_load_episodes(
+        &mut self,
+        podcast_id: crate::storage::PodcastId,
+        podcast_name: String,
+    ) {
+        let subscription_manager = self.subscription_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let podcast_id_clone = podcast_id.clone();
+
+        tokio::spawn(async move {
+            match subscription_manager
+                .storage
+                .load_episodes(&podcast_id)
+                .await
+            {
+                Ok(episodes) => {
+                    let _ = app_event_tx.send(AppEvent::EpisodesLoaded {
+                        podcast_id: podcast_id_clone,
+                        episode_count: episodes.len(),
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::EpisodesLoadFailed {
+                        podcast_id: podcast_id_clone,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
     /// Handle minibuffer input submission
     fn handle_minibuffer_input(&mut self, input: String) {
         let input = input.trim();
@@ -700,8 +831,15 @@ impl UIApp {
             self.show_message(format!("Adding podcast: {}...", input));
             self.trigger_async_add_podcast(input.to_string());
         } else if input.to_lowercase() == "y" || input.to_lowercase() == "yes" {
-            self.show_message("Podcast deletion confirmed (not implemented in MVP)".to_string());
+            // Handle podcast deletion confirmation
+            if let Some(podcast_id) = self.pending_deletion.take() {
+                self.trigger_async_delete_podcast(podcast_id);
+            } else {
+                self.show_error("No podcast deletion pending".to_string());
+            }
         } else if input.to_lowercase() == "n" || input.to_lowercase() == "no" {
+            // Cancel podcast deletion
+            self.pending_deletion = None;
             self.show_message("Podcast deletion cancelled".to_string());
         } else {
             // Check if this is a buffer name

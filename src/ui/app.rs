@@ -785,13 +785,25 @@ impl UIApp {
             }
             "buffer" | "b" => {
                 if parts.len() > 1 {
-                    let _ = self.buffer_manager.switch_to_buffer(&parts[1].to_string());
-                    self.update_status_bar();
-                    Ok(true)
+                    let buffer_name = parts[1].to_string();
+                    self.switch_to_buffer_by_name(buffer_name)
                 } else {
                     self.show_buffer_list();
                     Ok(true)
                 }
+            }
+            "switch-to-buffer" | "switch-buffer" => {
+                if parts.len() > 1 {
+                    let buffer_name = parts[1].to_string();
+                    self.switch_to_buffer_by_name(buffer_name)
+                } else {
+                    self.prompt_buffer_switch();
+                    Ok(true)
+                }
+            }
+            "list-buffers" | "buffers" => {
+                self.show_buffer_list();
+                Ok(true)
             }
             "add-podcast" => {
                 if parts.len() > 1 {
@@ -845,22 +857,105 @@ impl UIApp {
 
     /// Show list of available buffers
     fn show_buffer_list(&mut self) {
-        let buffer_ids = self.buffer_manager.get_buffer_ids();
-        let current = self
-            .buffer_manager
-            .current_buffer_name()
-            .unwrap_or_default();
+        let buffer_names = self.buffer_manager.buffer_names();
+        let current_id = self.buffer_manager.current_buffer_id();
 
         let mut message = "Available buffers:\n".to_string();
-        for id in buffer_ids {
-            if id == current {
-                message.push_str(&format!("* {}\n", id));
+        for (id, name) in buffer_names {
+            let marker = if Some(&id) == current_id.as_ref() {
+                "*"
             } else {
-                message.push_str(&format!("  {}\n", id));
+                " "
+            };
+            // Show both ID and display name
+            if id != name {
+                message.push_str(&format!("{} {} ({})", marker, name, id));
+            } else {
+                message.push_str(&format!("{} {}", marker, name));
             }
+            message.push('\n');
         }
+        message.push_str("\nUse: buffer <name> or switch-to-buffer <name>");
 
         self.show_message(message);
+    }
+
+    /// Switch to buffer by name with smart matching
+    fn switch_to_buffer_by_name(&mut self, buffer_name: String) -> UIResult<bool> {
+        let buffer_names = self.buffer_manager.buffer_names();
+        
+        // Handle common aliases
+        let normalized_name = match buffer_name.as_str() {
+            "podcasts" | "podcast" | "main" => "podcast-list".to_string(),
+            "help" => "*Help*".to_string(),
+            "download" | "dl" => "downloads".to_string(),
+            _ => buffer_name.clone(),
+        };
+        
+        // Try exact match first (by ID)
+        if buffer_names.iter().any(|(id, _)| id == &normalized_name) {
+            let _ = self.buffer_manager.switch_to_buffer(&normalized_name);
+            self.update_status_bar();
+            return Ok(true);
+        }
+        
+        // Try exact match by display name
+        if let Some((id, _)) = buffer_names.iter().find(|(_, name)| name == &normalized_name) {
+            let _ = self.buffer_manager.switch_to_buffer(id);
+            self.update_status_bar();
+            return Ok(true);
+        }
+        
+        // Try partial match (case insensitive)
+        let lower_search = normalized_name.to_lowercase();
+        let matches: Vec<_> = buffer_names
+            .iter()
+            .filter(|(id, name)| {
+                id.to_lowercase().contains(&lower_search) ||
+                name.to_lowercase().contains(&lower_search)
+            })
+            .collect();
+            
+        match matches.len() {
+            0 => {
+                self.show_error(format!("No buffer found matching: {}", buffer_name));
+                Ok(true)
+            }
+            1 => {
+                let (id, _) = matches[0];
+                let _ = self.buffer_manager.switch_to_buffer(id);
+                self.update_status_bar();
+                Ok(true)
+            }
+            _ => {
+                let mut msg = format!("Multiple buffers match '{}':\n", buffer_name);
+                for (id, name) in matches {
+                    if id != name {
+                        msg.push_str(&format!("  {} ({})\n", name, id));
+                    } else {
+                        msg.push_str(&format!("  {}\n", name));
+                    }
+                }
+                self.show_message(msg);
+                Ok(true)
+            }
+        }
+    }
+
+    /// Prompt for buffer switch with completion hints
+    fn prompt_buffer_switch(&mut self) {
+        let buffer_names = self.buffer_manager.buffer_names();
+        let mut prompt = "Switch to buffer: ".to_string();
+        
+        // Add some hints
+        if !buffer_names.is_empty() {
+            prompt.push_str("(Tab for list) ");
+        }
+        
+        self.minibuffer.set_content(MinibufferContent::Input {
+            prompt,
+            input: String::new(),
+        });
     }
 
     /// Show a message in the minibuffer

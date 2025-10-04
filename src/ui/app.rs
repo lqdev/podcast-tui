@@ -390,7 +390,11 @@ impl UIApp {
                     let result_action = current_buffer.handle_action(action);
                     // Handle the result action immediately (non-recursively)
                     match result_action {
-                        UIAction::TriggerDownload { podcast_id, episode_id, episode_title } => {
+                        UIAction::TriggerDownload {
+                            podcast_id,
+                            episode_id,
+                            episode_title,
+                        } => {
                             self.show_message(format!("Starting download: {}", episode_title));
                             self.trigger_async_download(podcast_id, episode_id);
                         }
@@ -411,7 +415,11 @@ impl UIApp {
                     let result_action = current_buffer.handle_action(action);
                     // Handle the result action immediately (non-recursively)
                     match result_action {
-                        UIAction::TriggerDeleteDownload { podcast_id, episode_id, episode_title } => {
+                        UIAction::TriggerDeleteDownload {
+                            podcast_id,
+                            episode_id,
+                            episode_title,
+                        } => {
                             self.show_message(format!("Deleting download: {}", episode_title));
                             self.trigger_async_delete_download(podcast_id, episode_id);
                         }

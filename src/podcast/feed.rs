@@ -296,7 +296,41 @@ impl FeedParser {
 
     /// Extract audio URL from feed entry using multiple strategies
     fn extract_audio_url(&self, entry: &feed_rs::model::Entry) -> Option<String> {
-        // Strategy 1: Look for enclosures with audio MIME types (most reliable for RSS)
+        // Strategy 1: Look for media enclosures (RSS 2.0 <enclosure> elements)
+        // In feed-rs 2.0, enclosures are stored in the media field as MediaContent objects
+        for media_object in &entry.media {
+            for media_content in &media_object.content {
+                if let Some(url) = &media_content.url {
+                    let url_string = url.to_string();
+
+                    // Check if it has an audio MIME type
+                    if let Some(content_type) = &media_content.content_type {
+                        let content_type_str = content_type.to_string();
+                        if content_type_str.starts_with("audio/")
+                            || content_type_str == "application/octet-stream"
+                        {
+                            return Some(url_string);
+                        }
+                    }
+
+                    // If no MIME type, check file extension
+                    let url_lower = url_string.to_lowercase();
+                    let url_path = url_lower.split('?').next().unwrap_or(&url_lower);
+                    if url_path.ends_with(".mp3")
+                        || url_path.ends_with(".m4a")
+                        || url_path.ends_with(".mp4")
+                        || url_path.ends_with(".ogg")
+                        || url_path.ends_with(".wav")
+                        || url_path.ends_with(".aac")
+                        || url_path.ends_with(".flac")
+                    {
+                        return Some(url_string);
+                    }
+                }
+            }
+        }
+
+        // Strategy 2: Look for enclosures with audio MIME types in links (fallback for some feeds)
         if let Some(audio_link) = entry.links.iter().find(|link| {
             link.media_type
                 .as_ref()
@@ -306,7 +340,7 @@ impl FeedParser {
             return Some(audio_link.href.clone());
         }
 
-        // Strategy 2: Look for enclosure relationship (RSS 2.0 standard)
+        // Strategy 3: Look for enclosure relationship (RSS 2.0 standard)
         if let Some(enclosure_link) = entry
             .links
             .iter()
@@ -315,7 +349,7 @@ impl FeedParser {
             return Some(enclosure_link.href.clone());
         }
 
-        // Strategy 3: Look for links with audio file extensions (feeds missing MIME types)
+        // Strategy 4: Look for links with audio file extensions (feeds missing MIME types)
         if let Some(audio_link) = entry.links.iter().find(|link| {
             let href = &link.href.to_lowercase();
             // Check for common audio extensions, handling query parameters
@@ -331,7 +365,7 @@ impl FeedParser {
             return Some(audio_link.href.clone());
         }
 
-        // Strategy 4: Check if GUID looks like an audio URL (some feeds use GUID as direct link)
+        // Strategy 5: Check if GUID looks like an audio URL (some feeds use GUID as direct link)
         if entry.id.starts_with("http") {
             let id_lower = entry.id.to_lowercase();
             let url_path = id_lower.split('?').next().unwrap_or(&id_lower);
@@ -345,7 +379,7 @@ impl FeedParser {
             }
         }
 
-        // Strategy 5: For feeds with only one link, assume it might be audio (last resort)
+        // Strategy 6: For feeds with only one link, assume it might be audio (last resort)
         if entry.links.len() == 1 && entry.links[0].href.starts_with("http") {
             let href = &entry.links[0].href.to_lowercase();
             // Only if it looks like it could be a media file

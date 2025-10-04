@@ -55,7 +55,7 @@ impl FeedParser {
     /// Create a new feed parser
     pub fn new() -> Self {
         let http_client = Client::builder()
-            .user_agent("podcast-tui/1.0.0-mvp (like FeedReader)")
+            .user_agent("Mozilla/5.0 (compatible; podcast-tui/1.0; +https://github.com/podcast-tui) AppleWebKit/537.36 (KHTML, like Gecko)")
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
             .redirect(reqwest::redirect::Policy::limited(10)) // Handle up to 10 redirects

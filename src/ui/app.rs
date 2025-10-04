@@ -1052,6 +1052,76 @@ impl UIApp {
         ]
     }
 
+    /// Update completion mode based on the current input context
+    fn update_completion_mode_for_input(&mut self, input: &str) {
+        let input_lower = input.to_lowercase();
+
+        // Check if we're typing a buffer-related command that needs buffer name completion
+        if input_lower.starts_with("switch-to-buffer ")
+            || input_lower.starts_with("switch-buffer ")
+            || input_lower.starts_with("buffer ")
+            || input_lower.starts_with("b ")
+            || input_lower.starts_with("close-buffer ")
+            || input_lower.starts_with("kill-buffer ")
+        {
+            // Get the command part and the buffer name part
+            let parts: Vec<&str> = input.split_whitespace().collect();
+            if parts.len() >= 1 {
+                let command_part = parts[0];
+
+                // Get available buffer names (just the names)
+                let buffer_names = self.buffer_manager.buffer_completion_names();
+                let mut buffer_completions = Vec::new();
+
+                // If there's already a space, we're completing buffer names
+                if input.contains(' ') {
+                    let buffer_search = if parts.len() > 1 {
+                        parts[1..].join(" ").to_lowercase()
+                    } else {
+                        String::new()
+                    };
+
+                    for name in &buffer_names {
+                        if buffer_search.is_empty()
+                            || name.to_lowercase().starts_with(&buffer_search)
+                        {
+                            buffer_completions.push(format!("{} {}", command_part, name));
+                        }
+                    }
+                } else {
+                    // Still typing the command, offer command completion + buffer suggestions
+                    buffer_completions.push(format!("{} ", command_part));
+                    for name in &buffer_names {
+                        buffer_completions.push(format!("{} {}", command_part, name));
+                    }
+                }
+
+                // Sort the completions
+                buffer_completions.sort();
+
+                // Update the minibuffer with buffer name completions
+                if !buffer_completions.is_empty() {
+                    // Update the completion candidates to be buffer names instead of all commands
+                    self.minibuffer
+                        .set_completion_candidates(buffer_completions.clone());
+
+                    // Convert to PromptWithCompletion mode if not already
+                    if let Some(current_input) = self.minibuffer.current_input() {
+                        let cursor_pos = current_input.len();
+                        self.minibuffer
+                            .set_content(MinibufferContent::PromptWithCompletion {
+                                prompt: "M-x ".to_string(),
+                                input: current_input,
+                                cursor_pos,
+                                completions: buffer_completions,
+                                completion_index: None,
+                            });
+                    }
+                }
+            }
+        }
+    }
+
     /// Get contextual command completions based on current input
     fn get_contextual_command_completions(&self, input: &str) -> Vec<String> {
         let input_lower = input.to_lowercase();
@@ -1680,6 +1750,9 @@ impl UIApp {
                     if let Some(current_input) = self.minibuffer.current_input() {
                         let commands = self.get_contextual_command_completions(&current_input);
                         self.minibuffer.set_completion_candidates(commands);
+
+                        // If this is a buffer-related command, update to buffer name completion mode
+                        self.update_completion_mode_for_input(&current_input);
                     }
                 }
 
@@ -1712,6 +1785,9 @@ impl UIApp {
                     if let Some(current_input) = self.minibuffer.current_input() {
                         let commands = self.get_contextual_command_completions(&current_input);
                         self.minibuffer.set_completion_candidates(commands);
+
+                        // If this is a buffer-related command, update to buffer name completion mode
+                        self.update_completion_mode_for_input(&current_input);
                     }
                 }
 

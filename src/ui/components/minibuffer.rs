@@ -433,10 +433,33 @@ impl Minibuffer {
                     // If input is empty, show all completions
                     completions.clone()
                 } else {
+                    // For buffer name completion, we need to handle partial command+buffer patterns
                     completions
                         .iter()
                         .filter(|completion| {
-                            completion.to_lowercase().starts_with(&input.to_lowercase())
+                            let completion_lower = completion.to_lowercase();
+                            let input_lower = input.to_lowercase();
+
+                            // Direct starts_with match
+                            if completion_lower.starts_with(&input_lower) {
+                                return true;
+                            }
+
+                            // For buffer commands, also check if the buffer name part matches
+                            if let Some(space_pos) = completion.rfind(' ') {
+                                let buffer_name = &completion[space_pos + 1..];
+                                if let Some(input_space_pos) = input.rfind(' ') {
+                                    let input_buffer_part = &input[input_space_pos + 1..];
+                                    if buffer_name
+                                        .to_lowercase()
+                                        .starts_with(&input_buffer_part.to_lowercase())
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+
+                            false
                         })
                         .cloned()
                         .collect()

@@ -385,13 +385,63 @@ impl UIApp {
                 Ok(true)
             }
             UIAction::DownloadEpisode => {
-                self.show_message("Download functionality not yet integrated into UI".to_string());
-                Ok(true)
+                // Pass to the current buffer to handle
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    let result_action = current_buffer.handle_action(action);
+                    // Handle the result action immediately (non-recursively)
+                    match result_action {
+                        UIAction::TriggerDownload { podcast_id, episode_id, episode_title } => {
+                            self.show_message(format!("Starting download: {}", episode_title));
+                            self.trigger_async_download(podcast_id, episode_id);
+                        }
+                        UIAction::ShowMessage(msg) => {
+                            self.show_message(msg);
+                        }
+                        _ => {}
+                    }
+                    Ok(true)
+                } else {
+                    self.show_message("No active buffer to handle download".to_string());
+                    Ok(true)
+                }
             }
             UIAction::DeleteDownloadedEpisode => {
-                self.show_message(
-                    "Delete download functionality not yet integrated into UI".to_string(),
-                );
+                // Pass to the current buffer to handle
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    let result_action = current_buffer.handle_action(action);
+                    // Handle the result action immediately (non-recursively)
+                    match result_action {
+                        UIAction::TriggerDeleteDownload { podcast_id, episode_id, episode_title } => {
+                            self.show_message(format!("Deleting download: {}", episode_title));
+                            self.trigger_async_delete_download(podcast_id, episode_id);
+                        }
+                        UIAction::ShowMessage(msg) => {
+                            self.show_message(msg);
+                        }
+                        _ => {}
+                    }
+                    Ok(true)
+                } else {
+                    self.show_message("No active buffer to handle delete".to_string());
+                    Ok(true)
+                }
+            }
+            UIAction::TriggerDownload {
+                podcast_id,
+                episode_id,
+                episode_title,
+            } => {
+                self.show_message(format!("Starting download: {}", episode_title));
+                self.trigger_async_download(podcast_id, episode_id);
+                Ok(true)
+            }
+            UIAction::TriggerDeleteDownload {
+                podcast_id,
+                episode_id,
+                episode_title,
+            } => {
+                self.show_message(format!("Deleting download: {}", episode_title));
+                self.trigger_async_delete_download(podcast_id, episode_id);
                 Ok(true)
             }
             // Buffer-specific actions
@@ -539,7 +589,10 @@ impl UIApp {
                 episodes,
             } => {
                 // Update the episode buffer with the loaded episodes
-                if let Some(episode_buffer) = self.buffer_manager.get_episode_list_buffer_mut(&podcast_name) {
+                if let Some(episode_buffer) = self
+                    .buffer_manager
+                    .get_episode_list_buffer_mut(&podcast_name)
+                {
                     episode_buffer.set_episodes(episodes.clone());
                     self.show_message(format!("Loaded {} episodes", episodes.len()));
                 } else {
@@ -551,6 +604,40 @@ impl UIApp {
                 error,
             } => {
                 self.show_error(format!("Failed to load episodes: {}", error));
+            }
+            AppEvent::EpisodeDownloaded {
+                podcast_id,
+                episode_id: _,
+            } => {
+                // Refresh the episode list to show updated status
+                self.refresh_episode_buffers(&podcast_id).await;
+                self.show_message("Episode download completed successfully".to_string());
+            }
+            AppEvent::EpisodeDownloadFailed {
+                podcast_id,
+                episode_id: _,
+                error,
+            } => {
+                // Refresh the episode list to show updated status
+                self.refresh_episode_buffers(&podcast_id).await;
+                self.show_error(format!("Episode download failed: {}", error));
+            }
+            AppEvent::EpisodeDownloadDeleted {
+                podcast_id,
+                episode_id: _,
+            } => {
+                // Refresh the episode list to show updated status
+                self.refresh_episode_buffers(&podcast_id).await;
+                self.show_message("Episode download deleted successfully".to_string());
+            }
+            AppEvent::EpisodeDownloadDeletionFailed {
+                podcast_id,
+                episode_id: _,
+                error,
+            } => {
+                // Refresh the episode list to show updated status
+                self.refresh_episode_buffers(&podcast_id).await;
+                self.show_error(format!("Failed to delete episode download: {}", error));
             }
         }
         Ok(())
@@ -751,6 +838,91 @@ impl UIApp {
                 }
             }
         });
+    }
+
+    /// Trigger async episode download
+    fn trigger_async_download(
+        &mut self,
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+    ) {
+        let download_manager = self.download_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let podcast_id_clone = podcast_id.clone();
+        let episode_id_clone = episode_id.clone();
+
+        tokio::spawn(async move {
+            match download_manager
+                .download_episode(&podcast_id, &episode_id)
+                .await
+            {
+                Ok(_) => {
+                    let _ = app_event_tx.send(AppEvent::EpisodeDownloaded {
+                        podcast_id: podcast_id_clone,
+                        episode_id: episode_id_clone,
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::EpisodeDownloadFailed {
+                        podcast_id: podcast_id_clone,
+                        episode_id: episode_id_clone,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    /// Trigger async episode download deletion
+    fn trigger_async_delete_download(
+        &mut self,
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+    ) {
+        let download_manager = self.download_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let podcast_id_clone = podcast_id.clone();
+        let episode_id_clone = episode_id.clone();
+
+        tokio::spawn(async move {
+            match download_manager
+                .delete_episode(&podcast_id, &episode_id)
+                .await
+            {
+                Ok(_) => {
+                    let _ = app_event_tx.send(AppEvent::EpisodeDownloadDeleted {
+                        podcast_id: podcast_id_clone,
+                        episode_id: episode_id_clone,
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::EpisodeDownloadDeletionFailed {
+                        podcast_id: podcast_id_clone,
+                        episode_id: episode_id_clone,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    /// Refresh episode buffers for a specific podcast
+    async fn refresh_episode_buffers(&mut self, podcast_id: &crate::storage::PodcastId) {
+        // Find any episode buffers that belong to this podcast and refresh them
+        let buffer_ids = self.buffer_manager.get_buffer_ids();
+        for buffer_id in buffer_ids {
+            if buffer_id.starts_with("episodes-") {
+                if let Some(episode_buffer) = self
+                    .buffer_manager
+                    .get_episode_list_buffer_mut_by_id(&buffer_id)
+                {
+                    // Check if this buffer belongs to the podcast
+                    if &episode_buffer.podcast_id == podcast_id {
+                        let _ = episode_buffer.load_episodes().await;
+                    }
+                }
+            }
+        }
     }
 
     /// Trigger async podcast deletion

@@ -96,6 +96,18 @@ pub enum UIAction {
     DownloadEpisode,
     /// Delete downloaded episode file
     DeleteDownloadedEpisode,
+    /// Trigger async download of specific episode
+    TriggerDownload {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        episode_title: String,
+    },
+    /// Trigger async deletion of downloaded episode
+    TriggerDeleteDownload {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        episode_title: String,
+    },
     /// Open episode list for a podcast
     OpenEpisodeList {
         podcast_name: String,

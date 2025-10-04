@@ -278,6 +278,21 @@ impl BufferManager {
         })
     }
 
+    /// Get mutable reference to episode list buffer by buffer ID
+    pub fn get_episode_list_buffer_mut_by_id(
+        &mut self,
+        buffer_id: &str,
+    ) -> Option<&mut crate::ui::buffers::episode_list::EpisodeListBuffer> {
+        let buffer_id = buffer_id.to_string();
+        self.get_buffer(&buffer_id).and_then(|buffer| {
+            // This is safe because we know episode buffer is always EpisodeListBuffer
+            let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
+            unsafe {
+                (raw_ptr as *mut crate::ui::buffers::episode_list::EpisodeListBuffer).as_mut()
+            }
+        })
+    }
+
     /// Create episode list buffer for a podcast
     pub fn create_episode_list_buffer(
         &mut self,
@@ -286,7 +301,7 @@ impl BufferManager {
         subscription_manager: Arc<SubscriptionManager<JsonStorage>>,
         download_manager: Arc<DownloadManager<JsonStorage>>,
     ) {
-        let mut episode_buffer = 
+        let mut episode_buffer =
             crate::ui::buffers::episode_list::EpisodeListBuffer::new(podcast_name, podcast_id);
         episode_buffer.set_managers(subscription_manager, download_manager);
         let _ = self.add_buffer(Box::new(episode_buffer));

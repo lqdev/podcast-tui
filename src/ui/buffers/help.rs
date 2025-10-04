@@ -86,6 +86,16 @@ impl HelpBuffer {
             "  r             Refresh selected podcast".to_string(),
             "  R             Refresh all podcasts".to_string(),
             "".to_string(),
+            "EPISODE MANAGEMENT (in episode list):".to_string(),
+            "  D             Download selected episode".to_string(),
+            "  X             Delete downloaded episode file".to_string(),
+            "  m             Mark episode as played".to_string(),
+            "  u             Mark episode as unplayed".to_string(),
+            "".to_string(),
+            "DOWNLOAD LOCATION:".to_string(),
+            "  Default: ~/Downloads/Podcasts/".to_string(),
+            "  Config:  ~/.config/podcast-tui/config.json".to_string(),
+            "".to_string(),
             "FUNCTION KEYS (Work everywhere):".to_string(),
             "  F1            Show help".to_string(),
             "  F2            Switch to podcast list".to_string(),
@@ -94,6 +104,7 @@ impl HelpBuffer {
             "  F10           Quit application".to_string(),
             "".to_string(),
             "Note: These keybindings work in VS Code and other environments.".to_string(),
+            "      Downloaded episodes are saved to ~/Downloads/Podcasts/ by default.".to_string(),
         ]
     }
 

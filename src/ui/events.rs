@@ -130,4 +130,30 @@ pub enum AppEvent {
         podcast_id: crate::storage::PodcastId,
         error: String,
     },
+
+    /// Episode download completed successfully
+    EpisodeDownloaded {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+    },
+
+    /// Episode download failed
+    EpisodeDownloadFailed {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        error: String,
+    },
+
+    /// Episode download deleted successfully
+    EpisodeDownloadDeleted {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+    },
+
+    /// Episode download deletion failed
+    EpisodeDownloadDeletionFailed {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        error: String,
+    },
 }

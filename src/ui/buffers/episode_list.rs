@@ -25,7 +25,7 @@ use std::sync::Arc;
 pub struct EpisodeListBuffer {
     id: String,
     podcast_name: String,
-    podcast_id: PodcastId,
+    pub podcast_id: PodcastId,
     episodes: Vec<Episode>,
     selected_index: Option<usize>,
     focused: bool,
@@ -230,9 +230,19 @@ impl UIComponent for EpisodeListBuffer {
                 }
             }
             UIAction::DownloadEpisode => {
-                if self.selected_episode().is_some() {
-                    // Trigger async download
-                    UIAction::ShowMessage("Download started...".to_string())
+                if let Some(episode) = self.selected_episode() {
+                    if episode.is_downloaded() {
+                        UIAction::ShowMessage("Episode already downloaded".to_string())
+                    } else if matches!(episode.status, crate::podcast::EpisodeStatus::Downloading) {
+                        UIAction::ShowMessage("Episode is already downloading".to_string())
+                    } else {
+                        // Return action to trigger async download
+                        UIAction::TriggerDownload {
+                            podcast_id: self.podcast_id.clone(),
+                            episode_id: episode.id.clone(),
+                            episode_title: episode.title.clone(),
+                        }
+                    }
                 } else {
                     UIAction::ShowMessage("No episode selected for download".to_string())
                 }
@@ -240,7 +250,11 @@ impl UIComponent for EpisodeListBuffer {
             UIAction::DeleteDownloadedEpisode => {
                 if let Some(episode) = self.selected_episode() {
                     if episode.is_downloaded() {
-                        UIAction::ShowMessage("Delete download started...".to_string())
+                        UIAction::TriggerDeleteDownload {
+                            podcast_id: self.podcast_id.clone(),
+                            episode_id: episode.id.clone(),
+                            episode_title: episode.title.clone(),
+                        }
                     } else {
                         UIAction::ShowMessage("Episode is not downloaded".to_string())
                     }

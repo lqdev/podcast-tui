@@ -95,8 +95,22 @@ impl<S: Storage> DownloadManager<S> {
             .await
             .map_err(|e| DownloadError::Storage(e.to_string()))?;
 
+        // Get the audio URL - if empty, try using the GUID as fallback
+        let audio_url = if episode.audio_url.is_empty() {
+            // Check if GUID looks like a URL and use it as fallback
+            episode.guid.as_ref()
+                .filter(|guid| guid.starts_with("http"))
+                .unwrap_or(&episode.audio_url)
+        } else {
+            &episode.audio_url
+        };
+
+        if audio_url.is_empty() {
+            return Err(DownloadError::InvalidPath("No audio URL found for episode".to_string()));
+        }
+
         // Download the file
-        match self.download_file(&episode.audio_url, &file_path).await {
+        match self.download_file(audio_url, &file_path).await {
             Ok(_) => {
                 episode.status = EpisodeStatus::Downloaded;
                 episode.local_path = Some(file_path);

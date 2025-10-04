@@ -223,6 +223,13 @@ impl UIApp {
             self.download_manager.storage().clone(),
         );
 
+        // Debug: Print all buffer names after creation
+        let buffer_names = self.buffer_manager.buffer_names();
+        eprintln!("DEBUG: Created {} buffers:", buffer_names.len());
+        for (id, name) in &buffer_names {
+            eprintln!("  - ID: '{}', Name: '{}'", id, name);
+        }
+
         // Set initial buffer
         if let Some(buffer_id) = self.buffer_manager.get_buffer_ids().first() {
             let _ = self.buffer_manager.switch_to_buffer(&buffer_id.clone());

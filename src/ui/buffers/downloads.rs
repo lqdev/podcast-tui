@@ -73,38 +73,21 @@ impl DownloadsBuffer {
         if let Some(ref storage) = self.storage {
             self.downloads.clear();
 
-            eprintln!("DEBUG: Starting downloads refresh...");
-
             // Load all podcasts and their episodes to find downloading/downloaded ones
             match storage.list_podcasts().await {
                 Ok(podcast_ids) => {
-                    eprintln!("DEBUG: Found {} podcasts", podcast_ids.len());
                     for podcast_id in podcast_ids {
                         // Load the podcast to get its name
                         if let Ok(podcast) = storage.load_podcast(&podcast_id).await {
                             match storage.load_episodes(&podcast_id).await {
                                 Ok(episodes) => {
-                                    eprintln!(
-                                        "DEBUG: Podcast '{}' has {} episodes",
-                                        podcast.title,
-                                        episodes.len()
-                                    );
                                     for episode in episodes {
-                                        eprintln!(
-                                            "DEBUG: Episode '{}' status: {:?}, local_path: {:?}",
-                                            episode.title, episode.status, episode.local_path
-                                        );
-
                                         if matches!(
                                             episode.status,
                                             crate::podcast::EpisodeStatus::Downloading
                                                 | crate::podcast::EpisodeStatus::Downloaded
                                                 | crate::podcast::EpisodeStatus::DownloadFailed
                                         ) {
-                                            eprintln!(
-                                                "DEBUG: Adding episode '{}' to downloads list",
-                                                episode.title
-                                            );
                                             let status = match episode.status {
                                                 crate::podcast::EpisodeStatus::Downloading => {
                                                     DownloadStatus::InProgress
@@ -140,11 +123,8 @@ impl DownloadsBuffer {
                                         }
                                     }
                                 }
-                                Err(e) => {
-                                    eprintln!(
-                                        "Failed to load episodes for {}: {}",
-                                        podcast.title, e
-                                    )
+                                Err(_e) => {
+                                    // Silently skip podcasts with loading errors
                                 }
                             }
                         }

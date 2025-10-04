@@ -218,9 +218,9 @@ impl<S: Storage> SubscriptionManager<S> {
                 Ok(new_episodes) => {
                     total_new_episodes += new_episodes.len();
                 }
-                Err(e) => {
+                Err(_e) => {
                     // Log error but continue with other podcasts
-                    eprintln!("Failed to refresh {}: {}", podcast.title, e);
+                    // TODO: Add proper error reporting mechanism
                 }
             }
         }

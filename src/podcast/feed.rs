@@ -148,7 +148,6 @@ impl FeedParser {
 
     /// Download feed content from URL
     async fn download_feed(&self, feed_url: &str) -> Result<String, FeedError> {
-        eprintln!("DEBUG: Downloading feed from: {}", feed_url);
 
         let response = self
             .http_client
@@ -161,36 +160,23 @@ impl FeedParser {
         let status = response.status();
         let final_url = response.url().clone();
 
-        eprintln!(
-            "DEBUG: Response status: {}, final URL: {}",
-            status, final_url
-        );
-
         if !status.is_success() {
-            eprintln!("DEBUG: HTTP error - status: {}", status);
             return Err(FeedError::Network(reqwest::Error::from(
                 response.error_for_status().unwrap_err(),
             )));
         }
 
-        // Check content type if available
+        // Check content type if available (validation only)
         if let Some(content_type) = response.headers().get("content-type") {
             if let Ok(ct_str) = content_type.to_str() {
-                eprintln!("DEBUG: Content-Type: {}", ct_str);
-
-                // Warn if content type doesn't look like XML/RSS
+                // Validate content type but don't log in production
                 if !ct_str.contains("xml") && !ct_str.contains("rss") && !ct_str.contains("atom") {
-                    eprintln!("DEBUG: Warning - unexpected content type: {}", ct_str);
+                    // Content type validation - could be added to error handling if needed
                 }
             }
         }
 
         let content = response.text().await.map_err(|e| FeedError::Network(e))?;
-        eprintln!("DEBUG: Downloaded {} bytes of content", content.len());
-
-        // Log first few lines of content for debugging
-        let preview: String = content.lines().take(5).collect::<Vec<_>>().join("\n");
-        eprintln!("DEBUG: Content preview:\n{}", preview);
 
         Ok(content)
     }
@@ -311,23 +297,6 @@ impl FeedParser {
 
     /// Extract audio URL from feed entry using multiple strategies
     fn extract_audio_url(&self, entry: &feed_rs::model::Entry) -> Option<String> {
-        // Debug: Print entry info
-        eprintln!(
-            "DEBUG: Entry '{}' has {} links",
-            entry
-                .title
-                .as_ref()
-                .map(|t| t.content.as_str())
-                .unwrap_or("No title"),
-            entry.links.len()
-        );
-
-        for (i, link) in entry.links.iter().enumerate() {
-            eprintln!(
-                "DEBUG: Link {}: href='{}', media_type='{:?}', rel='{:?}'",
-                i, link.href, link.media_type, link.rel
-            );
-        }
 
         // Strategy 1: Look for links with audio MIME types
         if let Some(audio_link) = entry.links.iter().find(|link| {
@@ -336,7 +305,6 @@ impl FeedParser {
                 .map(|mt| mt.starts_with("audio/") || mt == "application/octet-stream")
                 .unwrap_or(false)
         }) {
-            eprintln!("DEBUG: Found audio by MIME type: {}", audio_link.href);
             return Some(audio_link.href.clone());
         }
 
@@ -353,7 +321,6 @@ impl FeedParser {
                 || url_path.ends_with(".aac")
                 || url_path.ends_with(".flac")
         }) {
-            eprintln!("DEBUG: Found audio by extension: {}", audio_link.href);
             return Some(audio_link.href.clone());
         }
 
@@ -363,10 +330,6 @@ impl FeedParser {
             .iter()
             .find(|link| link.rel.as_ref().map_or(false, |rel| rel == "enclosure"))
         {
-            eprintln!(
-                "DEBUG: Found audio by enclosure rel: {}",
-                enclosure_link.href
-            );
             return Some(enclosure_link.href.clone());
         }
 
@@ -380,7 +343,6 @@ impl FeedParser {
                 || url_path.ends_with(".ogg")
                 || url_path.ends_with(".wav")
             {
-                eprintln!("DEBUG: Found audio in GUID: {}", entry.id);
                 return Some(entry.id.clone());
             }
         }
@@ -390,15 +352,10 @@ impl FeedParser {
             let href = &entry.links[0].href.to_lowercase();
             // Only if it looks like it could be a media file
             if href.contains("audio") || href.contains("media") || href.contains("episode") {
-                eprintln!(
-                    "DEBUG: Found audio by single link heuristic: {}",
-                    entry.links[0].href
-                );
                 return Some(entry.links[0].href.clone());
             }
         }
 
-        eprintln!("DEBUG: No audio URL found for entry");
         None
     }
 

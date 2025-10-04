@@ -923,9 +923,9 @@ impl UIApp {
                     let _ =
                         app_event_tx.send(AppEvent::AllPodcastsRefreshed { total_new_episodes });
                 }
-                Err(e) => {
+                Err(_e) => {
                     // For all refresh, we'll just show a general error
-                    eprintln!("Failed to refresh podcasts: {}", e);
+                    // TODO: Add proper error reporting mechanism for TUI
                 }
             }
         });
@@ -1299,11 +1299,11 @@ mod tests {
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
         let download_manager =
-            Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
+            Arc::new(DownloadManager::new(storage.clone(), temp_dir.path().to_path_buf()).unwrap());
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
         let mut app =
-            UIApp::new(config, subscription_manager, download_manager, app_event_tx).unwrap();
+            UIApp::new(config, subscription_manager, download_manager, storage, app_event_tx).unwrap();
 
         let result = app.handle_action(UIAction::Quit).await;
         assert!(result.is_ok());
@@ -1322,11 +1322,11 @@ mod tests {
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
         let download_manager =
-            Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
+            Arc::new(DownloadManager::new(storage.clone(), temp_dir.path().to_path_buf()).unwrap());
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
         let mut app =
-            UIApp::new(config, subscription_manager, download_manager, app_event_tx).unwrap();
+            UIApp::new(config, subscription_manager, download_manager, storage, app_event_tx).unwrap();
         app.initialize().await.unwrap();
 
         let result = app.handle_action(UIAction::ShowHelp).await;
@@ -1348,11 +1348,11 @@ mod tests {
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
         let download_manager =
-            Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
+            Arc::new(DownloadManager::new(storage.clone(), temp_dir.path().to_path_buf()).unwrap());
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
         let mut app =
-            UIApp::new(config, subscription_manager, download_manager, app_event_tx).unwrap();
+            UIApp::new(config, subscription_manager, download_manager, storage, app_event_tx).unwrap();
         app.initialize().await.unwrap();
 
         // Test quit command
@@ -1381,11 +1381,11 @@ mod tests {
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
         let download_manager =
-            Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
+            Arc::new(DownloadManager::new(storage.clone(), temp_dir.path().to_path_buf()).unwrap());
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
         let mut app =
-            UIApp::new(config, subscription_manager, download_manager, app_event_tx).unwrap();
+            UIApp::new(config, subscription_manager, download_manager, storage, app_event_tx).unwrap();
 
         let result = app.set_theme_direct("light");
         assert!(result.is_ok());

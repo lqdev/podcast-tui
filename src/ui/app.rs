@@ -50,6 +50,9 @@ pub struct UIApp {
     /// Download manager
     download_manager: Arc<DownloadManager<JsonStorage>>,
 
+    /// Storage
+    storage: Arc<JsonStorage>,
+
     /// Buffer manager
     buffer_manager: BufferManager,
 
@@ -87,6 +90,7 @@ impl UIApp {
         config: Config,
         subscription_manager: Arc<SubscriptionManager<JsonStorage>>,
         download_manager: Arc<DownloadManager<JsonStorage>>,
+        storage: Arc<JsonStorage>,
         app_event_tx: mpsc::UnboundedSender<AppEvent>,
     ) -> UIResult<Self> {
         let theme = Theme::from_name(&config.ui.theme)?;
@@ -103,6 +107,7 @@ impl UIApp {
             theme,
             subscription_manager,
             download_manager,
+            storage,
             buffer_manager,
             status_bar,
             minibuffer,
@@ -1167,7 +1172,13 @@ mod tests {
             Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
-        let app = UIApp::new(config, subscription_manager, download_manager, app_event_tx);
+        let app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager.clone(),
+            storage.clone(),
+            app_event_tx,
+        );
         assert!(app.is_ok());
 
         let app = app.unwrap();

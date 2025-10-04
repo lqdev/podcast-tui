@@ -50,6 +50,7 @@ impl App {
             config.clone(),
             subscription_manager.clone(),
             download_manager.clone(),
+            storage.clone(),
             app_event_tx,
         )
         .map_err(|e| anyhow::anyhow!("Failed to initialize UI: {e}"))?;
@@ -73,6 +74,7 @@ impl App {
             self.config.clone(),
             self.subscription_manager.clone(),
             self.download_manager.clone(),
+            self.storage.clone(),
             app_event_tx,
         )
         .map_err(|e| anyhow::anyhow!("Failed to initialize UI: {e}"))?;

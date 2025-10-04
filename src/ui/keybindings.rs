@@ -137,6 +137,12 @@ impl KeyHandler {
             KeyChord::ctrl(KeyCode::Char('l')),
             UIAction::ExecuteCommand("list-buffers".to_string()),
         );
+
+        // Close current buffer
+        self.bind_key(
+            KeyChord::ctrl(KeyCode::Char('k')),
+            UIAction::CloseCurrentBuffer,
+        );
     }
 
     /// Bind a key chord to an action

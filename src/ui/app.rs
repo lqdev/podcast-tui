@@ -332,6 +332,29 @@ impl UIApp {
                 self.minibuffer.clear();
                 Ok(true)
             }
+            UIAction::TabComplete => {
+                // Tab completion is handled by the minibuffer directly
+                // This action is triggered by Tab key in minibuffer input mode
+                Ok(true)
+            }
+            UIAction::CloseCurrentBuffer => {
+                if let Some(current_id) = self.buffer_manager.current_buffer_id() {
+                    match self.buffer_manager.remove_buffer(&current_id) {
+                        Ok(_) => {
+                            self.update_status_bar();
+                            self.show_message(format!("Closed buffer: {}", current_id));
+                            Ok(true)
+                        }
+                        Err(e) => {
+                            self.show_error(format!("Cannot close buffer: {}", e));
+                            Ok(true)
+                        }
+                    }
+                } else {
+                    self.show_error("No buffer to close".to_string());
+                    Ok(true)
+                }
+            }
             UIAction::ShowMinibuffer(prompt) => {
                 // If the prompt ends with a space, it's a key sequence indicator, not an input prompt
                 if prompt.trim_end().ends_with("C-x")
@@ -805,6 +828,30 @@ impl UIApp {
                 self.show_buffer_list();
                 Ok(true)
             }
+            "close-buffer" | "kill-buffer" => {
+                if parts.len() > 1 {
+                    let buffer_name = parts[1].to_string();
+                    self.close_buffer_by_name(buffer_name)
+                } else {
+                    // Close current buffer
+                    if let Some(current_id) = self.buffer_manager.current_buffer_id() {
+                        match self.buffer_manager.remove_buffer(&current_id) {
+                            Ok(_) => {
+                                self.update_status_bar();
+                                self.show_message(format!("Closed buffer: {}", current_id));
+                                Ok(true)
+                            }
+                            Err(e) => {
+                                self.show_error(format!("Cannot close buffer: {}", e));
+                                Ok(true)
+                            }
+                        }
+                    } else {
+                        self.show_error("No buffer to close".to_string());
+                        Ok(true)
+                    }
+                }
+            }
             "add-podcast" => {
                 if parts.len() > 1 {
                     let url = parts[1].to_string();
@@ -857,27 +904,26 @@ impl UIApp {
 
     /// Show list of available buffers
     fn show_buffer_list(&mut self) {
+        use crate::ui::buffers::buffer_list::BufferListBuffer;
+
         let buffer_names = self.buffer_manager.buffer_names();
         let current_id = self.buffer_manager.current_buffer_id();
 
-        let mut message = "Available buffers:\n".to_string();
-        for (id, name) in buffer_names {
-            let marker = if Some(&id) == current_id.as_ref() {
-                "*"
-            } else {
-                " "
-            };
-            // Show both ID and display name
-            if id != name {
-                message.push_str(&format!("{} {} ({})", marker, name, id));
-            } else {
-                message.push_str(&format!("{} {}", marker, name));
-            }
-            message.push('\n');
-        }
-        message.push_str("\nUse: buffer <name> or switch-to-buffer <name>");
+        // Remove existing buffer list if it exists
+        let buffer_list_id = "*Buffer List*".to_string();
+        let _ = self.buffer_manager.remove_buffer(&buffer_list_id);
 
-        self.show_message(message);
+        // Create new buffer list buffer
+        let mut buffer_list_buffer = BufferListBuffer::new();
+        buffer_list_buffer.set_theme(self.theme.clone());
+        buffer_list_buffer.update_buffer_list(buffer_names, current_id.as_ref());
+
+        // Add and switch to buffer list buffer
+        if let Ok(_) = self.buffer_manager.add_buffer(Box::new(buffer_list_buffer)) {
+            let _ = self.buffer_manager.switch_to_buffer(&buffer_list_id);
+        }
+        
+        self.update_status_bar();
     }
 
     /// Switch to buffer by name with smart matching
@@ -948,17 +994,104 @@ impl UIApp {
     /// Prompt for buffer switch with completion hints
     fn prompt_buffer_switch(&mut self) {
         let buffer_names = self.buffer_manager.buffer_names();
-        let mut prompt = "Switch to buffer: ".to_string();
+        
+        // Create completion candidates from buffer names
+        let completions: Vec<String> = buffer_names
+            .iter()
+            .map(|(id, name)| {
+                // Prefer display name, but include ID as fallback
+                if id != name {
+                    name.clone()
+                } else {
+                    id.clone()
+                }
+            })
+            .collect();
 
-        // Add some hints
-        if !buffer_names.is_empty() {
-            prompt.push_str("(Tab for list) ");
+        let prompt = "Switch to buffer: ".to_string();
+        self.minibuffer.show_prompt_with_completion(prompt, completions);
+    }
+
+    /// Close buffer by name with smart matching
+    fn close_buffer_by_name(&mut self, buffer_name: String) -> UIResult<bool> {
+        let buffer_names = self.buffer_manager.buffer_names();
+
+        // Try exact match first (by ID)
+        if buffer_names.iter().any(|(id, _)| id == &buffer_name) {
+            match self.buffer_manager.remove_buffer(&buffer_name) {
+                Ok(_) => {
+                    self.update_status_bar();
+                    self.show_message(format!("Closed buffer: {}", buffer_name));
+                    return Ok(true);
+                }
+                Err(e) => {
+                    self.show_error(format!("Cannot close buffer: {}", e));
+                    return Ok(true);
+                }
+            }
         }
 
-        self.minibuffer.set_content(MinibufferContent::Input {
-            prompt,
-            input: String::new(),
-        });
+        // Try exact match by display name
+        if let Some((id, _)) = buffer_names
+            .iter()
+            .find(|(_, name)| name == &buffer_name)
+        {
+            match self.buffer_manager.remove_buffer(id) {
+                Ok(_) => {
+                    self.update_status_bar();
+                    self.show_message(format!("Closed buffer: {}", buffer_name));
+                    return Ok(true);
+                }
+                Err(e) => {
+                    self.show_error(format!("Cannot close buffer: {}", e));
+                    return Ok(true);
+                }
+            }
+        }
+
+        // Try partial match (case insensitive)
+        let lower_search = buffer_name.to_lowercase();
+        let matches: Vec<_> = buffer_names
+            .iter()
+            .filter(|(id, name)| {
+                id.to_lowercase().contains(&lower_search)
+                    || name.to_lowercase().contains(&lower_search)
+            })
+            .collect();
+
+        match matches.len() {
+            0 => {
+                self.show_error(format!("No buffer found matching: {}", buffer_name));
+                Ok(true)
+            }
+            1 => {
+                let (id, _) = matches[0];
+                match self.buffer_manager.remove_buffer(id) {
+                    Ok(_) => {
+                        self.update_status_bar();
+                        self.show_message(format!("Closed buffer: {}", buffer_name));
+                        Ok(true)
+                    }
+                    Err(e) => {
+                        self.show_error(format!("Cannot close buffer: {}", e));
+                        Ok(true)
+                    }
+                }
+            }
+            _ => {
+                let mut msg = format!("Multiple buffers match '{}':\n", buffer_name);
+                for (id, name) in matches {
+                    if id != name {
+                        msg.push_str(&format!("  {} ({})\n", name, id));
+                    } else {
+                        msg.push_str(&format!("  {}\n", name));
+                    }
+                }
+                msg.push_str("\nSpecify the exact buffer name to close.");
+                self.show_message(msg);
+                Ok(true)
+            }
+        }
     }
 
     /// Show a message in the minibuffer
@@ -1320,6 +1453,11 @@ impl UIApp {
                 if let Some(input) = self.minibuffer.submit() {
                     self.handle_minibuffer_input(input);
                 }
+                Ok(true)
+            }
+            // Tab completion
+            (KeyCode::Tab, _) => {
+                self.minibuffer.tab_complete();
                 Ok(true)
             }
             // Cancel on Ctrl+G or Escape

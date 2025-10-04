@@ -3,6 +3,7 @@
 // This module implements the core buffer system that mimics Emacs buffers,
 // where each buffer represents different content (podcast list, episode list, etc.)
 
+pub mod buffer_list;
 pub mod downloads;
 pub mod episode_list;
 pub mod help;

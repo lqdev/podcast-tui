@@ -33,6 +33,15 @@ pub enum MinibufferContent {
         cursor_pos: usize,
     },
 
+    /// Show a prompt with completion support
+    PromptWithCompletion {
+        prompt: String,
+        input: String,
+        cursor_pos: usize,
+        completions: Vec<String>,
+        completion_index: Option<usize>,
+    },
+
     /// Show command input (M-x)
     Command { input: String, cursor_pos: usize },
 
@@ -53,6 +62,10 @@ pub struct Minibuffer {
     focused: bool,
     history: Vec<String>,
     history_index: Option<usize>,
+    /// Current completion candidates
+    completion_candidates: Vec<String>,
+    /// Current completion prefix
+    completion_prefix: String,
 }
 
 impl Minibuffer {
@@ -64,6 +77,8 @@ impl Minibuffer {
             focused: false,
             history: Vec::new(),
             history_index: None,
+            completion_candidates: Vec::new(),
+            completion_prefix: String::new(),
         }
     }
 
@@ -137,6 +152,7 @@ impl Minibuffer {
             self.content,
             MinibufferContent::Input { .. }
                 | MinibufferContent::Prompt { .. }
+                | MinibufferContent::PromptWithCompletion { .. }
                 | MinibufferContent::Command { .. }
         )
     }
@@ -152,6 +168,16 @@ impl Minibuffer {
             } => {
                 input.insert(*cursor_pos, ch);
                 *cursor_pos += 1;
+            }
+            MinibufferContent::PromptWithCompletion {
+                input,
+                cursor_pos,
+                completion_index,
+                ..
+            } => {
+                input.insert(*cursor_pos, ch);
+                *cursor_pos += 1;
+                *completion_index = None; // Reset completion when typing
             }
             MinibufferContent::Command { input, cursor_pos } => {
                 input.insert(*cursor_pos, ch);
@@ -175,6 +201,18 @@ impl Minibuffer {
                     input.remove(*cursor_pos);
                 }
             }
+            MinibufferContent::PromptWithCompletion {
+                input,
+                cursor_pos,
+                completion_index,
+                ..
+            } => {
+                if *cursor_pos > 0 {
+                    *cursor_pos -= 1;
+                    input.remove(*cursor_pos);
+                    *completion_index = None; // Reset completion when editing
+                }
+            }
             MinibufferContent::Command { input, cursor_pos } => {
                 if *cursor_pos > 0 {
                     *cursor_pos -= 1;
@@ -189,6 +227,11 @@ impl Minibuffer {
     pub fn cursor_left(&mut self) {
         match &mut self.content {
             MinibufferContent::Prompt { cursor_pos, .. } => {
+                if *cursor_pos > 0 {
+                    *cursor_pos -= 1;
+                }
+            }
+            MinibufferContent::PromptWithCompletion { cursor_pos, .. } => {
                 if *cursor_pos > 0 {
                     *cursor_pos -= 1;
                 }
@@ -212,6 +255,13 @@ impl Minibuffer {
                     *cursor_pos += 1;
                 }
             }
+            MinibufferContent::PromptWithCompletion {
+                input, cursor_pos, ..
+            } => {
+                if *cursor_pos < input.len() {
+                    *cursor_pos += 1;
+                }
+            }
             MinibufferContent::Command { input, cursor_pos } => {
                 if *cursor_pos < input.len() {
                     *cursor_pos += 1;
@@ -226,6 +276,7 @@ impl Minibuffer {
         match &self.content {
             MinibufferContent::Input { input, .. } => Some(input.clone()),
             MinibufferContent::Prompt { input, .. } => Some(input.clone()),
+            MinibufferContent::PromptWithCompletion { input, .. } => Some(input.clone()),
             MinibufferContent::Command { input, .. } => Some(input.clone()),
             _ => None,
         }
@@ -274,6 +325,16 @@ impl Minibuffer {
                     *input = history_item;
                     *cursor_pos = input.len();
                 }
+                MinibufferContent::PromptWithCompletion {
+                    input,
+                    cursor_pos,
+                    completion_index,
+                    ..
+                } => {
+                    *input = history_item;
+                    *cursor_pos = input.len();
+                    *completion_index = None;
+                }
                 MinibufferContent::Command { input, cursor_pos } => {
                     *input = history_item;
                     *cursor_pos = input.len();
@@ -297,6 +358,16 @@ impl Minibuffer {
                         *input = history_item;
                         *cursor_pos = input.len();
                     }
+                    MinibufferContent::PromptWithCompletion {
+                        input,
+                        cursor_pos,
+                        completion_index,
+                        ..
+                    } => {
+                        *input = history_item;
+                        *cursor_pos = input.len();
+                        *completion_index = None;
+                    }
                     MinibufferContent::Command { input, cursor_pos } => {
                         *input = history_item;
                         *cursor_pos = input.len();
@@ -313,6 +384,16 @@ impl Minibuffer {
                         input.clear();
                         *cursor_pos = 0;
                     }
+                    MinibufferContent::PromptWithCompletion {
+                        input,
+                        cursor_pos,
+                        completion_index,
+                        ..
+                    } => {
+                        input.clear();
+                        *cursor_pos = 0;
+                        *completion_index = None;
+                    }
                     MinibufferContent::Command { input, cursor_pos } => {
                         input.clear();
                         *cursor_pos = 0;
@@ -321,6 +402,106 @@ impl Minibuffer {
                 }
             }
         }
+    }
+
+    /// Show a prompt with completion support
+    pub fn show_prompt_with_completion(&mut self, prompt: String, completions: Vec<String>) {
+        self.completion_candidates = completions.clone();
+        self.completion_prefix = String::new();
+        self.content = MinibufferContent::PromptWithCompletion {
+            prompt,
+            input: String::new(),
+            cursor_pos: 0,
+            completions,
+            completion_index: None,
+        };
+        self.focused = true;
+    }
+
+    /// Handle tab completion
+    pub fn tab_complete(&mut self) {
+        match &mut self.content {
+            MinibufferContent::PromptWithCompletion {
+                input,
+                completions,
+                completion_index,
+                cursor_pos,
+                ..
+            } => {
+                // Filter completions based on current input
+                let filtered: Vec<String> = completions
+                    .iter()
+                    .filter(|completion| {
+                        completion.to_lowercase().starts_with(&input.to_lowercase())
+                    })
+                    .cloned()
+                    .collect();
+
+                if filtered.is_empty() {
+                    return;
+                }
+
+                match completion_index {
+                    None => {
+                        // Start completion with first match
+                        *completion_index = Some(0);
+                        if !filtered.is_empty() {
+                            *input = filtered[0].clone();
+                            *cursor_pos = input.len();
+                        }
+                    }
+                    Some(current_index) => {
+                        // Cycle to next completion
+                        let next_index = (*current_index + 1) % filtered.len();
+                        *completion_index = Some(next_index);
+                        *input = filtered[next_index].clone();
+                        *cursor_pos = input.len();
+                    }
+                }
+            }
+            _ => {
+                // For other prompt types, try to complete from candidates
+                if let Some(current_input) = self.current_input() {
+                    let matches: Vec<String> = self
+                        .completion_candidates
+                        .iter()
+                        .filter(|candidate| {
+                            candidate
+                                .to_lowercase()
+                                .starts_with(&current_input.to_lowercase())
+                        })
+                        .cloned()
+                        .collect();
+
+                    if let Some(first_match) = matches.first() {
+                        // Replace current input with first match
+                        match &mut self.content {
+                            MinibufferContent::Prompt {
+                                input, cursor_pos, ..
+                            } => {
+                                *input = first_match.clone();
+                                *cursor_pos = input.len();
+                            }
+                            MinibufferContent::Command { input, cursor_pos } => {
+                                *input = first_match.clone();
+                                *cursor_pos = input.len();
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Set completion candidates
+    pub fn set_completion_candidates(&mut self, candidates: Vec<String>) {
+        self.completion_candidates = candidates;
+    }
+
+    /// Get current completion candidates  
+    pub fn get_completion_candidates(&self) -> &[String] {
+        &self.completion_candidates
     }
 
     /// Set the theme
@@ -350,6 +531,35 @@ impl Minibuffer {
                     // Simple cursor representation
                     if *cursor_pos == input.len() {
                         text.push('█');
+                    }
+                }
+                text
+            }
+            MinibufferContent::PromptWithCompletion {
+                prompt,
+                input,
+                cursor_pos,
+                completions,
+                completion_index,
+            } => {
+                let mut text = format!("{prompt}{input}");
+                if self.focused && *cursor_pos <= input.len() {
+                    // Simple cursor representation
+                    if *cursor_pos == input.len() {
+                        text.push('█');
+                    }
+                }
+
+                // Add completion hint if available
+                if let Some(index) = completion_index {
+                    if let Some(completion) = completions.get(*index) {
+                        // Show the remaining part of the completion
+                        if completion.starts_with(input) {
+                            let suffix = &completion[input.len()..];
+                            text.push_str(&format!(" [{}]", suffix));
+                        } else {
+                            text.push_str(&format!(" [{}]", completion));
+                        }
                     }
                 }
                 text
@@ -402,6 +612,10 @@ impl UIComponent for Minibuffer {
                 for ch in text.chars() {
                     self.add_char(ch);
                 }
+                UIAction::Render
+            }
+            UIAction::TabComplete => {
+                self.tab_complete();
                 UIAction::Render
             }
             _ => UIAction::None,

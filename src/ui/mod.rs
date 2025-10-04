@@ -87,6 +87,8 @@ pub enum UIAction {
     MinibufferInput(String),
     PromptInput(String),
     SubmitInput(String),
+    TabComplete,
+    CloseCurrentBuffer,
 
     // Podcast management actions
     AddPodcast,

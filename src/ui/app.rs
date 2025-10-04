@@ -209,14 +209,23 @@ impl UIApp {
 
     /// Initialize the UI application
     async fn initialize(&mut self) -> UIResult<()> {
+        // Clean up any stuck downloads on startup
+        if let Err(e) = self.download_manager.cleanup_stuck_downloads().await {
+            self.show_error(format!("Failed to cleanup stuck downloads: {}", e));
+        }
+
         // Create initial buffers
         self.buffer_manager.create_help_buffer();
         self.buffer_manager
             .create_podcast_list_buffer(self.subscription_manager.clone());
+        self.buffer_manager.create_downloads_buffer(
+            self.download_manager.clone(),
+            self.download_manager.storage().clone(),
+        );
 
         // Set initial buffer
         if let Some(buffer_id) = self.buffer_manager.get_buffer_ids().first() {
-            self.buffer_manager.switch_to_buffer(&buffer_id.clone());
+            let _ = self.buffer_manager.switch_to_buffer(&buffer_id.clone());
         }
 
         // Load initial podcast data
@@ -457,6 +466,11 @@ impl UIApp {
                 self.trigger_async_delete_download(podcast_id, episode_id);
                 Ok(true)
             }
+            UIAction::TriggerRefreshDownloads => {
+                self.show_message("Refreshing downloads...".to_string());
+                self.trigger_async_refresh_downloads();
+                Ok(true)
+            }
             // Buffer-specific actions
             action => {
                 if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
@@ -651,6 +665,11 @@ impl UIApp {
                 // Refresh the episode list to show updated status
                 self.refresh_episode_buffers(&podcast_id).await;
                 self.show_error(format!("Failed to delete episode download: {}", error));
+            }
+            AppEvent::DownloadsRefreshed => {
+                // Refresh the downloads buffer
+                self.refresh_downloads_buffer().await;
+                self.show_message("Downloads refreshed".to_string());
             }
         }
         Ok(())
@@ -919,6 +938,16 @@ impl UIApp {
         });
     }
 
+    /// Trigger async downloads refresh
+    fn trigger_async_refresh_downloads(&mut self) {
+        let app_event_tx = self.app_event_tx.clone();
+        
+        tokio::spawn(async move {
+            // Send a custom event to trigger refresh on the UI thread
+            let _ = app_event_tx.send(AppEvent::DownloadsRefreshed);
+        });
+    }
+
     /// Refresh episode buffers for a specific podcast
     async fn refresh_episode_buffers(&mut self, podcast_id: &crate::storage::PodcastId) {
         // Find any episode buffers that belong to this podcast and refresh them
@@ -934,6 +963,20 @@ impl UIApp {
                         let _ = episode_buffer.load_episodes().await;
                     }
                 }
+            }
+        }
+    }
+
+    /// Refresh downloads buffer
+    async fn refresh_downloads_buffer(&mut self) {
+        // Find the downloads buffer and refresh it
+        let buffer_ids = self.buffer_manager.get_buffer_ids();
+        for buffer_id in buffer_ids {
+            if buffer_id == "downloads" {
+                if let Some(downloads_buffer) = self.buffer_manager.get_downloads_buffer_mut() {
+                    let _ = downloads_buffer.refresh_downloads().await;
+                }
+                break;
             }
         }
     }

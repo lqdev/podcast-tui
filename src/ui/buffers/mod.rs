@@ -3,6 +3,7 @@
 // This module implements the core buffer system that mimics Emacs buffers,
 // where each buffer represents different content (podcast list, episode list, etc.)
 
+pub mod downloads;
 pub mod episode_list;
 pub mod help;
 pub mod podcast_list;
@@ -249,6 +250,17 @@ impl BufferManager {
         let _ = self.add_buffer(Box::new(podcast_buffer));
     }
 
+    /// Create downloads buffer
+    pub fn create_downloads_buffer(
+        &mut self,
+        download_manager: Arc<DownloadManager<JsonStorage>>,
+        storage: Arc<JsonStorage>,
+    ) {
+        let mut downloads_buffer = crate::ui::buffers::downloads::DownloadsBuffer::new();
+        downloads_buffer.set_managers(download_manager, storage);
+        let _ = self.add_buffer(Box::new(downloads_buffer));
+    }
+
     /// Get mutable reference to podcast list buffer
     pub fn get_podcast_list_buffer_mut(
         &mut self,
@@ -289,6 +301,20 @@ impl BufferManager {
             let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
             unsafe {
                 (raw_ptr as *mut crate::ui::buffers::episode_list::EpisodeListBuffer).as_mut()
+            }
+        })
+    }
+
+    /// Get mutable reference to downloads buffer
+    pub fn get_downloads_buffer_mut(
+        &mut self,
+    ) -> Option<&mut crate::ui::buffers::downloads::DownloadsBuffer> {
+        let buffer_id = "downloads".to_string();
+        self.get_buffer(&buffer_id).and_then(|buffer| {
+            // This is safe because we know downloads buffer is always DownloadsBuffer
+            let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
+            unsafe {
+                (raw_ptr as *mut crate::ui::buffers::downloads::DownloadsBuffer).as_mut()
             }
         })
     }

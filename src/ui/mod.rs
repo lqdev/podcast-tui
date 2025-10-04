@@ -113,6 +113,8 @@ pub enum UIAction {
         podcast_name: String,
         podcast_id: crate::storage::PodcastId,
     },
+    /// Trigger async downloads refresh
+    TriggerRefreshDownloads,
     RefreshPodcast,
     RefreshAll,
 

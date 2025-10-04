@@ -81,6 +81,10 @@ impl KeyHandler {
             KeyChord::none(KeyCode::F(3)),
             UIAction::SwitchBuffer("*Help*".to_string()),
         );
+        self.bind_key(
+            KeyChord::none(KeyCode::F(4)),
+            UIAction::SwitchBuffer("downloads".to_string()),
+        );
         self.bind_key(KeyChord::none(KeyCode::F(5)), UIAction::Refresh);
         self.bind_key(KeyChord::none(KeyCode::F(10)), UIAction::Quit);
 

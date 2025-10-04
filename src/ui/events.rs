@@ -156,4 +156,7 @@ pub enum AppEvent {
         episode_id: crate::storage::EpisodeId,
         error: String,
     },
+
+    /// Downloads buffer refreshed
+    DownloadsRefreshed,
 }

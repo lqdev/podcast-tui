@@ -56,7 +56,52 @@ impl<S: Storage> DownloadManager<S> {
         })
     }
 
-    /// Download an episode (simple implementation)
+    /// Get a reference to the storage
+    pub fn storage(&self) -> &Arc<S> {
+        &self.storage
+    }
+
+    /// Clean up stuck downloads on startup - resets episodes stuck in "Downloading" status
+    /// when there's no actual download happening
+    pub async fn cleanup_stuck_downloads(&self) -> Result<(), DownloadError> {
+        // Load all podcast IDs
+        let podcast_ids = self.storage
+            .list_podcasts()
+            .await
+            .map_err(|e| DownloadError::Storage(e.to_string()))?;
+
+        for podcast_id in podcast_ids {
+            // Load episodes for this podcast
+            let episodes = self.storage
+                .load_episodes(&podcast_id)
+                .await
+                .map_err(|e| DownloadError::Storage(e.to_string()))?;
+
+            for mut episode in episodes {
+                // Reset stuck "Downloading" episodes back to "New" status
+                if matches!(episode.status, EpisodeStatus::Downloading) {
+                    // Check if the file actually exists and is complete
+                    let should_reset = if let Some(ref local_path) = episode.local_path {
+                        !local_path.exists()
+                    } else {
+                        true // No local path means definitely not downloaded
+                    };
+
+                    if should_reset {
+                        episode.status = EpisodeStatus::New;
+                        episode.local_path = None;
+                        
+                        self.storage
+                            .save_episode(&podcast_id, &episode)
+                            .await
+                            .map_err(|e| DownloadError::Storage(e.to_string()))?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }    /// Download an episode (simple implementation)
     pub async fn download_episode(
         &self,
         podcast_id: &PodcastId,

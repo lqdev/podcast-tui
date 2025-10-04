@@ -429,13 +429,18 @@ impl Minibuffer {
                 ..
             } => {
                 // Filter completions based on current input
-                let filtered: Vec<String> = completions
-                    .iter()
-                    .filter(|completion| {
-                        completion.to_lowercase().starts_with(&input.to_lowercase())
-                    })
-                    .cloned()
-                    .collect();
+                let filtered: Vec<String> = if input.is_empty() {
+                    // If input is empty, show all completions
+                    completions.clone()
+                } else {
+                    completions
+                        .iter()
+                        .filter(|completion| {
+                            completion.to_lowercase().starts_with(&input.to_lowercase())
+                        })
+                        .cloned()
+                        .collect()
+                };
 
                 if filtered.is_empty() {
                     return;
@@ -445,10 +450,8 @@ impl Minibuffer {
                     None => {
                         // Start completion with first match
                         *completion_index = Some(0);
-                        if !filtered.is_empty() {
-                            *input = filtered[0].clone();
-                            *cursor_pos = input.len();
-                        }
+                        *input = filtered[0].clone();
+                        *cursor_pos = input.len();
                     }
                     Some(current_index) => {
                         // Cycle to next completion
@@ -485,6 +488,9 @@ impl Minibuffer {
                             MinibufferContent::Command { input, cursor_pos } => {
                                 *input = first_match.clone();
                                 *cursor_pos = input.len();
+                            }
+                            MinibufferContent::Input { input, .. } => {
+                                *input = first_match.clone();
                             }
                             _ => {}
                         }

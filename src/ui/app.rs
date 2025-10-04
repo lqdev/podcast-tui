@@ -601,6 +601,9 @@ impl UIApp {
                             let _ = self.buffer_manager.switch_to_buffer(&episode_buffer_id);
                             self.update_status_bar();
 
+                            // Refresh any open buffer list buffers
+                            self.refresh_buffer_list_if_open();
+
                             // Trigger async loading of episodes
                             self.trigger_async_load_episodes(podcast_id, podcast_name.clone());
 
@@ -922,7 +925,7 @@ impl UIApp {
         if let Ok(_) = self.buffer_manager.add_buffer(Box::new(buffer_list_buffer)) {
             let _ = self.buffer_manager.switch_to_buffer(&buffer_list_id);
         }
-        
+
         self.update_status_bar();
     }
 
@@ -994,7 +997,7 @@ impl UIApp {
     /// Prompt for buffer switch with completion hints
     fn prompt_buffer_switch(&mut self) {
         let buffer_names = self.buffer_manager.buffer_names();
-        
+
         // Create completion candidates from buffer names
         let completions: Vec<String> = buffer_names
             .iter()
@@ -1009,7 +1012,8 @@ impl UIApp {
             .collect();
 
         let prompt = "Switch to buffer: ".to_string();
-        self.minibuffer.show_prompt_with_completion(prompt, completions);
+        self.minibuffer
+            .show_prompt_with_completion(prompt, completions);
     }
 
     /// Close buffer by name with smart matching
@@ -1032,10 +1036,7 @@ impl UIApp {
         }
 
         // Try exact match by display name
-        if let Some((id, _)) = buffer_names
-            .iter()
-            .find(|(_, name)| name == &buffer_name)
-        {
+        if let Some((id, _)) = buffer_names.iter().find(|(_, name)| name == &buffer_name) {
             match self.buffer_manager.remove_buffer(id) {
                 Ok(_) => {
                     self.update_status_bar();
@@ -1317,6 +1318,37 @@ impl UIApp {
                 }
                 break;
             }
+        }
+    }
+
+    /// Refresh all buffer list buffers when buffers change
+    fn refresh_buffer_lists(&mut self) {
+        let buffer_names = self.buffer_manager.buffer_names();
+        let current_buffer = self.buffer_manager.current_buffer_id();
+
+        // Find and update any buffer list buffers
+        let buffer_ids = self.buffer_manager.get_buffer_ids();
+        for buffer_id in buffer_ids {
+            if buffer_id == "*Buffer List*" {
+                if let Some(buffer) = self.buffer_manager.get_buffer(&buffer_id) {
+                    // We need to downcast to update the buffer list
+                    // For now, we'll handle this by recreating the buffer when needed
+                }
+                break;
+            }
+        }
+    }
+
+    /// Refresh buffer list if one is currently open
+    fn refresh_buffer_list_if_open(&mut self) {
+        let buffer_list_id = "*Buffer List*".to_string();
+        if self
+            .buffer_manager
+            .get_buffer_ids()
+            .contains(&buffer_list_id)
+        {
+            // Recreate the buffer list with updated data
+            self.show_buffer_list();
         }
     }
 

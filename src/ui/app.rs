@@ -941,7 +941,7 @@ impl UIApp {
     /// Trigger async downloads refresh
     fn trigger_async_refresh_downloads(&mut self) {
         let app_event_tx = self.app_event_tx.clone();
-        
+
         tokio::spawn(async move {
             // Send a custom event to trigger refresh on the UI thread
             let _ = app_event_tx.send(AppEvent::DownloadsRefreshed);

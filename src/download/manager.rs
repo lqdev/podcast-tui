@@ -65,14 +65,16 @@ impl<S: Storage> DownloadManager<S> {
     /// when there's no actual download happening
     pub async fn cleanup_stuck_downloads(&self) -> Result<(), DownloadError> {
         // Load all podcast IDs
-        let podcast_ids = self.storage
+        let podcast_ids = self
+            .storage
             .list_podcasts()
             .await
             .map_err(|e| DownloadError::Storage(e.to_string()))?;
 
         for podcast_id in podcast_ids {
             // Load episodes for this podcast
-            let episodes = self.storage
+            let episodes = self
+                .storage
                 .load_episodes(&podcast_id)
                 .await
                 .map_err(|e| DownloadError::Storage(e.to_string()))?;
@@ -90,7 +92,7 @@ impl<S: Storage> DownloadManager<S> {
                     if should_reset {
                         episode.status = EpisodeStatus::New;
                         episode.local_path = None;
-                        
+
                         self.storage
                             .save_episode(&podcast_id, &episode)
                             .await
@@ -101,7 +103,8 @@ impl<S: Storage> DownloadManager<S> {
         }
 
         Ok(())
-    }    /// Download an episode (simple implementation)
+    }
+    /// Download an episode (simple implementation)
     pub async fn download_episode(
         &self,
         podcast_id: &PodcastId,

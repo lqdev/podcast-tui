@@ -313,9 +313,7 @@ impl BufferManager {
         self.get_buffer(&buffer_id).and_then(|buffer| {
             // This is safe because we know downloads buffer is always DownloadsBuffer
             let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
-            unsafe {
-                (raw_ptr as *mut crate::ui::buffers::downloads::DownloadsBuffer).as_mut()
-            }
+            unsafe { (raw_ptr as *mut crate::ui::buffers::downloads::DownloadsBuffer).as_mut() }
         })
     }
 

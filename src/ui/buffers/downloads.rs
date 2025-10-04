@@ -79,54 +79,57 @@ impl DownloadsBuffer {
                     for podcast_id in podcast_ids {
                         // Load the podcast to get its name
                         if let Ok(podcast) = storage.load_podcast(&podcast_id).await {
-                        match storage.load_episodes(&podcast_id).await {
-                            Ok(episodes) => {
-                                for episode in episodes {
-                                    if matches!(
-                                        episode.status,
-                                        crate::podcast::EpisodeStatus::Downloading
-                                            | crate::podcast::EpisodeStatus::Downloaded
-                                            | crate::podcast::EpisodeStatus::DownloadFailed
-                                    ) {
-                                        let status = match episode.status {
-                                            crate::podcast::EpisodeStatus::Downloading => {
-                                                DownloadStatus::InProgress
-                                            }
-                                            crate::podcast::EpisodeStatus::Downloaded => {
-                                                DownloadStatus::Completed
-                                            }
-                                            crate::podcast::EpisodeStatus::DownloadFailed => {
-                                                DownloadStatus::Failed(
-                                                    "Download failed".to_string(),
-                                                )
-                                            }
-                                            _ => DownloadStatus::Queued,
-                                        };
-
-                                        let entry = DownloadEntry {
-                                            podcast_id: podcast.id.clone(),
-                                            episode_id: episode.id.clone(),
-                                            podcast_name: podcast.title.clone(),
-                                            episode_title: episode.title.clone(),
-                                            status,
-                                            progress: episode.file_size.map(|size| {
-                                                if episode.is_downloaded() {
-                                                    (size, size)
-                                                } else {
-                                                    (0, size)
+                            match storage.load_episodes(&podcast_id).await {
+                                Ok(episodes) => {
+                                    for episode in episodes {
+                                        if matches!(
+                                            episode.status,
+                                            crate::podcast::EpisodeStatus::Downloading
+                                                | crate::podcast::EpisodeStatus::Downloaded
+                                                | crate::podcast::EpisodeStatus::DownloadFailed
+                                        ) {
+                                            let status = match episode.status {
+                                                crate::podcast::EpisodeStatus::Downloading => {
+                                                    DownloadStatus::InProgress
                                                 }
-                                            }),
-                                            error_message: None,
-                                        };
+                                                crate::podcast::EpisodeStatus::Downloaded => {
+                                                    DownloadStatus::Completed
+                                                }
+                                                crate::podcast::EpisodeStatus::DownloadFailed => {
+                                                    DownloadStatus::Failed(
+                                                        "Download failed".to_string(),
+                                                    )
+                                                }
+                                                _ => DownloadStatus::Queued,
+                                            };
 
-                                        self.downloads.push(entry);
+                                            let entry = DownloadEntry {
+                                                podcast_id: podcast.id.clone(),
+                                                episode_id: episode.id.clone(),
+                                                podcast_name: podcast.title.clone(),
+                                                episode_title: episode.title.clone(),
+                                                status,
+                                                progress: episode.file_size.map(|size| {
+                                                    if episode.is_downloaded() {
+                                                        (size, size)
+                                                    } else {
+                                                        (0, size)
+                                                    }
+                                                }),
+                                                error_message: None,
+                                            };
+
+                                            self.downloads.push(entry);
+                                        }
                                     }
                                 }
+                                Err(e) => {
+                                    eprintln!(
+                                        "Failed to load episodes for {}: {}",
+                                        podcast.title, e
+                                    )
+                                }
                             }
-                            Err(e) => {
-                                eprintln!("Failed to load episodes for {}: {}", podcast.title, e)
-                            }
-                        }
                         }
                     }
                 }

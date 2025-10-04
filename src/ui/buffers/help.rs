@@ -85,6 +85,7 @@ impl HelpBuffer {
             "  a             Add podcast subscription".to_string(),
             "  d             Delete podcast subscription".to_string(),
             "  r             Refresh selected podcast".to_string(),
+            "  C-r           Hard refresh (re-parse all episodes)".to_string(),
             "  R             Refresh all podcasts".to_string(),
             "".to_string(),
             "EPISODE MANAGEMENT (in episode list):".to_string(),

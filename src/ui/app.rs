@@ -400,6 +400,28 @@ impl UIApp {
                 }
                 Ok(true)
             }
+            UIAction::HardRefreshPodcast => {
+                if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
+                    if let Some(podcast) = podcast_buffer.selected_podcast() {
+                        let podcast_id = podcast.id.clone();
+                        let podcast_title = podcast.title.clone();
+
+                        // Show loading state
+                        self.show_message(format!(
+                            "Hard refreshing '{}' (re-parsing all episodes)...",
+                            podcast_title
+                        ));
+
+                        // Trigger async hard refresh
+                        self.trigger_async_hard_refresh_single(podcast_id);
+                    } else {
+                        self.show_error("No podcast selected for hard refresh".to_string());
+                    }
+                } else {
+                    self.show_error("Podcast list not available".to_string());
+                }
+                Ok(true)
+            }
             UIAction::RefreshAll => {
                 self.show_message("Refreshing all podcasts...".to_string());
                 self.trigger_async_refresh_all();
@@ -900,6 +922,33 @@ impl UIApp {
                     let _ = app_event_tx.send(AppEvent::PodcastRefreshed {
                         podcast_id: podcast_id_clone,
                         new_episode_count: new_episodes.len(),
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::PodcastRefreshFailed {
+                        podcast_id: podcast_id_clone,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    /// Trigger async single podcast hard refresh (re-parses all episodes)
+    fn trigger_async_hard_refresh_single(&mut self, podcast_id: crate::storage::PodcastId) {
+        let subscription_manager = self.subscription_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let podcast_id_clone = podcast_id.clone();
+
+        tokio::spawn(async move {
+            match subscription_manager
+                .refresh_feed_with_options(&podcast_id, true)
+                .await
+            {
+                Ok(updated_episodes) => {
+                    let _ = app_event_tx.send(AppEvent::PodcastRefreshed {
+                        podcast_id: podcast_id_clone,
+                        new_episode_count: updated_episodes.len(),
                     });
                 }
                 Err(e) => {

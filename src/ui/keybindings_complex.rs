@@ -135,6 +135,7 @@ impl KeyHandler {
         self.bind_key(KeyChord::none(KeyCode::Char('d')), UIAction::DeletePodcast);
         self.bind_key(KeyChord::none(KeyCode::Char('r')), UIAction::RefreshPodcast);
         self.bind_key(KeyChord::shift(KeyCode::Char('R')), UIAction::RefreshAll);
+        self.bind_key(KeyChord::ctrl(KeyCode::Char('r')), UIAction::HardRefreshPodcast);
         self.bind_key(KeyChord::none(KeyCode::Char('q')), UIAction::Quit);
         self.bind_key(KeyChord::none(KeyCode::Char('h')), UIAction::ShowHelp);
         self.bind_key(KeyChord::none(KeyCode::Char('?')), UIAction::ShowHelp);
@@ -142,6 +143,9 @@ impl KeyHandler {
         // Colon for commands (vi-style)
         self.bind_key(KeyChord::none(KeyCode::Char(':')), UIAction::PromptCommand);
     }
+
+    /// Setup Emacs-style advanced keybindings
+    fn setup_emacs_bindings(&mut self) {
         self.bind_sequence(
             KeySequence::from_chord_and_key(
                 KeyChord::ctrl(KeyCode::Char('x')),

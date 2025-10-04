@@ -296,7 +296,7 @@ impl FeedParser {
 
     /// Extract audio URL from feed entry using multiple strategies
     fn extract_audio_url(&self, entry: &feed_rs::model::Entry) -> Option<String> {
-        // Strategy 1: Look for links with audio MIME types
+        // Strategy 1: Look for enclosures with audio MIME types (most reliable for RSS)
         if let Some(audio_link) = entry.links.iter().find(|link| {
             link.media_type
                 .as_ref()
@@ -306,7 +306,16 @@ impl FeedParser {
             return Some(audio_link.href.clone());
         }
 
-        // Strategy 2: Look for links with audio file extensions (common with feeds missing MIME types)
+        // Strategy 2: Look for enclosure relationship (RSS 2.0 standard)
+        if let Some(enclosure_link) = entry
+            .links
+            .iter()
+            .find(|link| link.rel.as_ref().map_or(false, |rel| rel == "enclosure"))
+        {
+            return Some(enclosure_link.href.clone());
+        }
+
+        // Strategy 3: Look for links with audio file extensions (feeds missing MIME types)
         if let Some(audio_link) = entry.links.iter().find(|link| {
             let href = &link.href.to_lowercase();
             // Check for common audio extensions, handling query parameters
@@ -320,15 +329,6 @@ impl FeedParser {
                 || url_path.ends_with(".flac")
         }) {
             return Some(audio_link.href.clone());
-        }
-
-        // Strategy 3: Look for enclosure relationships (RSS 2.0 standard)
-        if let Some(enclosure_link) = entry
-            .links
-            .iter()
-            .find(|link| link.rel.as_ref().map_or(false, |rel| rel == "enclosure"))
-        {
-            return Some(enclosure_link.href.clone());
         }
 
         // Strategy 4: Check if GUID looks like an audio URL (some feeds use GUID as direct link)
@@ -345,7 +345,7 @@ impl FeedParser {
             }
         }
 
-        // Strategy 5: For feeds with only one link, assume it might be audio
+        // Strategy 5: For feeds with only one link, assume it might be audio (last resort)
         if entry.links.len() == 1 && entry.links[0].href.starts_with("http") {
             let href = &entry.links[0].href.to_lowercase();
             // Only if it looks like it could be a media file

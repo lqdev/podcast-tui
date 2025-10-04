@@ -117,6 +117,8 @@ pub enum UIAction {
     TriggerRefreshDownloads,
     RefreshPodcast,
     RefreshAll,
+    /// Hard refresh podcast (re-parse existing episodes)
+    HardRefreshPodcast,
 
     // Render request
     Render,

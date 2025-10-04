@@ -125,9 +125,20 @@ impl<S: Storage> SubscriptionManager<S> {
     }
 
     /// Refresh a podcast feed and get new episodes
+    /// If hard_refresh is true, existing episodes will be updated with new data
     pub async fn refresh_feed(
         &self,
         podcast_id: &PodcastId,
+    ) -> Result<Vec<Episode>, SubscriptionError> {
+        self.refresh_feed_with_options(podcast_id, false).await
+    }
+
+    /// Refresh a podcast feed with options
+    /// If hard_refresh is true, existing episodes will be updated with new data
+    pub async fn refresh_feed_with_options(
+        &self,
+        podcast_id: &PodcastId,
+        hard_refresh: bool,
     ) -> Result<Vec<Episode>, SubscriptionError> {
         // Load the podcast
         let mut podcast = self.get_podcast(podcast_id).await?;
@@ -145,11 +156,13 @@ impl<S: Storage> SubscriptionManager<S> {
             .await
             .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
 
-        // Filter out episodes we already have
+        // Filter out episodes we already have, or update existing ones if hard_refresh
         let mut new_episodes = Vec::new();
+        let mut updated_episodes = Vec::new();
+
         for episode in feed_episodes {
             // Check if episode already exists using multiple strategies
-            let is_duplicate = existing_episodes.iter().any(|existing_episode| {
+            let existing_episode = existing_episodes.iter().find(|existing_episode| {
                 // Strategy 1: Compare deterministic IDs (based on GUID)
                 if episode.id == existing_episode.id {
                     return true;
@@ -185,7 +198,22 @@ impl<S: Storage> SubscriptionManager<S> {
                 false
             });
 
-            if !is_duplicate {
+            if let Some(existing) = existing_episode {
+                if hard_refresh {
+                    // Update existing episode with new data (preserving user-specific fields)
+                    let mut updated_episode = episode.clone();
+                    updated_episode.id = existing.id.clone(); // Keep the same ID
+                    updated_episode.status = existing.status.clone(); // Preserve download status
+                    updated_episode.local_path = existing.local_path.clone(); // Preserve local file
+                    updated_episode.last_played_position = existing.last_played_position; // Preserve playback position
+                    updated_episode.play_count = existing.play_count; // Preserve play count
+                    updated_episode.notes = existing.notes.clone(); // Preserve user notes
+
+                    updated_episodes.push(updated_episode);
+                }
+                // If not hard refresh, skip existing episodes (current behavior)
+            } else {
+                // Truly new episode
                 new_episodes.push(episode);
             }
         }
@@ -198,6 +226,18 @@ impl<S: Storage> SubscriptionManager<S> {
                 .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
         }
 
+        // Save updated episodes (for hard refresh)
+        for episode in &updated_episodes {
+            self.storage
+                .save_episode(podcast_id, episode)
+                .await
+                .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
+        }
+
+        // Combine new and updated episodes for return value
+        let mut all_changes = new_episodes.clone();
+        all_changes.extend(updated_episodes);
+
         // Update podcast's last_updated timestamp
         podcast.last_updated = Utc::now();
         self.storage
@@ -205,7 +245,7 @@ impl<S: Storage> SubscriptionManager<S> {
             .await
             .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
 
-        Ok(new_episodes)
+        Ok(all_changes)
     }
 
     /// Refresh all subscribed podcasts

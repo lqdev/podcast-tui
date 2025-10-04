@@ -109,6 +109,7 @@ impl KeyHandler {
         self.bind_key(KeyChord::none(KeyCode::Char('d')), UIAction::DeletePodcast);
         self.bind_key(KeyChord::none(KeyCode::Char('r')), UIAction::RefreshPodcast);
         self.bind_key(KeyChord::shift(KeyCode::Char('R')), UIAction::RefreshAll);
+        self.bind_key(KeyChord::ctrl(KeyCode::Char('r')), UIAction::HardRefreshPodcast);
         self.bind_key(
             KeyChord::shift(KeyCode::Char('D')),
             UIAction::DownloadEpisode,

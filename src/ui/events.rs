@@ -159,4 +159,10 @@ pub enum AppEvent {
 
     /// Downloads buffer refreshed
     DownloadsRefreshed,
+
+    /// All downloads deleted successfully
+    AllDownloadsDeleted { deleted_count: usize },
+
+    /// All downloads deletion failed
+    AllDownloadsDeletionFailed { error: String },
 }

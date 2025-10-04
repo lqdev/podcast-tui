@@ -98,6 +98,8 @@ pub enum UIAction {
     DownloadEpisode,
     /// Delete downloaded episode file
     DeleteDownloadedEpisode,
+    /// Delete all downloaded episodes and clean up downloads folder
+    DeleteAllDownloads,
     /// Trigger async download of specific episode
     TriggerDownload {
         podcast_id: crate::storage::PodcastId,

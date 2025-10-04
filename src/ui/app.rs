@@ -77,6 +77,9 @@ pub struct UIApp {
     /// Podcast ID pending deletion confirmation
     pending_deletion: Option<crate::storage::PodcastId>,
 
+    /// Whether we're pending bulk deletion confirmation
+    pending_bulk_deletion: bool,
+
     /// Last render time for performance tracking
     last_render: Instant,
 
@@ -118,6 +121,7 @@ impl UIApp {
             last_render: Instant::now(),
             frame_count: 0,
             pending_deletion: None,
+            pending_bulk_deletion: false,
         })
     }
 
@@ -529,6 +533,16 @@ impl UIApp {
                 self.trigger_async_refresh_downloads();
                 Ok(true)
             }
+            UIAction::DeleteAllDownloads => {
+                // Show confirmation prompt
+                self.minibuffer.set_content(MinibufferContent::Input {
+                    prompt: "Delete ALL downloaded episodes? This will remove all downloaded files! (y/n) ".to_string(),
+                    input: String::new(),
+                });
+                // Set a flag to indicate we're confirming bulk deletion
+                self.pending_bulk_deletion = true;
+                Ok(true)
+            }
             UIAction::Refresh => {
                 // Handle F5 refresh - refresh current buffer based on its type
                 let current_buffer_id = self.buffer_manager.current_buffer_id();
@@ -808,6 +822,21 @@ impl UIApp {
                 self.refresh_downloads_buffer().await;
                 self.show_message("Downloads refreshed".to_string());
             }
+            AppEvent::AllDownloadsDeleted { deleted_count } => {
+                // Refresh all episode buffers and downloads buffer
+                self.refresh_all_episode_buffers().await;
+                self.refresh_downloads_buffer().await;
+                self.show_message(format!(
+                    "Successfully deleted {} downloaded episodes and cleaned up downloads folder",
+                    deleted_count
+                ));
+            }
+            AppEvent::AllDownloadsDeletionFailed { error } => {
+                // Still refresh buffers in case some deletions succeeded
+                self.refresh_all_episode_buffers().await;
+                self.refresh_downloads_buffer().await;
+                self.show_error(format!("Failed to delete all downloads: {}", error));
+            }
         }
         Ok(())
     }
@@ -895,6 +924,15 @@ impl UIApp {
                     self.show_error("Usage: add-podcast <URL>".to_string());
                     Ok(true)
                 }
+            }
+            "delete-all-downloads" | "clean-downloads" => {
+                // Show confirmation prompt for bulk deletion
+                self.minibuffer.set_content(MinibufferContent::Input {
+                    prompt: "Delete ALL downloaded episodes? This will remove all downloaded files! (y/n) ".to_string(),
+                    input: String::new(),
+                });
+                self.pending_bulk_deletion = true;
+                Ok(true)
             }
             _ => {
                 self.show_error(format!("Unknown command: {}", parts[0]));
@@ -1049,6 +1087,9 @@ impl UIApp {
             "kill-buffer".to_string(),
             // Podcast commands
             "add-podcast".to_string(),
+            // Downloads commands
+            "delete-all-downloads".to_string(),
+            "clean-downloads".to_string(),
         ]
     }
 
@@ -1518,6 +1559,28 @@ impl UIApp {
         });
     }
 
+    /// Trigger async deletion of all downloads
+    fn trigger_async_delete_all_downloads(&mut self) {
+        let download_manager = self.download_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+
+        // Show immediate feedback
+        self.show_message("Deleting all downloaded episodes...".to_string());
+
+        tokio::spawn(async move {
+            match download_manager.delete_all_downloads().await {
+                Ok(deleted_count) => {
+                    let _ = app_event_tx.send(AppEvent::AllDownloadsDeleted { deleted_count });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::AllDownloadsDeletionFailed {
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
     /// Refresh episode buffers for a specific podcast
     async fn refresh_episode_buffers(&mut self, podcast_id: &crate::storage::PodcastId) {
         // Find any episode buffers that belong to this podcast and refresh them
@@ -1547,6 +1610,21 @@ impl UIApp {
                     let _ = downloads_buffer.refresh_downloads().await;
                 }
                 break;
+            }
+        }
+    }
+
+    /// Refresh all episode buffers (used after bulk operations)
+    async fn refresh_all_episode_buffers(&mut self) {
+        let buffer_ids = self.buffer_manager.get_buffer_ids();
+        for buffer_id in buffer_ids {
+            if buffer_id.starts_with("episodes-") {
+                if let Some(episode_buffer) = self
+                    .buffer_manager
+                    .get_episode_list_buffer_mut_by_id(&buffer_id)
+                {
+                    let _ = episode_buffer.load_episodes().await;
+                }
             }
         }
     }
@@ -1685,13 +1763,24 @@ impl UIApp {
             // Handle podcast deletion confirmation
             if let Some(podcast_id) = self.pending_deletion.take() {
                 self.trigger_async_delete_podcast(podcast_id);
+            } else if self.pending_bulk_deletion {
+                // Handle bulk deletion confirmation
+                self.pending_bulk_deletion = false;
+                self.trigger_async_delete_all_downloads();
             } else {
-                self.show_error("No podcast deletion pending".to_string());
+                self.show_error("No deletion pending".to_string());
             }
         } else if input.to_lowercase() == "n" || input.to_lowercase() == "no" {
-            // Cancel podcast deletion
-            self.pending_deletion = None;
-            self.show_message("Podcast deletion cancelled".to_string());
+            // Cancel deletion
+            if self.pending_deletion.is_some() {
+                self.pending_deletion = None;
+                self.show_message("Podcast deletion cancelled".to_string());
+            } else if self.pending_bulk_deletion {
+                self.pending_bulk_deletion = false;
+                self.show_message("Bulk deletion cancelled".to_string());
+            } else {
+                self.show_message("No deletion to cancel".to_string());
+            }
         } else {
             // Check if this is a buffer name
             let buffer_names = self.buffer_manager.buffer_names();

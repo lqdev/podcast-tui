@@ -227,6 +227,102 @@ impl<S: Storage> DownloadManager<S> {
         Ok(())
     }
 
+    /// Delete all downloaded episodes and clean up the downloads folder
+    pub async fn delete_all_downloads(&self) -> Result<usize, DownloadError> {
+        // Load all podcast IDs
+        let podcast_ids = self
+            .storage
+            .list_podcasts()
+            .await
+            .map_err(|e| DownloadError::Storage(e.to_string()))?;
+
+        let mut deleted_count = 0;
+        let mut failed_count = 0;
+
+        for podcast_id in podcast_ids {
+            // Load episodes for this podcast
+            let episodes = self
+                .storage
+                .load_episodes(&podcast_id)
+                .await
+                .map_err(|e| DownloadError::Storage(e.to_string()))?;
+
+            for mut episode in episodes {
+                // Only process downloaded episodes
+                if matches!(episode.status, EpisodeStatus::Downloaded) {
+                    if let Some(ref local_path) = episode.local_path {
+                        // Try to delete the file
+                        if local_path.exists() {
+                            match fs::remove_file(local_path).await {
+                                Ok(_) => {
+                                    deleted_count += 1;
+                                    // Update episode status
+                                    episode.local_path = None;
+                                    episode.status = EpisodeStatus::New;
+
+                                    // Save updated episode
+                                    if let Err(_) =
+                                        self.storage.save_episode(&podcast_id, &episode).await
+                                    {
+                                        failed_count += 1;
+                                    }
+                                }
+                                Err(_) => {
+                                    failed_count += 1;
+                                }
+                            }
+                        } else {
+                            // File doesn't exist, but episode thinks it's downloaded
+                            // Clean up the status
+                            episode.local_path = None;
+                            episode.status = EpisodeStatus::New;
+
+                            if let Err(_) = self.storage.save_episode(&podcast_id, &episode).await {
+                                failed_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Clean up empty directories in downloads folder
+        self.cleanup_empty_directories().await?;
+
+        if failed_count > 0 {
+            return Err(DownloadError::Storage(format!(
+                "Deleted {} files, but {} operations failed",
+                deleted_count, failed_count
+            )));
+        }
+
+        Ok(deleted_count)
+    }
+
+    /// Clean up empty podcast directories in the downloads folder
+    async fn cleanup_empty_directories(&self) -> Result<(), DownloadError> {
+        if !self.downloads_dir.exists() {
+            return Ok(());
+        }
+
+        let mut dir_entries = fs::read_dir(&self.downloads_dir).await?;
+
+        while let Some(entry) = dir_entries.next_entry().await? {
+            if entry.file_type().await?.is_dir() {
+                let dir_path = entry.path();
+
+                // Check if directory is empty
+                let mut subdir_entries = fs::read_dir(&dir_path).await?;
+                if subdir_entries.next_entry().await?.is_none() {
+                    // Directory is empty, remove it
+                    let _ = fs::remove_dir(&dir_path).await;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Simple file download implementation
     async fn download_file(&self, url: &str, path: &Path) -> Result<(), DownloadError> {
         let response = self.client.get(url).send().await?;

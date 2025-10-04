@@ -12,7 +12,7 @@ A cross-platform terminal user interface for podcast management built with Rust 
 - ✅ **RSS Subscription Management** - Subscribe to podcasts via RSS feeds
 - ✅ **OPML Import/Export** - Non-destructive import and export of subscriptions  
 - ✅ **Episode Management** - Browse, search, and filter episodes
-- ✅ **Download System** - Parallel episode downloads with progress tracking
+- ✅ **Download System** - Parallel episode downloads with progress tracking and bulk cleanup
 - ✅ **Audio Playback** - Basic playback controls with chapter support
 - ✅ **Playlist Creation** - Create and manage custom episode playlists
 - ✅ **Episode Notes** - Add personal notes to episodes
@@ -78,6 +78,7 @@ Podcast TUI uses Emacs-style keybindings for efficient keyboard navigation:
 - `RET` - Play selected episode
 - `D` - Download episode
 - `X` - Delete downloaded file
+- `C-x` - Delete ALL downloaded episodes and clean up
 - `N` - Add/edit episode note
 - `m` - Mark as played/unplayed
 

@@ -121,6 +121,10 @@ impl KeyHandler {
             KeyChord::shift(KeyCode::Char('X')),
             UIAction::DeleteDownloadedEpisode,
         );
+        self.bind_key(
+            KeyChord::ctrl(KeyCode::Char('x')),
+            UIAction::DeleteAllDownloads,
+        );
         self.bind_key(KeyChord::none(KeyCode::Char('q')), UIAction::Quit);
         self.bind_key(KeyChord::none(KeyCode::Char('h')), UIAction::ShowHelp);
         self.bind_key(KeyChord::none(KeyCode::Char('?')), UIAction::ShowHelp);

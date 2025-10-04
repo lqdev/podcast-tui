@@ -212,6 +212,7 @@ impl Buffer for DownloadsBuffer {
             "Actions:".to_string(),
             "  r         Refresh downloads list".to_string(),
             "  X         Delete selected download".to_string(),
+            "  Ctrl+X    Delete ALL downloads and clean up".to_string(),
             "  c         Cancel/retry download".to_string(),
             "  o         Open downloads folder".to_string(),
             "  C         Clear completed downloads".to_string(),

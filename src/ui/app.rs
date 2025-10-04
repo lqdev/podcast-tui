@@ -573,6 +573,30 @@ impl UIApp {
                     let result_action = current_buffer.handle_action(action);
                     // If the buffer returns an action, handle it
                     match result_action {
+                        UIAction::SwitchBuffer(buffer_id) => {
+                            // Handle buffer switching from buffer list
+                            if let Err(_) = self.buffer_manager.switch_to_buffer(&buffer_id) {
+                                self.show_error(format!(
+                                    "Failed to switch to buffer: {}",
+                                    buffer_id
+                                ));
+                            } else {
+                                self.update_status_bar();
+                                self.show_message(format!("Switched to buffer: {}", buffer_id));
+                            }
+                        }
+                        UIAction::CloseBuffer(buffer_id) => {
+                            // Handle buffer closing from buffer list
+                            match self.buffer_manager.remove_buffer(&buffer_id) {
+                                Ok(_) => {
+                                    self.update_status_bar();
+                                    self.show_message(format!("Closed buffer: {}", buffer_id));
+                                }
+                                Err(e) => {
+                                    self.show_error(format!("Cannot close buffer: {}", e));
+                                }
+                            }
+                        }
                         UIAction::OpenEpisodeList {
                             podcast_name,
                             podcast_id,

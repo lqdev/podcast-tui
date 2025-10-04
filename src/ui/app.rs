@@ -1378,8 +1378,22 @@ impl UIApp {
             .get_buffer_ids()
             .contains(&buffer_list_id)
         {
-            // Recreate the buffer list with updated data
-            self.show_buffer_list();
+            // Only refresh the buffer list contents without switching to it
+            use crate::ui::buffers::buffer_list::BufferListBuffer;
+
+            let buffer_names = self.buffer_manager.buffer_names();
+            let current_id = self.buffer_manager.current_buffer_id();
+
+            // Remove existing buffer list
+            let _ = self.buffer_manager.remove_buffer(&buffer_list_id);
+
+            // Create new buffer list buffer with updated data
+            let mut buffer_list_buffer = BufferListBuffer::new();
+            buffer_list_buffer.set_theme(self.theme.clone());
+            buffer_list_buffer.update_buffer_list(buffer_names, current_id.as_ref());
+
+            // Add back without switching to it
+            let _ = self.buffer_manager.add_buffer(Box::new(buffer_list_buffer));
         }
     }
 

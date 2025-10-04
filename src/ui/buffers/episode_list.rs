@@ -28,6 +28,7 @@ pub struct EpisodeListBuffer {
     pub podcast_id: PodcastId,
     episodes: Vec<Episode>,
     selected_index: Option<usize>,
+    scroll_offset: usize,
     focused: bool,
     theme: Theme,
     subscription_manager: Option<Arc<SubscriptionManager<JsonStorage>>>,
@@ -43,6 +44,7 @@ impl EpisodeListBuffer {
             podcast_id,
             episodes: Vec::new(),
             selected_index: None,
+            scroll_offset: 0,
             focused: false,
             theme: Theme::default(),
             subscription_manager: None,
@@ -68,11 +70,15 @@ impl EpisodeListBuffer {
                     // Load episodes from storage
                     if let Some(ref sm) = self.subscription_manager {
                         match sm.storage.load_episodes(&self.podcast_id).await {
-                            Ok(episodes) => {
+                            Ok(mut episodes) => {
+                                // Sort episodes by published date in descending order (newest first)
+                                episodes.sort_by(|a, b| b.published.cmp(&a.published));
+
                                 self.episodes = episodes;
                                 if !self.episodes.is_empty() && self.selected_index.is_none() {
                                     self.selected_index = Some(0);
                                 }
+                                self.scroll_offset = 0;
                                 Ok(())
                             }
                             Err(e) => Err(e.to_string()),
@@ -88,12 +94,19 @@ impl EpisodeListBuffer {
         }
     }
 
-    /// Set episodes directly (for sync updates from app events)
+    /// Set episodes for this buffer
     pub fn set_episodes(&mut self, episodes: Vec<Episode>) {
-        self.episodes = episodes;
-        if !self.episodes.is_empty() && self.selected_index.is_none() {
-            self.selected_index = Some(0);
-        }
+        // Sort episodes by published date in descending order (newest first)
+        let mut sorted_episodes = episodes;
+        sorted_episodes.sort_by(|a, b| b.published.cmp(&a.published));
+
+        self.episodes = sorted_episodes;
+        self.selected_index = if self.episodes.is_empty() {
+            None
+        } else {
+            Some(0)
+        };
+        self.scroll_offset = 0;
     }
 
     /// Get selected episode
@@ -134,6 +147,13 @@ impl EpisodeListBuffer {
             Some(i) => Some(i - 1),
             None => Some(0),
         };
+
+        // Update scroll offset to keep selection visible
+        if let Some(selected) = self.selected_index {
+            if selected < self.scroll_offset {
+                self.scroll_offset = selected;
+            }
+        }
     }
 
     /// Move selection down
@@ -147,6 +167,14 @@ impl EpisodeListBuffer {
             Some(i) => Some(i + 1),
             None => Some(0),
         };
+
+        // Update scroll offset to keep selection visible
+        if let Some(selected) = self.selected_index {
+            // When moving to beginning of list, reset scroll
+            if selected == 0 {
+                self.scroll_offset = 0;
+            }
+        }
     }
 
     /// Set the theme for this buffer
@@ -267,11 +295,35 @@ impl UIComponent for EpisodeListBuffer {
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect) {
-        let items: Vec<ListItem> = self
-            .episodes
+        // Calculate visible area and viewport
+        let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
+
+        // Ensure selected item is visible in viewport
+        if let Some(selected) = self.selected_index {
+            let viewport_end = self.scroll_offset + visible_height;
+
+            if selected < self.scroll_offset {
+                // Selected item is above viewport, scroll up to it
+                self.scroll_offset = selected;
+            } else if selected >= viewport_end {
+                // Selected item is below viewport, scroll down to show it
+                self.scroll_offset = selected.saturating_sub(visible_height - 1);
+            }
+        }
+
+        // Calculate visible episodes
+        let end_index = (self.scroll_offset + visible_height).min(self.episodes.len());
+        let visible_episodes = if self.episodes.is_empty() {
+            Vec::new()
+        } else {
+            self.episodes[self.scroll_offset..end_index].to_vec()
+        };
+
+        let items: Vec<ListItem> = visible_episodes
             .iter()
             .enumerate()
-            .map(|(i, episode)| {
+            .map(|(display_index, episode)| {
+                let actual_index = self.scroll_offset + display_index;
                 let status_indicator = match episode.status {
                     crate::podcast::EpisodeStatus::New => "○",
                     crate::podcast::EpisodeStatus::Downloaded => "●",
@@ -281,7 +333,7 @@ impl UIComponent for EpisodeListBuffer {
                 };
                 let content = format!(" {} {}", status_indicator, episode.title);
 
-                if Some(i) == self.selected_index {
+                if Some(actual_index) == self.selected_index {
                     ListItem::new(content).style(self.theme.selected_style())
                 } else {
                     ListItem::new(content).style(self.theme.text_style())

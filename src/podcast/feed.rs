@@ -93,7 +93,7 @@ impl FeedParser {
             return Err(FeedError::NoEpisodes);
         }
 
-        // Create the podcast  
+        // Create the podcast
         let podcast = Podcast {
             id: podcast_id,
             title: metadata.title,
@@ -103,7 +103,7 @@ impl FeedParser {
             image_url: metadata.image_url,
             language: metadata.language,
             categories: Vec::new(), // TODO: Extract from feed
-            explicit: false, // TODO: Extract from iTunes extensions
+            explicit: false,        // TODO: Extract from iTunes extensions
             last_updated: Utc::now(),
             episodes: Vec::new(), // Episodes IDs will be added as they're saved
         };
@@ -146,11 +146,7 @@ impl FeedParser {
 
     /// Download feed content from URL
     async fn download_feed(&self, feed_url: &str) -> Result<String, FeedError> {
-        let response = self
-            .http_client
-            .get(feed_url)
-            .send()
-            .await?;
+        let response = self.http_client.get(feed_url).send().await?;
 
         if !response.status().is_success() {
             return Err(FeedError::Network(reqwest::Error::from(
@@ -205,7 +201,12 @@ impl FeedParser {
             .summary
             .as_ref()
             .map(|t| t.content.clone())
-            .or_else(|| entry.content.as_ref().map(|c| c.body.clone().unwrap_or_default()));
+            .or_else(|| {
+                entry
+                    .content
+                    .as_ref()
+                    .map(|c| c.body.clone().unwrap_or_default())
+            });
 
         // Find audio enclosure
         let audio_url = entry
@@ -235,7 +236,7 @@ impl FeedParser {
         // Convert duration to seconds if present
         let duration_secs = duration.map(|d| d.num_seconds() as u32);
 
-        // Create the audio URL - use empty string if not found, will be validated later
+        // Create the audio URL - use empty string if not found, will be validated at download time
         let audio_url = audio_url.unwrap_or_else(String::new);
 
         let episode = Episode {
@@ -247,10 +248,16 @@ impl FeedParser {
             published,
             duration: duration_secs,
             file_size,
-            mime_type: entry.links.iter()
+            mime_type: entry
+                .links
+                .iter()
                 .find(|link| link.media_type.is_some())
                 .and_then(|link| link.media_type.clone()),
-            guid: if entry.id.is_empty() { None } else { Some(entry.id.clone()) },
+            guid: if entry.id.is_empty() {
+                None
+            } else {
+                Some(entry.id.clone())
+            },
             link: entry.links.first().map(|l| l.href.clone()),
             image_url: None, // TODO: Extract from entry if available
             explicit: false, // TODO: Extract from iTunes extensions
@@ -291,7 +298,16 @@ mod tests {
     async fn test_feed_parser_creation() {
         let parser = FeedParser::new();
         // Just test that it creates successfully
-        assert_eq!(parser.http_client.get("https://example.com").build().unwrap().url().as_str(), "https://example.com/");
+        assert_eq!(
+            parser
+                .http_client
+                .get("https://example.com")
+                .build()
+                .unwrap()
+                .url()
+                .as_str(),
+            "https://example.com/"
+        );
     }
 
     #[tokio::test]

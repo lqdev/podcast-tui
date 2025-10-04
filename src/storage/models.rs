@@ -65,6 +65,21 @@ impl EpisodeId {
     pub fn from_string(s: &str) -> Result<Self, uuid::Error> {
         Ok(Self(Uuid::parse_str(s)?))
     }
+
+    /// Create an EpisodeId from a GUID by hashing it
+    /// This ensures the same GUID always generates the same episode ID for deduplication
+    pub fn from_guid(guid: &str) -> Self {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        guid.hash(&mut hasher);
+        let hash = hasher.finish();
+        
+        // Create a deterministic UUID from the hash
+        let uuid = Uuid::from_u64_pair(hash, hash);
+        Self(uuid)
+    }
 }
 
 impl Default for EpisodeId {

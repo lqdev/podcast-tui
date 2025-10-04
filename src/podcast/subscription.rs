@@ -141,18 +141,48 @@ impl<S: Storage> SubscriptionManager<S> {
         // Load existing episodes to check for duplicates
         let existing_episodes = self
             .storage
-            .list_episodes(podcast_id)
+            .load_episodes(podcast_id)
             .await
             .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
 
         // Filter out episodes we already have
         let mut new_episodes = Vec::new();
         for episode in feed_episodes {
-            // Check if episode already exists by GUID (most reliable) or audio URL
-            let is_duplicate = existing_episodes.iter().any(|existing_id| {
-                // We need to load the episode to check its GUID or URL
-                // For MVP, we'll just check if the ID exists
-                existing_id == &episode.id
+            // Check if episode already exists using multiple strategies
+            let is_duplicate = existing_episodes.iter().any(|existing_episode| {
+                // Strategy 1: Compare deterministic IDs (based on GUID)
+                if episode.id == existing_episode.id {
+                    return true;
+                }
+
+                // Strategy 2: Compare GUIDs directly if both have them
+                if let (Some(ref episode_guid), Some(ref existing_guid)) =
+                    (&episode.guid, &existing_episode.guid)
+                {
+                    if episode_guid == existing_guid {
+                        return true;
+                    }
+                }
+
+                // Strategy 3: Compare audio URLs if both have them and they're not empty
+                if !episode.audio_url.is_empty()
+                    && !existing_episode.audio_url.is_empty()
+                    && episode.audio_url == existing_episode.audio_url
+                {
+                    return true;
+                }
+
+                // Strategy 4: Compare titles and published dates (within 1 minute)
+                if episode.title == existing_episode.title
+                    && (episode.published - existing_episode.published)
+                        .num_seconds()
+                        .abs()
+                        < 60
+                {
+                    return true;
+                }
+
+                false
             });
 
             if !is_duplicate {

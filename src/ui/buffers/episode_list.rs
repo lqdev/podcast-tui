@@ -263,6 +263,15 @@ impl UIComponent for EpisodeListBuffer {
                         UIAction::ShowMessage("Episode already downloaded".to_string())
                     } else if matches!(episode.status, crate::podcast::EpisodeStatus::Downloading) {
                         UIAction::ShowMessage("Episode is already downloading".to_string())
+                    } else if episode.audio_url.is_empty()
+                        && !episode
+                            .guid
+                            .as_ref()
+                            .map_or(false, |g| g.starts_with("http"))
+                    {
+                        UIAction::ShowMessage(
+                            "Cannot download: No audio URL available for this episode".to_string(),
+                        )
                     } else {
                         // Return action to trigger async download
                         UIAction::TriggerDownload {
@@ -325,13 +334,39 @@ impl UIComponent for EpisodeListBuffer {
             .map(|(display_index, episode)| {
                 let actual_index = self.scroll_offset + display_index;
                 let status_indicator = match episode.status {
-                    crate::podcast::EpisodeStatus::New => "○",
+                    crate::podcast::EpisodeStatus::New => {
+                        // Show different indicators based on whether episode can be downloaded
+                        if episode.audio_url.is_empty()
+                            && !episode
+                                .guid
+                                .as_ref()
+                                .map_or(false, |g| g.starts_with("http"))
+                        {
+                            "⚠" // Warning for episodes without downloadable audio
+                        } else {
+                            "○" // Normal new episode
+                        }
+                    }
                     crate::podcast::EpisodeStatus::Downloaded => "●",
                     crate::podcast::EpisodeStatus::Downloading => "◐",
                     crate::podcast::EpisodeStatus::Played => "✓",
                     crate::podcast::EpisodeStatus::DownloadFailed => "✗",
                 };
-                let content = format!(" {} {}", status_indicator, episode.title);
+
+                // Add additional info for episodes that can't be downloaded
+                let title_with_info = if episode.audio_url.is_empty()
+                    && !episode
+                        .guid
+                        .as_ref()
+                        .map_or(false, |g| g.starts_with("http"))
+                    && episode.status == crate::podcast::EpisodeStatus::New
+                {
+                    format!("{} (no audio URL)", episode.title)
+                } else {
+                    episode.title.clone()
+                };
+
+                let content = format!(" {} {}", status_indicator, title_with_info);
 
                 if Some(actual_index) == self.selected_index {
                     ListItem::new(content).style(self.theme.selected_style())

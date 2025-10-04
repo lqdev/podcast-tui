@@ -224,6 +224,11 @@ impl BufferManager {
             .and_then(|id| self.buffers.get(id).map(|buffer| buffer.name()))
     }
 
+    /// Get current buffer ID
+    pub fn current_buffer_id(&self) -> Option<BufferId> {
+        self.active_buffer.clone()
+    }
+
     /// Get current buffer (alias for active buffer)
     pub fn current_buffer_mut(&mut self) -> Option<&mut Box<dyn Buffer>> {
         self.active_buffer()

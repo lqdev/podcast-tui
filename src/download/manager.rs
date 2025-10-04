@@ -46,7 +46,10 @@ pub struct DownloadManager<S: Storage> {
 impl<S: Storage> DownloadManager<S> {
     pub fn new(storage: Arc<S>, downloads_dir: PathBuf) -> Result<Self> {
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(60)) // Longer timeout for downloads
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::limited(10)) // Handle redirects
+            .user_agent("podcast-tui/1.0.0-mvp (like FeedReader)")
             .build()?;
 
         Ok(Self {
@@ -150,12 +153,20 @@ impl<S: Storage> DownloadManager<S> {
                 .guid
                 .as_ref()
                 .filter(|guid| guid.starts_with("http"))
-                .unwrap_or(&episode.audio_url)
+                .map(|s| s.as_str())
+                .unwrap_or("")
         } else {
             &episode.audio_url
         };
 
         if audio_url.is_empty() {
+            // Mark episode as failed with specific reason
+            episode.status = EpisodeStatus::DownloadFailed;
+            self.storage
+                .save_episode(podcast_id, &episode)
+                .await
+                .map_err(|e| DownloadError::Storage(e.to_string()))?;
+
             return Err(DownloadError::InvalidPath(
                 "No audio URL found for episode".to_string(),
             ));
@@ -243,19 +254,37 @@ impl<S: Storage> DownloadManager<S> {
             .replace(' ', "_");
 
         // Get extension from URL or default to mp3
-        let extension = episode
-            .audio_url
-            .split('.')
-            .last()
-            .and_then(|ext| {
-                let ext = ext.split('?').next().unwrap_or(ext);
-                if ["mp3", "m4a", "ogg", "wav"].contains(&ext) {
-                    Some(ext)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or("mp3");
+        let extension = if !episode.audio_url.is_empty() {
+            episode
+                .audio_url
+                .split('.')
+                .last()
+                .and_then(|ext| {
+                    let ext = ext.split('?').next().unwrap_or(ext);
+                    if ["mp3", "m4a", "ogg", "wav"].contains(&ext) {
+                        Some(ext)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or("mp3")
+        } else {
+            // If no audio URL, check GUID for extension
+            episode
+                .guid
+                .as_ref()
+                .and_then(|guid| {
+                    guid.split('.').last().and_then(|ext| {
+                        let ext = ext.split('?').next().unwrap_or(ext);
+                        if ["mp3", "m4a", "ogg", "wav"].contains(&ext) {
+                            Some(ext)
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .unwrap_or("mp3")
+        };
 
         let filename = format!("{}_{}.{}", episode.id, safe_title, extension);
 

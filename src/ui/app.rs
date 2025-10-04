@@ -478,6 +478,50 @@ impl UIApp {
                 self.trigger_async_refresh_downloads();
                 Ok(true)
             }
+            UIAction::Refresh => {
+                // Handle F5 refresh - refresh current buffer based on its type
+                let current_buffer_id = self.buffer_manager.current_buffer_id();
+                if let Some(buffer_id) = current_buffer_id {
+                    if buffer_id.starts_with("episodes-") {
+                        // If it's an episode list buffer, refresh its episodes
+                        if let Some(episode_buffer) = self
+                            .buffer_manager
+                            .get_episode_list_buffer_mut_by_id(&buffer_id)
+                        {
+                            let _podcast_id = episode_buffer.podcast_id.clone();
+                            let _ = episode_buffer.load_episodes().await;
+                            self.show_message("Episode list refreshed".to_string());
+                        }
+                    } else if buffer_id == "podcast-list" {
+                        // If it's the podcast list, refresh podcasts
+                        if let Some(podcast_buffer) =
+                            self.buffer_manager.get_podcast_list_buffer_mut()
+                        {
+                            if let Err(e) = podcast_buffer.load_podcasts().await {
+                                self.show_error(format!("Failed to refresh podcast list: {}", e));
+                            } else {
+                                self.show_message("Podcast list refreshed".to_string());
+                            }
+                        }
+                    } else if buffer_id == "downloads" {
+                        // If it's the downloads buffer, refresh downloads
+                        if let Some(downloads_buffer) =
+                            self.buffer_manager.get_downloads_buffer_mut()
+                        {
+                            if let Err(e) = downloads_buffer.refresh_downloads().await {
+                                self.show_error(format!("Failed to refresh downloads: {}", e));
+                            } else {
+                                self.show_message("Downloads refreshed".to_string());
+                            }
+                        }
+                    } else {
+                        self.show_message("Refresh not supported for this buffer".to_string());
+                    }
+                } else {
+                    self.show_message("No active buffer to refresh".to_string());
+                }
+                Ok(true)
+            }
             // Buffer-specific actions
             action => {
                 if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {

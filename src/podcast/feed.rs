@@ -55,8 +55,10 @@ impl FeedParser {
     /// Create a new feed parser
     pub fn new() -> Self {
         let http_client = Client::builder()
-            .user_agent("podcast-tui/1.0.0-mvp")
+            .user_agent("podcast-tui/1.0.0-mvp (like FeedReader)")
             .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::limited(10)) // Handle up to 10 redirects
             .build()
             .expect("Failed to create HTTP client");
 
@@ -146,15 +148,50 @@ impl FeedParser {
 
     /// Download feed content from URL
     async fn download_feed(&self, feed_url: &str) -> Result<String, FeedError> {
-        let response = self.http_client.get(feed_url).send().await?;
+        eprintln!("DEBUG: Downloading feed from: {}", feed_url);
 
-        if !response.status().is_success() {
+        let response = self
+            .http_client
+            .get(feed_url)
+            .header("Accept", "application/rss+xml, application/rdf+xml, application/atom+xml, application/xml, text/xml, */*")
+            .send()
+            .await
+            .map_err(|e| FeedError::Network(e))?;
+
+        let status = response.status();
+        let final_url = response.url().clone();
+
+        eprintln!(
+            "DEBUG: Response status: {}, final URL: {}",
+            status, final_url
+        );
+
+        if !status.is_success() {
+            eprintln!("DEBUG: HTTP error - status: {}", status);
             return Err(FeedError::Network(reqwest::Error::from(
                 response.error_for_status().unwrap_err(),
             )));
         }
 
-        let content = response.text().await?;
+        // Check content type if available
+        if let Some(content_type) = response.headers().get("content-type") {
+            if let Ok(ct_str) = content_type.to_str() {
+                eprintln!("DEBUG: Content-Type: {}", ct_str);
+
+                // Warn if content type doesn't look like XML/RSS
+                if !ct_str.contains("xml") && !ct_str.contains("rss") && !ct_str.contains("atom") {
+                    eprintln!("DEBUG: Warning - unexpected content type: {}", ct_str);
+                }
+            }
+        }
+
+        let content = response.text().await.map_err(|e| FeedError::Network(e))?;
+        eprintln!("DEBUG: Downloaded {} bytes of content", content.len());
+
+        // Log first few lines of content for debugging
+        let preview: String = content.lines().take(5).collect::<Vec<_>>().join("\n");
+        eprintln!("DEBUG: Content preview:\n{}", preview);
+
         Ok(content)
     }
 
@@ -187,9 +224,14 @@ impl FeedParser {
         podcast_id: &PodcastId,
         index: usize,
     ) -> Result<Episode> {
-        // Generate a new Episode ID
-        // We could try to make it deterministic based on GUID, but for MVP just use new UUID
-        let id = EpisodeId::new();
+        // Generate deterministic Episode ID based on GUID or other stable identifier
+        let id = if !entry.id.is_empty() {
+            // Use GUID-based deterministic ID for better deduplication
+            EpisodeId::from_guid(&entry.id)
+        } else {
+            // Fallback to new UUID if no GUID available
+            EpisodeId::new()
+        };
 
         let title = entry
             .title
@@ -208,17 +250,8 @@ impl FeedParser {
                     .map(|c| c.body.clone().unwrap_or_default())
             });
 
-        // Find audio enclosure
-        let audio_url = entry
-            .links
-            .iter()
-            .find(|link| {
-                link.media_type
-                    .as_ref()
-                    .map(|mt| mt.starts_with("audio/"))
-                    .unwrap_or(false)
-            })
-            .map(|link| link.href.clone());
+        // Find audio enclosure using comprehensive strategy
+        let audio_url = self.extract_audio_url(entry);
 
         // Parse duration from iTunes extension or other sources
         let duration = self.extract_duration(entry);
@@ -274,6 +307,99 @@ impl FeedParser {
         };
 
         Ok(episode)
+    }
+
+    /// Extract audio URL from feed entry using multiple strategies
+    fn extract_audio_url(&self, entry: &feed_rs::model::Entry) -> Option<String> {
+        // Debug: Print entry info
+        eprintln!(
+            "DEBUG: Entry '{}' has {} links",
+            entry
+                .title
+                .as_ref()
+                .map(|t| t.content.as_str())
+                .unwrap_or("No title"),
+            entry.links.len()
+        );
+
+        for (i, link) in entry.links.iter().enumerate() {
+            eprintln!(
+                "DEBUG: Link {}: href='{}', media_type='{:?}', rel='{:?}'",
+                i, link.href, link.media_type, link.rel
+            );
+        }
+
+        // Strategy 1: Look for links with audio MIME types
+        if let Some(audio_link) = entry.links.iter().find(|link| {
+            link.media_type
+                .as_ref()
+                .map(|mt| mt.starts_with("audio/") || mt == "application/octet-stream")
+                .unwrap_or(false)
+        }) {
+            eprintln!("DEBUG: Found audio by MIME type: {}", audio_link.href);
+            return Some(audio_link.href.clone());
+        }
+
+        // Strategy 2: Look for links with audio file extensions (common with feeds missing MIME types)
+        if let Some(audio_link) = entry.links.iter().find(|link| {
+            let href = &link.href.to_lowercase();
+            // Check for common audio extensions, handling query parameters
+            let url_path = href.split('?').next().unwrap_or(href);
+            url_path.ends_with(".mp3")
+                || url_path.ends_with(".m4a")
+                || url_path.ends_with(".mp4")
+                || url_path.ends_with(".ogg")
+                || url_path.ends_with(".wav")
+                || url_path.ends_with(".aac")
+                || url_path.ends_with(".flac")
+        }) {
+            eprintln!("DEBUG: Found audio by extension: {}", audio_link.href);
+            return Some(audio_link.href.clone());
+        }
+
+        // Strategy 3: Look for enclosure relationships (RSS 2.0 standard)
+        if let Some(enclosure_link) = entry
+            .links
+            .iter()
+            .find(|link| link.rel.as_ref().map_or(false, |rel| rel == "enclosure"))
+        {
+            eprintln!(
+                "DEBUG: Found audio by enclosure rel: {}",
+                enclosure_link.href
+            );
+            return Some(enclosure_link.href.clone());
+        }
+
+        // Strategy 4: Check if GUID looks like an audio URL (some feeds use GUID as direct link)
+        if entry.id.starts_with("http") {
+            let id_lower = entry.id.to_lowercase();
+            let url_path = id_lower.split('?').next().unwrap_or(&id_lower);
+            if url_path.ends_with(".mp3")
+                || url_path.ends_with(".m4a")
+                || url_path.ends_with(".mp4")
+                || url_path.ends_with(".ogg")
+                || url_path.ends_with(".wav")
+            {
+                eprintln!("DEBUG: Found audio in GUID: {}", entry.id);
+                return Some(entry.id.clone());
+            }
+        }
+
+        // Strategy 5: For feeds with only one link, assume it might be audio
+        if entry.links.len() == 1 && entry.links[0].href.starts_with("http") {
+            let href = &entry.links[0].href.to_lowercase();
+            // Only if it looks like it could be a media file
+            if href.contains("audio") || href.contains("media") || href.contains("episode") {
+                eprintln!(
+                    "DEBUG: Found audio by single link heuristic: {}",
+                    entry.links[0].href
+                );
+                return Some(entry.links[0].href.clone());
+            }
+        }
+
+        eprintln!("DEBUG: No audio URL found for entry");
+        None
     }
 
     /// Extract duration from feed entry

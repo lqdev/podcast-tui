@@ -109,7 +109,10 @@ impl KeyHandler {
         self.bind_key(KeyChord::none(KeyCode::Char('d')), UIAction::DeletePodcast);
         self.bind_key(KeyChord::none(KeyCode::Char('r')), UIAction::RefreshPodcast);
         self.bind_key(KeyChord::shift(KeyCode::Char('R')), UIAction::RefreshAll);
-        self.bind_key(KeyChord::ctrl(KeyCode::Char('r')), UIAction::HardRefreshPodcast);
+        self.bind_key(
+            KeyChord::ctrl(KeyCode::Char('r')),
+            UIAction::HardRefreshPodcast,
+        );
         self.bind_key(
             KeyChord::shift(KeyCode::Char('D')),
             UIAction::DownloadEpisode,
@@ -122,12 +125,18 @@ impl KeyHandler {
         self.bind_key(KeyChord::none(KeyCode::Char('h')), UIAction::ShowHelp);
         self.bind_key(KeyChord::none(KeyCode::Char('?')), UIAction::ShowHelp);
         self.bind_key(KeyChord::none(KeyCode::Char(':')), UIAction::PromptCommand);
-        
+
         // Buffer switching (Emacs-style)
-        self.bind_key(KeyChord::ctrl(KeyCode::Char('b')), UIAction::ExecuteCommand("switch-to-buffer".to_string()));
-        
+        self.bind_key(
+            KeyChord::ctrl(KeyCode::Char('b')),
+            UIAction::ExecuteCommand("switch-to-buffer".to_string()),
+        );
+
         // List buffers
-        self.bind_key(KeyChord::ctrl(KeyCode::Char('l')), UIAction::ExecuteCommand("list-buffers".to_string()));
+        self.bind_key(
+            KeyChord::ctrl(KeyCode::Char('l')),
+            UIAction::ExecuteCommand("list-buffers".to_string()),
+        );
     }
 
     /// Bind a key chord to an action

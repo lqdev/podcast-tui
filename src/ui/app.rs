@@ -883,7 +883,7 @@ impl UIApp {
     /// Switch to buffer by name with smart matching
     fn switch_to_buffer_by_name(&mut self, buffer_name: String) -> UIResult<bool> {
         let buffer_names = self.buffer_manager.buffer_names();
-        
+
         // Handle common aliases
         let normalized_name = match buffer_name.as_str() {
             "podcasts" | "podcast" | "main" => "podcast-list".to_string(),
@@ -891,31 +891,34 @@ impl UIApp {
             "download" | "dl" => "downloads".to_string(),
             _ => buffer_name.clone(),
         };
-        
+
         // Try exact match first (by ID)
         if buffer_names.iter().any(|(id, _)| id == &normalized_name) {
             let _ = self.buffer_manager.switch_to_buffer(&normalized_name);
             self.update_status_bar();
             return Ok(true);
         }
-        
+
         // Try exact match by display name
-        if let Some((id, _)) = buffer_names.iter().find(|(_, name)| name == &normalized_name) {
+        if let Some((id, _)) = buffer_names
+            .iter()
+            .find(|(_, name)| name == &normalized_name)
+        {
             let _ = self.buffer_manager.switch_to_buffer(id);
             self.update_status_bar();
             return Ok(true);
         }
-        
+
         // Try partial match (case insensitive)
         let lower_search = normalized_name.to_lowercase();
         let matches: Vec<_> = buffer_names
             .iter()
             .filter(|(id, name)| {
-                id.to_lowercase().contains(&lower_search) ||
-                name.to_lowercase().contains(&lower_search)
+                id.to_lowercase().contains(&lower_search)
+                    || name.to_lowercase().contains(&lower_search)
             })
             .collect();
-            
+
         match matches.len() {
             0 => {
                 self.show_error(format!("No buffer found matching: {}", buffer_name));
@@ -946,12 +949,12 @@ impl UIApp {
     fn prompt_buffer_switch(&mut self) {
         let buffer_names = self.buffer_manager.buffer_names();
         let mut prompt = "Switch to buffer: ".to_string();
-        
+
         // Add some hints
         if !buffer_names.is_empty() {
             prompt.push_str("(Tab for list) ");
         }
-        
+
         self.minibuffer.set_content(MinibufferContent::Input {
             prompt,
             input: String::new(),

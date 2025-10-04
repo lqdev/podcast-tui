@@ -235,6 +235,13 @@ impl UIApp {
             }
         }
 
+        // Load initial downloads data
+        if let Some(downloads_buffer) = self.buffer_manager.get_downloads_buffer_mut() {
+            if let Err(e) = downloads_buffer.refresh_downloads().await {
+                self.show_error(format!("Failed to load downloads: {}", e));
+            }
+        }
+
         // Update status bar
         self.update_status_bar();
 
@@ -638,6 +645,8 @@ impl UIApp {
             } => {
                 // Refresh the episode list to show updated status
                 self.refresh_episode_buffers(&podcast_id).await;
+                // Refresh downloads buffer to show new completed download
+                self.refresh_downloads_buffer().await;
                 self.show_message("Episode download completed successfully".to_string());
             }
             AppEvent::EpisodeDownloadFailed {
@@ -647,6 +656,8 @@ impl UIApp {
             } => {
                 // Refresh the episode list to show updated status
                 self.refresh_episode_buffers(&podcast_id).await;
+                // Refresh downloads buffer to show failed download
+                self.refresh_downloads_buffer().await;
                 self.show_error(format!("Episode download failed: {}", error));
             }
             AppEvent::EpisodeDownloadDeleted {
@@ -655,6 +666,8 @@ impl UIApp {
             } => {
                 // Refresh the episode list to show updated status
                 self.refresh_episode_buffers(&podcast_id).await;
+                // Refresh downloads buffer to remove deleted download
+                self.refresh_downloads_buffer().await;
                 self.show_message("Episode download deleted successfully".to_string());
             }
             AppEvent::EpisodeDownloadDeletionFailed {
@@ -664,6 +677,8 @@ impl UIApp {
             } => {
                 // Refresh the episode list to show updated status
                 self.refresh_episode_buffers(&podcast_id).await;
+                // Refresh downloads buffer in case status changed
+                self.refresh_downloads_buffer().await;
                 self.show_error(format!("Failed to delete episode download: {}", error));
             }
             AppEvent::DownloadsRefreshed => {

@@ -82,7 +82,29 @@ This document outlines the Emacs-inspired keybinding system for the Podcast TUI 
 
 Commands that can be executed via `M-x`:
 
-- `add-podcast` - Add new podcast subscription
+### Auto-Completion Features ✨
+
+The minibuffer now supports intelligent auto-completion for commands:
+
+- **Tab Completion**: Press `Tab` to complete commands or cycle through options
+- **Contextual Suggestions**: Get relevant suggestions based on what you're typing
+  - `theme ` + Tab → shows available themes (dark, light, high-contrast, solarized)
+  - `buffer ` + Tab → shows available buffer names
+  - `switch-to-buffer ` + Tab → shows buffer names for switching
+- **Visual Hints**: See `[completion]` hints showing available completions
+- **Dynamic Updates**: Completions update as you type
+- **Case-Insensitive**: Matching works regardless of case
+
+### Available Commands
+
+- `quit` / `q` - Exit application
+- `help` / `h` - Show help buffer
+- `theme <name>` - Change theme (dark, light, high-contrast, solarized)
+- `buffer` / `b` - List buffers or switch to specific buffer
+- `switch-to-buffer` / `switch-buffer` - Switch to a specific buffer
+- `list-buffers` / `buffers` - Show buffer list
+- `close-buffer` / `kill-buffer` - Close current or specified buffer
+- `add-podcast <url>` - Add new podcast subscription
 - `import-opml` - Import OPML file
 - `export-opml` - Export subscriptions to OPML
 - `cleanup-episodes` - Clean up old downloaded episodes
@@ -92,7 +114,14 @@ Commands that can be executed via `M-x`:
 - `search-episodes` - Search across all episodes
 - `filter-by-status` - Filter episodes by download/play status
 - `filter-by-date` - Filter episodes by date range
-- `quit` - Exit application
+
+### Command Input Tips
+
+1. **Start typing**: Begin with any part of a command name
+2. **Use Tab**: Press Tab to see completions or cycle through options  
+3. **Be specific**: For commands with arguments (like `theme`), continue typing for contextual suggestions
+4. **Use shortcuts**: Many commands have short aliases (e.g., `q` for `quit`, `h` for `help`)
+5. **History**: Use `↑`/`↓` or `C-p`/`C-n` to navigate command history
 
 ## Mode-Specific Behaviors
 

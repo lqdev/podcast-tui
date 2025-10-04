@@ -510,6 +510,15 @@ impl Minibuffer {
         &self.completion_candidates
     }
 
+    /// Check if minibuffer is in command prompt mode (M-x)
+    pub fn is_command_prompt(&self) -> bool {
+        match &self.content {
+            MinibufferContent::PromptWithCompletion { prompt, .. } => prompt == "M-x ",
+            MinibufferContent::Command { .. } => true,
+            _ => false,
+        }
+    }
+
     /// Set the theme
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;

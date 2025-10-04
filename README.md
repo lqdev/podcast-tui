@@ -18,6 +18,7 @@ A cross-platform terminal user interface for podcast management built with Rust 
 - ✅ **Episode Notes** - Add personal notes to episodes
 - ✅ **Statistics Tracking** - Listen time and download statistics
 - ✅ **Emacs-style Navigation** - Familiar keybindings for Emacs users
+- ✅ **Command Auto-completion** - Intelligent command completion in minibuffer with contextual suggestions
 - ✅ **Cross-platform** - Windows and Linux support
 
 ## 🚀 Quick Start

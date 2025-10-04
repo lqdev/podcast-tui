@@ -327,8 +327,7 @@ impl UIApp {
                 Ok(true)
             }
             UIAction::PromptCommand => {
-                self.minibuffer
-                    .set_content(MinibufferContent::CommandPrompt);
+                self.show_command_prompt_with_completion();
                 Ok(true)
             }
             UIAction::ExecuteCommand(cmd) => {
@@ -1025,6 +1024,136 @@ impl UIApp {
         }
     }
 
+    /// Get all available commands for auto-completion
+    fn get_available_commands(&self) -> Vec<String> {
+        vec![
+            // Core commands
+            "quit".to_string(),
+            "q".to_string(),
+            "help".to_string(),
+            "h".to_string(),
+            // Theme commands
+            "theme".to_string(),
+            "theme dark".to_string(),
+            "theme light".to_string(),
+            "theme high-contrast".to_string(),
+            "theme solarized".to_string(),
+            // Buffer commands
+            "buffer".to_string(),
+            "b".to_string(),
+            "switch-to-buffer".to_string(),
+            "switch-buffer".to_string(),
+            "list-buffers".to_string(),
+            "buffers".to_string(),
+            "close-buffer".to_string(),
+            "kill-buffer".to_string(),
+            // Podcast commands
+            "add-podcast".to_string(),
+        ]
+    }
+
+    /// Get contextual command completions based on current input
+    fn get_contextual_command_completions(&self, input: &str) -> Vec<String> {
+        let input_lower = input.to_lowercase();
+        let mut completions = Vec::new();
+
+        // Basic command completion - match from start
+        let base_commands = self.get_available_commands();
+        for cmd in &base_commands {
+            if cmd.to_lowercase().starts_with(&input_lower) {
+                completions.push(cmd.clone());
+            }
+        }
+
+        // Add contextual completions for specific command patterns
+        if input_lower.starts_with("theme ") {
+            let theme_part = &input_lower[6..]; // Skip "theme "
+            let themes = ["dark", "light", "high-contrast", "solarized"];
+            for theme in &themes {
+                if theme.starts_with(theme_part) {
+                    completions.push(format!("theme {}", theme));
+                }
+            }
+        } else if input_lower.starts_with("buffer ") || input_lower.starts_with("b ") {
+            // Add buffer names as completions
+            let buffer_names = self.buffer_manager.buffer_names();
+            let prefix = if input_lower.starts_with("buffer ") {
+                "buffer "
+            } else {
+                "b "
+            };
+            let search_term = &input_lower[prefix.len()..];
+
+            for (_, name) in &buffer_names {
+                if name.to_lowercase().starts_with(search_term) {
+                    completions.push(format!("{}{}", prefix, name));
+                }
+            }
+        } else if input_lower.starts_with("switch-to-buffer ")
+            || input_lower.starts_with("switch-buffer ")
+        {
+            // Add buffer names as completions for switch commands
+            let buffer_names = self.buffer_manager.buffer_names();
+            let prefix = if input_lower.starts_with("switch-to-buffer ") {
+                "switch-to-buffer "
+            } else {
+                "switch-buffer "
+            };
+            let search_term = &input_lower[prefix.len()..];
+
+            for (_, name) in &buffer_names {
+                if name.to_lowercase().starts_with(search_term) {
+                    completions.push(format!("{}{}", prefix, name));
+                }
+            }
+        } else if input_lower.starts_with("close-buffer ")
+            || input_lower.starts_with("kill-buffer ")
+        {
+            // Add buffer names as completions for close commands
+            let buffer_names = self.buffer_manager.buffer_names();
+            let prefix = if input_lower.starts_with("close-buffer ") {
+                "close-buffer "
+            } else {
+                "kill-buffer "
+            };
+            let search_term = &input_lower[prefix.len()..];
+
+            for (_, name) in &buffer_names {
+                if name.to_lowercase().starts_with(search_term) {
+                    completions.push(format!("{}{}", prefix, name));
+                }
+            }
+        } else if input_lower.starts_with("add-podcast ") {
+            // For add-podcast, we could suggest common podcast URLs or show a hint
+            if input_lower == "add-podcast " {
+                completions.push("add-podcast https://".to_string());
+            }
+        }
+
+        // Remove duplicates and sort
+        completions.sort();
+        completions.dedup();
+
+        // If no specific matches, fall back to all commands that contain the input
+        if completions.is_empty() && !input.is_empty() {
+            for cmd in &base_commands {
+                if cmd.to_lowercase().contains(&input_lower) {
+                    completions.push(cmd.clone());
+                }
+            }
+        }
+
+        completions
+    }
+
+    /// Show command prompt with auto-completion
+    fn show_command_prompt_with_completion(&mut self) {
+        let commands = self.get_available_commands();
+        let prompt = "M-x ".to_string();
+        self.minibuffer
+            .show_prompt_with_completion(prompt, commands);
+    }
+
     /// Prompt for buffer switch with completion hints
     fn prompt_buffer_switch(&mut self) {
         let buffer_names = self.buffer_manager.buffer_names();
@@ -1545,6 +1674,15 @@ impl UIApp {
             // Backspace
             (KeyCode::Backspace, _) => {
                 self.minibuffer.backspace();
+
+                // Update command completion dynamically if in command prompt mode
+                if self.minibuffer.is_command_prompt() {
+                    if let Some(current_input) = self.minibuffer.current_input() {
+                        let commands = self.get_contextual_command_completions(&current_input);
+                        self.minibuffer.set_completion_candidates(commands);
+                    }
+                }
+
                 Ok(true)
             }
             // Cursor movement
@@ -1568,6 +1706,15 @@ impl UIApp {
             // Regular character input
             (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
                 self.minibuffer.add_char(c);
+
+                // Update command completion dynamically if in command prompt mode
+                if self.minibuffer.is_command_prompt() {
+                    if let Some(current_input) = self.minibuffer.current_input() {
+                        let commands = self.get_contextual_command_completions(&current_input);
+                        self.minibuffer.set_completion_candidates(commands);
+                    }
+                }
+
                 Ok(true)
             }
             // Ignore other keys in input mode

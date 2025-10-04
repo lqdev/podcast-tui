@@ -1302,8 +1302,14 @@ mod tests {
             Arc::new(DownloadManager::new(storage.clone(), temp_dir.path().to_path_buf()).unwrap());
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
-        let mut app =
-            UIApp::new(config, subscription_manager, download_manager, storage, app_event_tx).unwrap();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager,
+            storage,
+            app_event_tx,
+        )
+        .unwrap();
 
         let result = app.handle_action(UIAction::Quit).await;
         assert!(result.is_ok());
@@ -1325,8 +1331,14 @@ mod tests {
             Arc::new(DownloadManager::new(storage.clone(), temp_dir.path().to_path_buf()).unwrap());
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
-        let mut app =
-            UIApp::new(config, subscription_manager, download_manager, storage, app_event_tx).unwrap();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager,
+            storage,
+            app_event_tx,
+        )
+        .unwrap();
         app.initialize().await.unwrap();
 
         let result = app.handle_action(UIAction::ShowHelp).await;
@@ -1351,8 +1363,14 @@ mod tests {
             Arc::new(DownloadManager::new(storage.clone(), temp_dir.path().to_path_buf()).unwrap());
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
-        let mut app =
-            UIApp::new(config, subscription_manager, download_manager, storage, app_event_tx).unwrap();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager,
+            storage,
+            app_event_tx,
+        )
+        .unwrap();
         app.initialize().await.unwrap();
 
         // Test quit command
@@ -1384,8 +1402,14 @@ mod tests {
             Arc::new(DownloadManager::new(storage.clone(), temp_dir.path().to_path_buf()).unwrap());
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
-        let mut app =
-            UIApp::new(config, subscription_manager, download_manager, storage, app_event_tx).unwrap();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager,
+            storage,
+            app_event_tx,
+        )
+        .unwrap();
 
         let result = app.set_theme_direct("light");
         assert!(result.is_ok());

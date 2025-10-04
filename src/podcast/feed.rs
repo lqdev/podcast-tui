@@ -148,7 +148,6 @@ impl FeedParser {
 
     /// Download feed content from URL
     async fn download_feed(&self, feed_url: &str) -> Result<String, FeedError> {
-
         let response = self
             .http_client
             .get(feed_url)
@@ -297,7 +296,6 @@ impl FeedParser {
 
     /// Extract audio URL from feed entry using multiple strategies
     fn extract_audio_url(&self, entry: &feed_rs::model::Entry) -> Option<String> {
-
         // Strategy 1: Look for links with audio MIME types
         if let Some(audio_link) = entry.links.iter().find(|link| {
             link.media_type

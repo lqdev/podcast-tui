@@ -21,7 +21,16 @@ pub struct App {
 impl App {
     /// Create a new application instance
     pub async fn new(config: Config) -> Result<Self> {
+        Self::new_with_progress(config, tokio::sync::mpsc::unbounded_channel().0).await
+    }
+
+    /// Create a new application instance with progress reporting
+    pub async fn new_with_progress(
+        config: Config,
+        status_tx: tokio::sync::mpsc::UnboundedSender<crate::InitStatus>,
+    ) -> Result<Self> {
         // Initialize storage
+        status_tx.send(crate::InitStatus::InitializingStorage).ok();
         let storage = if let Some(data_dir) = &config.storage.data_directory {
             JsonStorage::with_data_dir(data_dir.into())
         } else {
@@ -30,7 +39,6 @@ impl App {
 
         // Initialize storage directories
         storage.initialize().await?;
-
         let storage = Arc::new(storage);
 
         // Create download manager with configured downloads directory
@@ -52,14 +60,17 @@ impl App {
         // Create app event channel for async communication
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
 
-        // Initialize UI with config and managers
-        let ui = UIApp::new(
+        // Initialize UI with config and managers (with progress updates)
+        status_tx.send(crate::InitStatus::CreatingBuffers).ok();
+        let ui = UIApp::new_with_progress(
             config.clone(),
             subscription_manager.clone(),
             download_manager.clone(),
             storage.clone(),
             app_event_tx,
+            status_tx,
         )
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize UI: {e}"))?;
 
         Ok(Self {

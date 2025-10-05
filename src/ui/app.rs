@@ -124,6 +124,78 @@ impl UIApp {
         })
     }
 
+    /// Create a new UI application with progress reporting
+    pub async fn new_with_progress(
+        config: Config,
+        subscription_manager: Arc<SubscriptionManager<JsonStorage>>,
+        download_manager: Arc<DownloadManager<JsonStorage>>,
+        storage: Arc<JsonStorage>,
+        app_event_tx: mpsc::UnboundedSender<AppEvent>,
+        status_tx: mpsc::UnboundedSender<crate::InitStatus>,
+    ) -> UIResult<Self> {
+        let theme = Theme::from_name(&config.ui.theme)?;
+        let mut buffer_manager = BufferManager::new();
+        let mut status_bar = StatusBar::new();
+        status_bar.set_theme(theme.clone());
+
+        let minibuffer = Minibuffer::new();
+        let key_handler = KeyHandler::new();
+        let event_handler = UIEventHandler::new(Duration::from_millis(250)); // 250ms tick rate
+
+        // Create buffers with progress updates
+        status_tx.send(crate::InitStatus::CreatingBuffers).ok();
+        buffer_manager.create_help_buffer();
+        buffer_manager.create_podcast_list_buffer(subscription_manager.clone());
+        buffer_manager.create_downloads_buffer(download_manager.clone(), storage.clone());
+        buffer_manager.create_whats_new_buffer(
+            subscription_manager.clone(),
+            download_manager.clone(),
+            config.ui.whats_new_episode_limit,
+        );
+
+        // Set initial buffer
+        if let Some(buffer_id) = buffer_manager.get_buffer_ids().first() {
+            let _ = buffer_manager.switch_to_buffer(&buffer_id.clone());
+        }
+
+        // Load data with progress updates
+        status_tx.send(crate::InitStatus::LoadingPodcasts).ok();
+        if let Some(podcast_buffer) = buffer_manager.get_podcast_list_buffer_mut() {
+            let _ = podcast_buffer.load_podcasts().await;
+        }
+
+        status_tx.send(crate::InitStatus::LoadingDownloads).ok();
+        if let Some(downloads_buffer) = buffer_manager.get_downloads_buffer_mut() {
+            let _ = downloads_buffer.refresh_downloads().await;
+        }
+
+        status_tx.send(crate::InitStatus::LoadingWhatsNew).ok();
+        if let Some(whats_new_buffer) = buffer_manager.get_whats_new_buffer_mut() {
+            let _ = whats_new_buffer.load_episodes().await;
+        }
+
+        status_tx.send(crate::InitStatus::Complete).ok();
+
+        Ok(Self {
+            config,
+            theme,
+            subscription_manager,
+            download_manager,
+            storage,
+            buffer_manager,
+            status_bar,
+            minibuffer,
+            key_handler,
+            event_handler,
+            app_event_tx,
+            should_quit: false,
+            last_render: Instant::now(),
+            frame_count: 0,
+            pending_deletion: None,
+            pending_bulk_deletion: false,
+        })
+    }
+
     /// Run the UI application
     pub async fn run(
         &mut self,
@@ -145,8 +217,14 @@ impl UIApp {
             event_handler.run(event_tx).await;
         });
 
-        // Initialize UI state
-        self.initialize().await?;
+        // Initialize UI state only if buffers weren't already loaded
+        if self.buffer_manager.get_buffer_ids().is_empty() {
+            self.initialize().await?;
+        } else {
+            // Buffers already loaded, just update status and show welcome
+            self.update_status_bar();
+            self.show_message("Welcome to Podcast TUI! Press F1 or ? for help.".to_string());
+        }
 
         // Main event loop
         let result = loop {

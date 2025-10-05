@@ -5,9 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - Sprint 1 Complete
+## [Unreleased] - Sprint 3 Complete
 
 ### Added
+
+**Sprint 3: Downloads & Episode Management (Week 4) - ✅ COMPLETE**
+- **Download System**: Full parallel download implementation with progress tracking
+  - Concurrent download manager supporting 2-3 parallel downloads (configurable)
+  - Progress tracking with byte-level granularity
+  - Resume capability for interrupted downloads
+  - Automatic cleanup of downloaded episodes (configurable age-based)
+  - Bulk delete functionality for podcast downloads
+- **Episode Management**: Complete episode browsing and organization
+  - Episode list buffer with status indicators (new/downloaded/played)
+  - Episode metadata display with comprehensive information
+  - Download status integration throughout UI
+  - File organization by podcast with sanitized filenames
+- **File Management**: Robust file handling
+  - Configurable download directory with expansion support
+  - Safe file naming with special character handling
+  - Atomic file operations for reliability
+  - Year-based organization option
+
+**Sprint 2: RSS & Podcast Functionality (Week 3) - ✅ COMPLETE**
+- **RSS Feed Parsing**: Full RSS/Atom feed support with feed-rs integration
+  - Multi-strategy audio URL extraction (6 different strategies)
+  - Comprehensive feed validation and error handling
+  - Support for various feed formats and quirks
+  - Metadata extraction (title, description, author, artwork)
+- **Subscription Management**: Complete podcast subscription system
+  - Subscribe/unsubscribe functionality with duplicate prevention
+  - Podcast list with sorted display (by last updated)
+  - Feed refresh with smart episode detection
+  - Hard refresh option to update existing episodes
+- **OPML Support**: Import/export podcast subscriptions
+  - Non-destructive OPML import (preserves existing subscriptions)
+  - Standard OPML export format
+  - Batch subscription handling
+- **Episode Detection**: Intelligent episode management
+  - Deterministic episode IDs based on GUID for deduplication
+  - Multi-strategy duplicate detection (GUID, URL, title+date)
+  - Track number assignment for episodes
+  - Episode status tracking (new/downloaded/played)
+
+**Sprint 1: Core UI Framework (Week 2) - ✅ COMPLETE**
 - **Core UI Framework**: Complete Emacs-style TUI framework implementation
   - Comprehensive UIAction system with 20+ action types for navigation and control
   - Full event handling system with crossterm integration and async support
@@ -124,19 +165,23 @@ Target release date: 8 weeks from project start
 - [x] Command execution system (M-x commands)
 - [x] Multi-theme support with dynamic switching
 
-#### Sprint 2: RSS & Podcasts (Week 3) - 📋 **NEXT**
-- [ ] RSS feed parsing integration
-- [ ] Subscription management
-- [ ] Podcast listing UI
-- [ ] OPML import/export
+#### Sprint 2: RSS & Podcasts (Week 3) - ✅ **COMPLETE**
+- [x] RSS feed parsing integration with feed-rs
+- [x] Subscription management (subscribe/unsubscribe/list)
+- [x] Podcast listing UI with status display
+- [x] OPML import/export functionality
+- [x] Feed refresh with smart episode detection
+- [x] Duplicate prevention and deduplication
 
-#### Sprint 3: Episodes & Downloads (Week 4) - 📋 Planned
-- [ ] Episode management system
-- [ ] Download queue implementation
-- [ ] File organization
-- [ ] Progress tracking UI
+#### Sprint 3: Episodes & Downloads (Week 4) - ✅ **COMPLETE**
+- [x] Episode management system with full metadata
+- [x] Download queue implementation (concurrent)
+- [x] File organization by podcast
+- [x] Progress tracking UI integration
+- [x] Bulk cleanup and delete functionality
+- [x] Episode status tracking throughout UI
 
-#### Sprint 4: Playback (Week 5) - 📋 Planned
+#### Sprint 4: Playback (Week 5) - 📋 **NEXT**
 - [ ] Audio playback integration
 - [ ] Playback controls
 - [ ] Chapter navigation

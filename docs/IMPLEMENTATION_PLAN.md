@@ -189,70 +189,70 @@ src/
 - [ ] Basic help system
 - [ ] Core UI components ready for content
 
-### Sprint 2: RSS and Podcasts (Week 3)
+### Sprint 2: RSS and Podcasts (Week 3) - ✅ **COMPLETE**
 **Goal**: Implement podcast subscription and RSS handling
 
 #### Day 1-2: RSS Parsing
-- [ ] Integrate feed-rs for RSS/Atom parsing
-- [ ] Create feed validation and error handling
-- [ ] Implement feed metadata extraction
-- [ ] Episode parsing from RSS feeds
+- [x] Integrate feed-rs for RSS/Atom parsing
+- [x] Create feed validation and error handling
+- [x] Implement feed metadata extraction
+- [x] Episode parsing from RSS feeds
 
 #### Day 3-4: Subscription Management  
-- [ ] Podcast subscription CRUD operations
-- [ ] Feed refresh functionality
-- [ ] Subscription persistence using storage layer
-- [ ] Basic duplicate detection
+- [x] Podcast subscription CRUD operations
+- [x] Feed refresh functionality
+- [x] Subscription persistence using storage layer
+- [x] Advanced duplicate detection (multi-strategy)
 
 #### Day 5-6: Podcast UI
-- [ ] Podcast list buffer implementation
-- [ ] Add/delete subscription UI flow
-- [ ] Feed refresh UI and progress indication
-- [ ] Podcast detail view
+- [x] Podcast list buffer implementation
+- [x] Add/delete subscription UI flow
+- [x] Feed refresh UI and progress indication
+- [x] Podcast detail view
 
 #### Day 7: OPML Foundation
-- [ ] Basic OPML parsing structure
-- [ ] Simple OPML import functionality
-- [ ] OPML export implementation
+- [x] OPML parsing with opml crate
+- [x] Non-destructive OPML import functionality
+- [x] OPML export implementation
 
 **Deliverables**:
-- [ ] Working RSS feed parsing and subscription management
-- [ ] UI for managing podcast subscriptions  
-- [ ] Basic OPML import/export
-- [ ] Persistent subscription storage
+- [x] Working RSS feed parsing and subscription management
+- [x] UI for managing podcast subscriptions  
+- [x] Full OPML import/export
+- [x] Persistent subscription storage
 
-### Sprint 3: Episodes and Downloads (Week 4)
+### Sprint 3: Episodes and Downloads (Week 4) - ✅ **COMPLETE**
 **Goal**: Implement episode management and download system
 
 #### Day 1-2: Episode Management
-- [ ] Episode data models and persistence
-- [ ] Episode list UI buffer
-- [ ] Episode detail view with metadata
-- [ ] Episode status tracking (new/played/downloaded)
+- [x] Episode data models and persistence
+- [x] Episode list UI buffer
+- [x] Episode detail view with metadata
+- [x] Episode status tracking (new/played/downloaded)
 
 #### Day 3-4: Download System
-- [ ] HTTP download client implementation
-- [ ] Basic download queue (FIFO)
-- [ ] Concurrent download manager (2-3 parallel)
-- [ ] Download progress tracking and UI
+- [x] HTTP download client implementation
+- [x] Download queue with concurrent handling
+- [x] Concurrent download manager (configurable 2-3 parallel)
+- [x] Download progress tracking and UI
 
 #### Day 5-6: File Management
-- [ ] Download directory organization
-- [ ] File naming and metadata
-- [ ] Download status integration with episode list
-- [ ] Basic cleanup functionality
+- [x] Download directory organization by podcast
+- [x] File naming with sanitization
+- [x] Download status integration with episode list
+- [x] Advanced cleanup functionality (age-based, bulk delete)
 
 #### Day 7: Integration
-- [ ] Connect episodes to downloads in UI
-- [ ] Error handling for network failures
-- [ ] Resume interrupted downloads
-- [ ] Download queue management UI
+- [x] Episodes to downloads UI integration
+- [x] Error handling for network failures
+- [x] Resume interrupted downloads capability
+- [x] Download manager UI integration
 
 **Deliverables**:
-- [ ] Complete episode browsing interface
-- [ ] Working download system with progress tracking
-- [ ] File organization and management
-- [ ] Integration between subscriptions, episodes, and downloads
+- [x] Complete episode browsing interface
+- [x] Working download system with progress tracking
+- [x] File organization and management
+- [x] Full integration between subscriptions, episodes, and downloads
 
 ### Sprint 4: Playback System (Week 5)  
 **Goal**: Implement basic audio playback functionality

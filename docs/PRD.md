@@ -4,9 +4,10 @@
 - **Project Name**: Podcast TUI
 - **Version**: 1.0.0-MVP
 - **Created**: 2025-09-28
-- **Status**: Planning
+- **Last Updated**: 2025-10-05
+- **Status**: In Development (Sprint 3 Complete - 37.5% of MVP)
 - **Team**: Solo Development
-- **Timeline**: 8 weeks to MVP
+- **Timeline**: 8 weeks to MVP (Week 4 complete)
 
 ## Executive Summary
 
@@ -52,29 +53,29 @@ Current podcast management solutions are either:
 ## Core Features (MVP Scope)
 
 ### Must Have (P0)
-- [x] RSS feed subscription management
-- [x] Episode listing and metadata display
-- [x] Basic episode downloading (2-3 concurrent)
-- [x] OPML import/export (non-destructive)
-- [x] Emacs-style keyboard navigation
-- [x] JSON-based configuration and data storage
-- [x] Cross-platform compatibility (Windows/Linux)
+- [x] RSS feed subscription management ✅ **COMPLETE** (Sprint 2)
+- [x] Episode listing and metadata display ✅ **COMPLETE** (Sprint 3)
+- [x] Basic episode downloading (2-3 concurrent) ✅ **COMPLETE** (Sprint 3)
+- [x] OPML import/export (non-destructive) ✅ **COMPLETE** (Sprint 2)
+- [x] Emacs-style keyboard navigation ✅ **COMPLETE** (Sprint 1)
+- [x] JSON-based configuration and data storage ✅ **COMPLETE** (Sprint 0)
+- [x] Cross-platform compatibility (Windows/Linux) ✅ **COMPLETE** (Sprint 0-3, build scripts)
 
 ### Should Have (P1)
-- [x] Basic audio playback (play/pause/stop/seek)
-- [x] Episode notes functionality
-- [x] Simple playlist creation and management
-- [x] Episode filtering (status, date, duration)
-- [x] Chapter support and navigation
-- [x] Basic statistics tracking
-- [x] Episode cleanup (manual and automatic)
+- [ ] Basic audio playback (play/pause/stop/seek) 🚧 **SPRINT 4**
+- [ ] Episode notes functionality 🚧 **SPRINT 5**
+- [ ] Simple playlist creation and management 🚧 **SPRINT 5**
+- [ ] Episode filtering (status, date, duration) 🚧 **SPRINT 5**
+- [ ] Chapter support and navigation 🚧 **SPRINT 4**
+- [ ] Basic statistics tracking 🚧 **SPRINT 6**
+- [x] Episode cleanup (manual and automatic) ✅ **COMPLETE** (Sprint 3)
 
 ### Could Have (P2)
-- [x] Transcript display (when available)
-- [x] Basic metadata management (ID3 tags)
-- [x] External player integration
-- [x] Simple search functionality
-- [x] Episode artwork embedding
+- [ ] Transcript display (when available) 🚧 **SPRINT 6**
+- [ ] Basic metadata management (ID3 tags) 🚧 **SPRINT 6**
+- [ ] External player integration 🚧 **SPRINT 4** (fallback option)
+- [ ] Simple search functionality 🚧 **SPRINT 5**
+- [ ] Episode artwork embedding 🚧 **SPRINT 6**
 
 ### Won't Have (This Version)
 - Advanced smart playlists

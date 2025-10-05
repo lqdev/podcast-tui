@@ -21,8 +21,10 @@ function Write-Error-Custom {
     Write-Host "[ERROR] $Message" -ForegroundColor Red
 }
 
-# Detect architecture
+# Detect architecture and check for available toolchain
 $arch = $env:PROCESSOR_ARCHITECTURE
+$linkExeAvailable = Get-Command link.exe -ErrorAction SilentlyContinue
+
 switch ($arch) {
     "AMD64" {
         $target = "x86_64-pc-windows-msvc"
@@ -34,6 +36,139 @@ switch ($arch) {
     }
     default {
         Write-Error-Custom "Unsupported architecture: $arch"
+        exit 1
+    }
+}
+
+# Check if MSVC linker is available, if not try to initialize VS environment
+if (-not $linkExeAvailable) {
+    Write-Status "MSVC linker not in PATH, attempting to initialize Visual Studio environment..."
+    
+    # Common Visual Studio installation paths
+    $vsPaths = @(
+        "C:\Program Files\Microsoft Visual Studio\2022\Community",
+        "C:\Program Files\Microsoft Visual Studio\2022\Professional",
+        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise",
+        "C:\Program Files\Microsoft Visual Studio\2022\BuildTools",
+        "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community",
+        "C:\Program Files (x86)\Microsoft Visual Studio\2022\Professional",
+        "C:\Program Files (x86)\Microsoft Visual Studio\2022\Enterprise",
+        "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools"
+    )
+    
+    $vcvarsall = $null
+    foreach ($vsPath in $vsPaths) {
+        $testPath = Join-Path $vsPath "VC\Auxiliary\Build\vcvarsall.bat"
+        if (Test-Path $testPath) {
+            $vcvarsall = $testPath
+            break
+        }
+    }
+    
+    if ($vcvarsall) {
+        Write-Status "Found Visual Studio at: $vcvarsall"
+        
+        # Determine the correct architecture argument for vcvarsall
+        $vcArch = if ($arch -eq "ARM64") { "arm64" } else { "x64" }
+        
+        Write-Status "Initializing MSVC environment for $vcArch..."
+        
+        # Run vcvarsall and capture environment variables
+        $tempFile = [System.IO.Path]::GetTempFileName()
+        cmd /c "`"$vcvarsall`" $vcArch && set" | Out-File -FilePath $tempFile -Encoding ASCII
+        
+        # Parse and set environment variables
+        Get-Content $tempFile | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+                $varName = $matches[1]
+                $varValue = $matches[2]
+                # Update important environment variables
+                if ($varName -eq "PATH" -or $varName -eq "LIB" -or $varName -eq "INCLUDE" -or $varName -eq "LIBPATH") {
+                    Set-Item -Path "env:$varName" -Value $varValue
+                }
+            }
+        }
+        Remove-Item $tempFile
+        
+        # Verify link.exe is now available
+        $linkExeAvailable = Get-Command link.exe -ErrorAction SilentlyContinue
+        if ($linkExeAvailable) {
+            Write-Status "✓ MSVC environment initialized successfully!"
+        } else {
+            Write-Error-Custom "Failed to initialize MSVC environment"
+            exit 1
+        }
+    } else {
+        Write-Error-Custom "MSVC linker (link.exe) not found and Visual Studio installation not detected!"
+        Write-Host ""
+        Write-Host "Building native Windows applications requires Visual Studio Build Tools." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Please install:" -ForegroundColor Cyan
+        Write-Host "  1. Download from: https://visualstudio.microsoft.com/downloads/" -ForegroundColor Cyan
+        Write-Host "  2. Select 'Build Tools for Visual Studio 2022'" -ForegroundColor Cyan
+        Write-Host "  3. Choose 'Desktop development with C++'" -ForegroundColor Cyan
+        if ($arch -eq "ARM64") {
+            Write-Host "  4. Ensure ARM64 build tools are selected" -ForegroundColor Cyan
+        }
+        Write-Host "  4. Restart your terminal after installation" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "For detailed instructions, see: .\scripts\INSTALL-MSVC-TOOLS.md" -ForegroundColor Green
+        Write-Host ""
+        exit 1
+    }
+}
+
+# Check for clang/LLVM (required for some dependencies on ARM64)
+if ($arch -eq "ARM64") {
+    $clangAvailable = Get-Command clang -ErrorAction SilentlyContinue
+    
+    # If not in PATH, check common installation locations
+    if (-not $clangAvailable) {
+        $llvmPaths = @(
+            "C:\Program Files\LLVM\bin",
+            "C:\Program Files (x86)\LLVM\bin",
+            "$env:ProgramFiles\LLVM\bin",
+            "${env:ProgramFiles(x86)}\LLVM\bin"
+        )
+        
+        foreach ($llvmPath in $llvmPaths) {
+            if (Test-Path "$llvmPath\clang.exe") {
+                Write-Status "Found LLVM at: $llvmPath"
+                Write-Status "Adding LLVM to PATH for this session..."
+                $env:PATH += ";$llvmPath"
+                $clangAvailable = $true
+                break
+            }
+        }
+    }
+    
+    if (-not $clangAvailable) {
+        Write-Warning-Custom "Clang/LLVM not found - required for ARM64 builds"
+        Write-Host ""
+        Write-Host "Some Rust dependencies require LLVM/Clang for ARM64 Windows." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Quick install:" -ForegroundColor Cyan
+        Write-Host "  winget install LLVM.LLVM" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "Then restart your terminal and run this script again." -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "For detailed instructions, see: .\scripts\INSTALL-LLVM.md" -ForegroundColor Green
+        Write-Host ""
+        exit 1
+    } else {
+        $clangVersion = clang --version 2>&1 | Select-Object -First 1
+        Write-Status "✓ Clang/LLVM found: $clangVersion"
+    }
+}
+
+# Ensure target is installed
+Write-Status "Using MSVC toolchain: $target"
+$installedTargets = rustup target list --installed
+if (-not ($installedTargets -match $target)) {
+    Write-Status "Installing target: $target"
+    rustup target add $target
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error-Custom "Failed to install target $target"
         exit 1
     }
 }
@@ -58,13 +193,16 @@ Write-Status "Release directory: $releaseDir"
 
 # Build
 Write-Status "Building release binary (this may take a few minutes)..."
-try {
-    cargo build --release
-    Write-Status "✓ Build successful!"
-} catch {
-    Write-Error-Custom "Build failed!"
+Write-Status "Target: $target"
+cargo build --release --target $target
+if ($LASTEXITCODE -ne 0) {
+    Write-Error-Custom "Build failed with exit code $LASTEXITCODE"
+    Write-Host ""
+    Write-Host "This usually means dependencies failed to compile." -ForegroundColor Yellow
+    Write-Host "Check the error messages above for details." -ForegroundColor Yellow
     exit 1
 }
+Write-Status "✓ Build successful!"
 
 # Package
 Write-Status "Packaging binary..."
@@ -77,8 +215,25 @@ if (Test-Path $archiveDir) {
 }
 New-Item -ItemType Directory -Path $archiveDir | Out-Null
 
-# Copy binary
-Copy-Item "target\release\podcast-tui.exe" $archiveDir
+# Copy binary (check for both .exe and no extension in target-specific directory)
+$targetBinaryPath = "target\$target\release\podcast-tui.exe"
+$targetBinaryPathNoExt = "target\$target\release\podcast-tui"
+$binaryPath = "target\release\podcast-tui.exe"
+$binaryPathNoExt = "target\release\podcast-tui"
+
+if (Test-Path $targetBinaryPath) {
+    Copy-Item $targetBinaryPath $archiveDir
+} elseif (Test-Path $targetBinaryPathNoExt) {
+    Copy-Item $targetBinaryPathNoExt (Join-Path $archiveDir "podcast-tui.exe")
+} elseif (Test-Path $binaryPath) {
+    Copy-Item $binaryPath $archiveDir
+} elseif (Test-Path $binaryPathNoExt) {
+    Copy-Item $binaryPathNoExt (Join-Path $archiveDir "podcast-tui.exe")
+} else {
+    Write-Error-Custom "Could not find podcast-tui binary in target directories"
+    Write-Error-Custom "Checked: $targetBinaryPath, $targetBinaryPathNoExt, $binaryPath, $binaryPathNoExt"
+    exit 1
+}
 
 # Copy documentation files if they exist
 if (Test-Path "README.md") {

@@ -7,7 +7,9 @@ PowerShell scripts for building podcast-tui on Windows.
 - Windows 10 or later
 - PowerShell 5.1 or later
 - [Rust](https://rustup.rs/) installed
-- Visual Studio Build Tools (for C++ development)
+- **Visual Studio Build Tools (REQUIRED)** - See [INSTALL-MSVC-TOOLS.md](INSTALL-MSVC-TOOLS.md) for detailed instructions
+
+> ⚠️ **Important:** Windows builds REQUIRE Visual Studio Build Tools with C++ support. Without this, you'll get "linker `link.exe` not found" errors.
 
 ## Installation
 

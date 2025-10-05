@@ -55,16 +55,26 @@ cargo build --release
 ```
 
 #### Building Cross-Platform Releases
-To build release binaries for all supported platforms:
+
+**Linux/macOS:**
 ```bash
 # Install build dependencies (one-time setup)
 ./scripts/install-build-deps.sh
 
-# Build all releases
-./scripts/build-releases.sh
+# Quick local build
+./scripts/build-linux.sh
 ```
 
-See [BUILD_SYSTEM.md](docs/BUILD_SYSTEM.md) for detailed build documentation.
+**Windows:**
+```powershell
+# Verify dependencies
+.\scripts\install-build-deps.ps1
+
+# Quick local build
+.\scripts\build-windows.ps1
+```
+
+See [BUILD_COMMANDS.md](BUILD_COMMANDS.md) for quick reference or [BUILD_SYSTEM.md](docs/BUILD_SYSTEM.md) for detailed documentation.
 
 #### Using DevContainer (Recommended for Development)
 1. Install [Docker](https://docker.com) and [VS Code](https://code.visualstudio.com)

@@ -2,11 +2,20 @@
 
 This directory contains scripts for building cross-platform release binaries of podcast-tui.
 
+## Platform-Specific Scripts
+
+- **Linux/macOS:** Bash scripts (`.sh`)
+- **Windows:** PowerShell scripts (`.ps1`)
+
+See [README-WINDOWS.md](README-WINDOWS.md) for Windows-specific instructions.
+
 ## Prerequisites
 
 Before running the build scripts, you need to install the required dependencies.
 
 ## Installation
+
+### Linux/macOS
 
 Run the installation script to set up all necessary tools:
 
@@ -19,12 +28,49 @@ This script will install:
 - `zig` - The Zig compiler/linker (used for cross-compilation)
 - Additional system dependencies (on Linux)
 
+### Windows
+
+Run the PowerShell installation script:
+
+```powershell
+.\scripts\install-build-deps.ps1
+```
+
+This script will verify:
+- Rust and Cargo installation
+- MSVC targets availability
+- Visual Studio Build Tools
+
+See [README-WINDOWS.md](README-WINDOWS.md) for detailed Windows instructions.
+
 ## Building Releases
 
-Once dependencies are installed, build release binaries for all supported platforms:
+### Linux/macOS
+
+Quick local build (current architecture only):
 
 ```bash
-./scripts/build-releases.sh
+./scripts/build-linux.sh
+```
+
+Or use the full multi-platform script (may fail on Windows targets):
+
+```bash
+./scripts/build-releases.sh --linux-only
+```
+
+### Windows
+
+Quick local build (current architecture only):
+
+```powershell
+.\scripts\build-windows.ps1
+```
+
+Or build for all Windows architectures:
+
+```powershell
+.\scripts\build-releases-windows.ps1
 ```
 
 ### Supported Platforms

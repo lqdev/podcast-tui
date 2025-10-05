@@ -270,7 +270,7 @@ impl<S: Storage> DownloadManager<S> {
             .load_podcast(podcast_id)
             .await
             .map_err(|e| DownloadError::Storage(e.to_string()))?;
-        
+
         let folder_name = self.generate_podcast_folder_name(&podcast);
 
         // Load episodes for this podcast
@@ -448,7 +448,10 @@ impl<S: Storage> DownloadManager<S> {
     }
 
     /// Clean up podcast-specific directory by folder name
-    async fn cleanup_podcast_directory_by_name(&self, folder_name: &str) -> Result<(), DownloadError> {
+    async fn cleanup_podcast_directory_by_name(
+        &self,
+        folder_name: &str,
+    ) -> Result<(), DownloadError> {
         if !self.downloads_dir.exists() {
             return Ok(());
         }

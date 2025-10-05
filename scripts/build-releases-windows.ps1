@@ -21,6 +21,91 @@ function Write-Error-Custom {
     Write-Host "[ERROR] $Message" -ForegroundColor Red
 }
 
+# Function to ensure LLVM is available for ARM64 builds
+function Ensure-LLVM {
+    Write-Status "Checking for LLVM/Clang (required for ARM64 builds)..."
+    
+    # Check if clang is already in PATH
+    $clangCmd = Get-Command clang -ErrorAction SilentlyContinue
+    if ($clangCmd) {
+        Write-Status "✓ Clang found in PATH: $($clangCmd.Source)"
+        return $true
+    }
+    
+    # Check common installation locations
+    $llvmPaths = @(
+        "C:\Program Files\LLVM\bin",
+        "C:\Program Files (x86)\LLVM\bin",
+        "$env:ProgramFiles\LLVM\bin",
+        "${env:ProgramFiles(x86)}\LLVM\bin"
+    )
+    
+    foreach ($path in $llvmPaths) {
+        if (Test-Path "$path\clang.exe") {
+            Write-Status "✓ Found LLVM at: $path"
+            Write-Status "Adding LLVM to PATH for this session..."
+            $env:PATH += ";$path"
+            
+            # Verify it works
+            $clangCmd = Get-Command clang -ErrorAction SilentlyContinue
+            if ($clangCmd) {
+                Write-Status "✓ Clang is now accessible"
+                return $true
+            }
+        }
+    }
+    
+    # LLVM not found, try to install it
+    Write-Warning-Custom "LLVM/Clang not found. This is required for ARM64 Windows builds."
+    Write-Host ""
+    Write-Host "Attempting to install LLVM via winget..." -ForegroundColor Cyan
+    
+    try {
+        $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
+        if ($wingetCmd) {
+            Write-Status "Installing LLVM.LLVM..."
+            winget install LLVM.LLVM --accept-source-agreements --accept-package-agreements
+            
+            if ($LASTEXITCODE -eq 0) {
+                Write-Status "✓ LLVM installed successfully"
+                Write-Status "Adding LLVM to PATH..."
+                
+                # Try to find it again after installation
+                foreach ($path in $llvmPaths) {
+                    if (Test-Path "$path\clang.exe") {
+                        $env:PATH += ";$path"
+                        Write-Status "✓ LLVM added to PATH"
+                        return $true
+                    }
+                }
+                
+                Write-Warning-Custom "LLVM was installed but couldn't be found in PATH."
+                Write-Warning-Custom "You may need to restart your terminal and run this script again."
+                return $false
+            }
+        } else {
+            Write-Warning-Custom "winget not found. Cannot auto-install LLVM."
+        }
+    } catch {
+        Write-Warning-Custom "Failed to install LLVM: $_"
+    }
+    
+    # Installation failed or not possible
+    Write-Host ""
+    Write-Error-Custom "LLVM/Clang is required for ARM64 Windows builds but is not available."
+    Write-Host ""
+    Write-Host "Please install LLVM manually:" -ForegroundColor Yellow
+    Write-Host "  Option 1: winget install LLVM.LLVM" -ForegroundColor Cyan
+    Write-Host "  Option 2: Download from https://github.com/llvm/llvm-project/releases" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "See scripts/INSTALL-LLVM.md for detailed instructions." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "After installation, restart your terminal and run this script again." -ForegroundColor Yellow
+    Write-Host ""
+    
+    return $false
+}
+
 # Get version from Cargo.toml
 $cargoToml = Get-Content "Cargo.toml" -Raw
 if ($cargoToml -match 'version\s*=\s*"([^"]+)"') {
@@ -31,6 +116,15 @@ if ($cargoToml -match 'version\s*=\s*"([^"]+)"') {
 }
 
 Write-Status "Building podcast-tui version: $version for all Windows platforms"
+
+# Ensure LLVM is available (required for ARM64 builds)
+$llvmAvailable = Ensure-LLVM
+if (-not $llvmAvailable) {
+    Write-Warning-Custom "Continuing without LLVM - ARM64 builds will likely fail"
+    Write-Host "Press Ctrl+C to cancel, or any key to continue with x64-only build..." -ForegroundColor Yellow
+    $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    Write-Host ""
+}
 
 # Create release directory
 $releaseDir = "releases\v$version"

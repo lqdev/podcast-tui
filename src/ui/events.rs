@@ -3,7 +3,7 @@
 // This module provides the core event system for handling keyboard input,
 // converting them to UI actions, and managing the event loop.
 
-use crossterm::event::{self, Event};
+use crossterm::event::{self, Event, KeyEventKind};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
@@ -83,7 +83,15 @@ impl UIEventHandler {
     /// Convert crossterm events to UI events
     fn convert_event(event: Event) -> UIEvent {
         match event {
-            Event::Key(key) => UIEvent::Key(key),
+            Event::Key(key) => {
+                // On Windows, crossterm fires both Press and Release events.
+                // We only want to handle Press events to avoid duplicate input.
+                if key.kind == KeyEventKind::Press {
+                    UIEvent::Key(key)
+                } else {
+                    UIEvent::Tick
+                }
+            }
             Event::Mouse(mouse) => UIEvent::Mouse(mouse),
             Event::Resize(w, h) => UIEvent::Resize(w, h),
             _ => UIEvent::Tick,

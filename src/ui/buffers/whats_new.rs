@@ -315,7 +315,6 @@ impl UIComponent for WhatsNewBuffer {
         let header = Row::new(vec![
             Cell::from("Podcast"),
             Cell::from("Episode"),
-            Cell::from("Duration"),
             Cell::from("Published"),
         ])
         .style(
@@ -346,8 +345,7 @@ impl UIComponent for WhatsNewBuffer {
 
                 Row::new(vec![
                     Cell::from(truncate_string(&agg_episode.podcast_title, 25)),
-                    Cell::from(truncate_string(&episode.title, 50)),
-                    Cell::from(episode.formatted_duration()),
+                    Cell::from(truncate_string(&episode.title, 65)),
                     Cell::from(published_str),
                 ])
                 .style(style)
@@ -358,9 +356,8 @@ impl UIComponent for WhatsNewBuffer {
         let table = Table::new(
             rows,
             [
-                Constraint::Percentage(20), // Podcast
-                Constraint::Percentage(50), // Episode
-                Constraint::Percentage(15), // Duration
+                Constraint::Percentage(25), // Podcast
+                Constraint::Percentage(60), // Episode (more space!)
                 Constraint::Percentage(15), // Published
             ],
         )

@@ -6,9 +6,6 @@ pub mod storage;
 pub mod ui;
 pub mod utils;
 
-#[cfg(test)]
-mod test_keys;
-
 // Re-export commonly used types
 pub use app::App;
 pub use config::Config;

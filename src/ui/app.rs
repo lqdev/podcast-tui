@@ -1933,6 +1933,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ui_app_creation() {
+        use crate::config::DownloadConfig;
         use crate::storage::JsonStorage;
         use tempfile::TempDir;
 
@@ -1944,8 +1945,14 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
-        let download_manager =
-            Arc::new(DownloadManager::new(storage, temp_dir.path().to_path_buf()).unwrap());
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_dir.path().to_path_buf(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
         let app = UIApp::new(
@@ -1964,6 +1971,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_quit_action() {
+        use crate::config::DownloadConfig;
         use crate::storage::JsonStorage;
         use tempfile::TempDir;
 
@@ -1972,8 +1980,14 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
-        let download_manager =
-            Arc::new(DownloadManager::new(storage.clone(), temp_dir.path().to_path_buf()).unwrap());
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_dir.path().to_path_buf(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
         let mut app = UIApp::new(
@@ -1993,6 +2007,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_show_help_action() {
+        use crate::config::DownloadConfig;
         use crate::storage::JsonStorage;
         use tempfile::TempDir;
 
@@ -2001,8 +2016,14 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
-        let download_manager =
-            Arc::new(DownloadManager::new(storage.clone(), temp_dir.path().to_path_buf()).unwrap());
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_dir.path().to_path_buf(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
         let mut app = UIApp::new(
@@ -2025,6 +2046,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_command_execution() {
+        use crate::config::DownloadConfig;
         use crate::storage::JsonStorage;
         use tempfile::TempDir;
 
@@ -2033,8 +2055,14 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
-        let download_manager =
-            Arc::new(DownloadManager::new(storage.clone(), temp_dir.path().to_path_buf()).unwrap());
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_dir.path().to_path_buf(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
         let mut app = UIApp::new(
@@ -2064,6 +2092,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_theme_setting() {
+        use crate::config::DownloadConfig;
         use crate::storage::JsonStorage;
         use tempfile::TempDir;
 
@@ -2072,8 +2101,14 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
-        let download_manager =
-            Arc::new(DownloadManager::new(storage.clone(), temp_dir.path().to_path_buf()).unwrap());
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_dir.path().to_path_buf(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
         let mut app = UIApp::new(

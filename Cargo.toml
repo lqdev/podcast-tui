@@ -53,6 +53,10 @@ dirs = "5.0"
 url = "2.0"
 shellexpand = "3.1"
 
+# ID3 metadata and image processing
+id3 = "1.9"
+image = "0.24"
+
 [dev-dependencies]
 mockall = "0.11"
 tokio-test = "0.4"

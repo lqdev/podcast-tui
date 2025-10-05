@@ -1,4 +1,4 @@
-use crate::ui::{UIApp, events::AppEvent};
+use crate::ui::{events::AppEvent, UIApp};
 use crate::{
     download::DownloadManager,
     podcast::subscription::SubscriptionManager,
@@ -40,7 +40,11 @@ impl App {
         let downloads_dir = shellexpand::tilde(&config.downloads.directory)
             .into_owned()
             .into();
-        let download_manager = Arc::new(DownloadManager::new(storage.clone(), downloads_dir)?);
+        let download_manager = Arc::new(DownloadManager::new(
+            storage.clone(),
+            downloads_dir,
+            config.downloads.clone(),
+        )?);
 
         // Create app event channel for async communication
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();

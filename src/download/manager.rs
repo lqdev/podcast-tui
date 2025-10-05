@@ -1,6 +1,8 @@
+use crate::config::DownloadConfig;
 use crate::podcast::{Episode, EpisodeStatus};
 use crate::storage::{EpisodeId, PodcastId, Storage};
 use anyhow::Result;
+use chrono::Datelike;
 use futures_util::StreamExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -41,10 +43,11 @@ pub struct DownloadManager<S: Storage> {
     storage: Arc<S>,
     downloads_dir: PathBuf,
     client: reqwest::Client,
+    config: DownloadConfig,
 }
 
 impl<S: Storage> DownloadManager<S> {
-    pub fn new(storage: Arc<S>, downloads_dir: PathBuf) -> Result<Self> {
+    pub fn new(storage: Arc<S>, downloads_dir: PathBuf, config: DownloadConfig) -> Result<Self> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(60)) // Longer timeout for downloads
             .connect_timeout(std::time::Duration::from_secs(10))
@@ -56,6 +59,7 @@ impl<S: Storage> DownloadManager<S> {
             storage,
             downloads_dir,
             client,
+            config,
         })
     }
 
@@ -120,8 +124,18 @@ impl<S: Storage> DownloadManager<S> {
             .await
             .map_err(|e| DownloadError::Storage(e.to_string()))?;
 
+        // Load podcast information for folder naming
+        let podcast = self
+            .storage
+            .load_podcast(podcast_id)
+            .await
+            .map_err(|e| DownloadError::Storage(e.to_string()))?;
+
+        // Generate folder name based on configuration
+        let folder_name = self.generate_podcast_folder_name(&podcast);
+        let podcast_dir = self.downloads_dir.join(folder_name);
+
         // Create download directory
-        let podcast_dir = self.downloads_dir.join(podcast_id.to_string());
         fs::create_dir_all(&podcast_dir).await?;
 
         // Generate filename
@@ -176,12 +190,29 @@ impl<S: Storage> DownloadManager<S> {
         match self.download_file(audio_url, &file_path).await {
             Ok(_) => {
                 episode.status = EpisodeStatus::Downloaded;
-                episode.local_path = Some(file_path);
+                episode.local_path = Some(file_path.clone());
+
+                // Embed ID3 metadata if configured and file is MP3
+                if self.config.embed_id3_metadata
+                    && file_path.extension().map_or(false, |ext| ext == "mp3")
+                {
+                    if let Err(e) = self
+                        .embed_id3_metadata(&file_path, &episode, &podcast)
+                        .await
+                    {
+                        // Log the error but don't fail the download
+                        eprintln!("Warning: Failed to embed ID3 metadata: {}", e);
+                    }
+                }
             }
             Err(e) => {
                 episode.status = EpisodeStatus::DownloadFailed;
                 // Clean up partial file
                 let _ = fs::remove_file(&file_path).await;
+                self.storage
+                    .save_episode(podcast_id, &episode)
+                    .await
+                    .map_err(|e| DownloadError::Storage(e.to_string()))?;
                 return Err(e);
             }
         }
@@ -340,62 +371,226 @@ impl<S: Storage> DownloadManager<S> {
 
     /// Generate safe filename for episode
     fn generate_filename(&self, episode: &Episode) -> Result<String, DownloadError> {
-        // Sanitize title for filename
-        let safe_title = episode
+        let mut filename_parts = Vec::new();
+
+        // Add episode number if configured and available
+        if self.config.include_episode_numbers {
+            if let Some(episode_num) = episode.episode_number {
+                filename_parts.push(format!("{:03}", episode_num));
+            }
+        }
+
+        // Add date if configured
+        if self.config.include_dates {
+            let date_str = episode.published.format("%Y-%m-%d").to_string();
+            filename_parts.push(date_str);
+        }
+
+        // Clean and add episode title
+        let title = episode
             .title
             .chars()
-            .filter(|c| c.is_alphanumeric() || " -_".contains(*c))
+            .map(|c| match c {
+                // Replace problematic characters with underscores
+                '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+                // Keep ASCII alphanumeric, spaces, hyphens, dots, parentheses
+                c if c.is_ascii_alphanumeric() || " -.()".contains(c) => c,
+                // Replace other characters with underscores
+                _ => '_',
+            })
             .collect::<String>()
             .trim()
-            .replace(' ', "_");
+            .replace("  ", " ") // Collapse multiple spaces
+            .replace(' ', "_"); // Replace spaces with underscores
 
-        // Get extension from URL or default to mp3
+        filename_parts.push(title);
+
+        // Join parts with underscores
+        let mut base_filename = filename_parts.join("_");
+
+        // Truncate if too long (reserve space for extension)
+        let max_base_len = self.config.max_filename_length.saturating_sub(4); // Reserve for .mp3
+        if base_filename.len() > max_base_len {
+            base_filename.truncate(max_base_len);
+            // Ensure we don't cut in the middle of a UTF-8 character
+            while !base_filename.is_char_boundary(base_filename.len()) {
+                base_filename.pop();
+            }
+        }
+
+        // Determine extension from audio URL
         let extension = if !episode.audio_url.is_empty() {
             episode
                 .audio_url
                 .split('.')
-                .last()
+                .next_back() // Use next_back instead of last for DoubleEndedIterator
                 .and_then(|ext| {
-                    let ext = ext.split('?').next().unwrap_or(ext);
-                    if ["mp3", "m4a", "ogg", "wav"].contains(&ext) {
-                        Some(ext)
-                    } else {
-                        None
+                    let ext = ext.split('?').next().unwrap_or(ext); // Remove query params
+                    match ext.to_lowercase().as_str() {
+                        "mp3" | "m4a" | "aac" | "ogg" | "wav" | "flac" => Some(ext.to_lowercase()),
+                        _ => None,
                     }
                 })
-                .unwrap_or("mp3")
+                .unwrap_or_else(|| "mp3".to_string())
         } else {
-            // If no audio URL, check GUID for extension
+            // Fallback: try to get extension from GUID if it looks like a URL
             episode
                 .guid
                 .as_ref()
                 .and_then(|guid| {
-                    guid.split('.').last().and_then(|ext| {
+                    guid.split('.').next_back().and_then(|ext| {
                         let ext = ext.split('?').next().unwrap_or(ext);
-                        if ["mp3", "m4a", "ogg", "wav"].contains(&ext) {
-                            Some(ext)
-                        } else {
-                            None
+                        match ext.to_lowercase().as_str() {
+                            "mp3" | "m4a" | "aac" | "ogg" | "wav" | "flac" => {
+                                Some(ext.to_lowercase())
+                            }
+                            _ => None,
                         }
                     })
                 })
-                .unwrap_or("mp3")
+                .unwrap_or_else(|| "mp3".to_string())
         };
 
-        let filename = format!("{}_{}.{}", episode.id, safe_title, extension);
+        Ok(format!("{}.{}", base_filename, extension))
+    }
 
-        // Ensure filename isn't too long
-        if filename.len() > 200 {
-            Ok(format!("{}.{}", episode.id, extension))
+    /// Generate podcast folder name based on configuration
+    fn generate_podcast_folder_name(&self, podcast: &crate::podcast::Podcast) -> String {
+        if self.config.use_readable_folders {
+            // Use podcast title, cleaned for filesystem compatibility
+            podcast
+                .title
+                .chars()
+                .map(|c| match c {
+                    // Replace problematic characters
+                    '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+                    // Keep ASCII alphanumeric, spaces, hyphens, dots, parentheses
+                    c if c.is_ascii_alphanumeric() || " -.()".contains(c) => c,
+                    // Replace other characters with underscores
+                    _ => '_',
+                })
+                .collect::<String>()
+                .trim()
+                .replace("  ", " ") // Collapse multiple spaces
+                .replace(' ', "_") // Replace spaces with underscores
         } else {
-            Ok(filename)
+            // Use UUID for guaranteed uniqueness
+            podcast.id.to_string()
         }
+    }
+
+    /// Embed ID3 metadata into an MP3 file
+    async fn embed_id3_metadata(
+        &self,
+        file_path: &Path,
+        episode: &Episode,
+        podcast: &crate::podcast::Podcast,
+    ) -> Result<(), DownloadError> {
+        use id3::{Tag, TagLike};
+
+        // Create or load existing tag
+        let mut tag = Tag::read_from_path(file_path).unwrap_or_default();
+
+        // Set basic metadata
+        tag.set_title(&episode.title);
+        tag.set_artist(&podcast.title);
+        tag.set_album(&podcast.title);
+        tag.set_genre("Podcast");
+
+        // Set track number if available (use episode_number)
+        if let Some(episode_num) = episode.episode_number {
+            tag.set_track(episode_num);
+        }
+
+        // Set year from publication date
+        let year = episode.published.year();
+        if year > 0 {
+            tag.set_year(year);
+        }
+
+        // Set comment with description (truncated if necessary)
+        if let Some(ref description) = episode.description {
+            let comment = if description.len() > self.config.max_id3_comment_length {
+                let mut truncated = description
+                    .chars()
+                    .take(self.config.max_id3_comment_length.saturating_sub(3))
+                    .collect::<String>();
+                truncated.push_str("...");
+                truncated
+            } else {
+                description.clone()
+            };
+            // Use add_frame with a Comment frame
+            let comment_frame = id3::frame::Comment {
+                lang: "eng".to_string(),
+                description: "".to_string(),
+                text: comment,
+            };
+            tag.add_frame(comment_frame);
+        }
+
+        // Download and embed artwork if configured
+        if self.config.download_artwork {
+            if let Some(ref artwork_url) = podcast.image_url {
+                if let Ok(artwork_data) = self.download_artwork(artwork_url).await {
+                    let picture = id3::frame::Picture {
+                        mime_type: artwork_data.0,
+                        picture_type: id3::frame::PictureType::CoverFront,
+                        description: "Cover".to_string(),
+                        data: artwork_data.1,
+                    };
+                    tag.add_frame(picture);
+                }
+            }
+        }
+
+        // Write the tag back to the file
+        tag.write_to_path(file_path, id3::Version::Id3v23)
+            .map_err(|e| DownloadError::InvalidPath(format!("Failed to write ID3 tags: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Download artwork and return MIME type and data
+    async fn download_artwork(&self, url: &str) -> Result<(String, Vec<u8>), DownloadError> {
+        let response = self.client.get(url).send().await?;
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|ct| ct.to_str().ok())
+            .unwrap_or("image/jpeg")
+            .to_string();
+
+        let data = response.bytes().await?.to_vec();
+
+        // Validate it's actually an image and convert if needed
+        let (final_mime_type, final_data) = match image::load_from_memory(&data) {
+            Ok(img) => {
+                // Convert to JPEG for maximum compatibility
+                let mut jpeg_data = Vec::new();
+                img.write_to(
+                    &mut std::io::Cursor::new(&mut jpeg_data),
+                    image::ImageFormat::Jpeg,
+                )
+                .map_err(|e| {
+                    DownloadError::InvalidPath(format!("Failed to convert image: {}", e))
+                })?;
+                ("image/jpeg".to_string(), jpeg_data)
+            }
+            Err(_) => {
+                // If we can't decode it as an image, return as-is
+                (content_type, data)
+            }
+        };
+
+        Ok((final_mime_type, final_data))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::DownloadConfig;
     use crate::podcast::Episode;
     use crate::storage::{JsonStorage, PodcastId};
     use chrono::Utc;
@@ -406,7 +601,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let downloads_dir = temp_dir.path().join("downloads");
-        let manager = DownloadManager::new(storage, downloads_dir).unwrap();
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
 
         let episode = Episode::new(
             PodcastId::new(),

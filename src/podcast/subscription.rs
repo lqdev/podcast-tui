@@ -149,6 +149,11 @@ impl<S: Storage> SubscriptionManager<S> {
             .get_episodes(&podcast.url, podcast_id)
             .await?;
 
+        // Assign track numbers to episodes
+        let episodes_with_tracks = self
+            .assign_track_numbers(podcast_id, feed_episodes, hard_refresh)
+            .await?;
+
         // Load existing episodes to check for duplicates
         let existing_episodes = self
             .storage
@@ -160,7 +165,7 @@ impl<S: Storage> SubscriptionManager<S> {
         let mut new_episodes = Vec::new();
         let mut updated_episodes = Vec::new();
 
-        for episode in feed_episodes {
+        for episode in episodes_with_tracks {
             // Check if episode already exists using multiple strategies
             let existing_episode = existing_episodes.iter().find(|existing_episode| {
                 // Strategy 1: Compare deterministic IDs (based on GUID)
@@ -275,6 +280,65 @@ impl<S: Storage> SubscriptionManager<S> {
             .podcast_exists(&podcast_id)
             .await
             .unwrap_or(false)
+    }
+
+    /// Assign track numbers to episodes based on chronological order
+    async fn assign_track_numbers(
+        &self,
+        podcast_id: &PodcastId,
+        mut new_episodes: Vec<Episode>,
+        hard_refresh: bool,
+    ) -> Result<Vec<Episode>, SubscriptionError> {
+        if hard_refresh {
+            // Renumber all episodes for consistency
+            let existing_episodes = self
+                .storage
+                .load_episodes(podcast_id)
+                .await
+                .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
+
+            // Combine and deduplicate by ID
+            let mut all_episodes = existing_episodes;
+            for new_ep in new_episodes {
+                if !all_episodes.iter().any(|existing| existing.id == new_ep.id) {
+                    all_episodes.push(new_ep);
+                }
+            }
+
+            // Sort chronologically (oldest first for track numbering)
+            all_episodes.sort_by_key(|e| e.published);
+
+            // Assign sequential track numbers
+            for (index, episode) in all_episodes.iter_mut().enumerate() {
+                episode.episode_number = Some((index + 1) as u32);
+            }
+
+            new_episodes = all_episodes;
+        } else {
+            // Only assign track numbers to new episodes
+            let existing_episodes = self
+                .storage
+                .load_episodes(podcast_id)
+                .await
+                .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
+
+            // Find highest existing track number
+            let max_track = existing_episodes
+                .iter()
+                .filter_map(|e| e.episode_number)
+                .max()
+                .unwrap_or(0);
+
+            // Sort new episodes chronologically (oldest first)
+            new_episodes.sort_by_key(|e| e.published);
+
+            // Assign sequential track numbers starting after max
+            for (index, episode) in new_episodes.iter_mut().enumerate() {
+                episode.episode_number = Some(max_track + (index + 1) as u32);
+            }
+        }
+
+        Ok(new_episodes)
     }
 
     /// Get subscription count

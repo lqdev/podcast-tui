@@ -95,6 +95,16 @@ pub struct DownloadConfig {
     pub cleanup_after_days: Option<u32>,
     pub auto_download_new: bool,
     pub max_download_size_mb: Option<u32>,
+
+    // MP3 player compatibility options
+    pub use_readable_folders: bool, // Use podcast titles vs UUIDs (default: true)
+    pub embed_id3_metadata: bool,   // Add ID3 tags (default: true)
+    pub assign_track_numbers: bool, // Auto-assign episode sequence (default: true)
+    pub download_artwork: bool,     // Download and embed artwork (default: true)
+    pub max_id3_comment_length: usize, // Truncate descriptions (default: 200)
+    pub include_episode_numbers: bool, // Add episode numbers to filenames (default: true)
+    pub include_dates: bool,        // Add dates to filenames (default: true)
+    pub max_filename_length: usize, // Limit for compatibility (default: 150)
 }
 
 impl Default for DownloadConfig {
@@ -105,6 +115,16 @@ impl Default for DownloadConfig {
             cleanup_after_days: Some(30),
             auto_download_new: false,
             max_download_size_mb: Some(500), // 500MB limit
+
+            // MP3 player optimized defaults
+            use_readable_folders: true,
+            embed_id3_metadata: true,
+            assign_track_numbers: true,
+            download_artwork: true,
+            max_id3_comment_length: 200,
+            include_episode_numbers: true,
+            include_dates: true,
+            max_filename_length: 150,
         }
     }
 }

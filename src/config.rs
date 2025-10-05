@@ -96,15 +96,49 @@ pub struct DownloadConfig {
     pub auto_download_new: bool,
     pub max_download_size_mb: Option<u32>,
 
-    // MP3 player compatibility options
+    // MP3 player compatibility options (with defaults for backward compatibility)
+    #[serde(default = "default_use_readable_folders")]
     pub use_readable_folders: bool, // Use podcast titles vs UUIDs (default: true)
-    pub embed_id3_metadata: bool,   // Add ID3 tags (default: true)
+    #[serde(default = "default_embed_id3_metadata")]
+    pub embed_id3_metadata: bool, // Add ID3 tags (default: true)
+    #[serde(default = "default_assign_track_numbers")]
     pub assign_track_numbers: bool, // Auto-assign episode sequence (default: true)
-    pub download_artwork: bool,     // Download and embed artwork (default: true)
+    #[serde(default = "default_download_artwork")]
+    pub download_artwork: bool, // Download and embed artwork (default: true)
+    #[serde(default = "default_max_id3_comment_length")]
     pub max_id3_comment_length: usize, // Truncate descriptions (default: 200)
+    #[serde(default = "default_include_episode_numbers")]
     pub include_episode_numbers: bool, // Add episode numbers to filenames (default: true)
-    pub include_dates: bool,        // Add dates to filenames (default: true)
+    #[serde(default = "default_include_dates")]
+    pub include_dates: bool, // Add dates to filenames (default: true)
+    #[serde(default = "default_max_filename_length")]
     pub max_filename_length: usize, // Limit for compatibility (default: 150)
+}
+
+// Default functions for serde
+fn default_use_readable_folders() -> bool {
+    true
+}
+fn default_embed_id3_metadata() -> bool {
+    true
+}
+fn default_assign_track_numbers() -> bool {
+    true
+}
+fn default_download_artwork() -> bool {
+    true
+}
+fn default_max_id3_comment_length() -> usize {
+    200
+}
+fn default_include_episode_numbers() -> bool {
+    true
+}
+fn default_include_dates() -> bool {
+    true
+}
+fn default_max_filename_length() -> usize {
+    150
 }
 
 impl Default for DownloadConfig {

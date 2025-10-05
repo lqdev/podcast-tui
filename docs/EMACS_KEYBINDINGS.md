@@ -1,8 +1,19 @@
-# Emacs-Style Keybindings
+# Keybinding Migration Notice
 
-This document outlines the Emacs-inspired keybinding system for the Podcast TUI application.
+**⚠️ This document is outdated and kept for historical reference only.**
 
-## Navigation Keybindings
+Podcast TUI has moved away from Emacs-style keybindings to a simpler, more universal keybinding system that works reliably across all terminal emulators.
+
+**Please refer to the current keybinding documentation:**
+- **[docs/KEYBINDINGS.md](KEYBINDINGS.md)** - Current keybinding reference
+
+---
+
+## Historical Information - Emacs-Style Keybindings (No Longer Used)
+
+This document previously outlined an Emacs-inspired keybinding system for the Podcast TUI application.
+
+## Previous Navigation Keybindings (Deprecated)
 
 ### Basic Movement
 - `C-n` - Next line/item

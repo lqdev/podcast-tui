@@ -1,9 +1,15 @@
 # Podcast TUI
 
-A cross-platform terminal user interface for podcast management built with Rust and Emacs-style keybindings.
+A cross-platform terminal user interface for podcast management built with Rust.
 
 ![Build Status](https://github.com/yourusername/podcast-tui/workflows/CI/badge.svg)
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![License](https://img.shiel### Architecture
+The application follows a modular architecture with clear separation of concerns:
+
+- **Storage Layer** - Abstracted JSON-based persistence
+- **Domain Logic** - Podcast, episode, and playlist management
+- **UI Layer** - Terminal interface using Ratatui with buffer-based UI
+- **Audio System** - Cross-platform playback with Rodioadge/license-MIT-blue.svg)
 ![Rust Version](https://img.shields.io/badge/rust-1.75+-red.svg)
 ![Development Status](https://img.shields.io/badge/status-Sprint%203%20Complete-blue)
 ![Progress](https://img.shields.io/badge/MVP%20Progress-37.5%25-yellow)
@@ -16,7 +22,7 @@ A cross-platform terminal user interface for podcast management built with Rust 
 - RSS feed subscription management with OPML import/export
 - Episode browsing with comprehensive metadata
 - Parallel episode downloads (2-3 concurrent, configurable)
-- Emacs-style keyboard navigation and buffer management
+- Intuitive keyboard navigation and buffer management
 - Multi-theme support (dark, light, high-contrast, solarized)
 - Cross-platform builds (Windows x64/ARM64, Linux x64/ARM64)
 
@@ -41,9 +47,9 @@ A cross-platform terminal user interface for podcast management built with Rust 
 - ✅ **OPML Import/Export** - Non-destructive import and export of subscriptions  
 - ✅ **Episode Management** - Browse and manage episodes
 - ✅ **Download System** - Parallel episode downloads with progress tracking and bulk cleanup
-- ✅ **Emacs-style Navigation** - Familiar keybindings for Emacs users
+- ✅ **Keyboard Navigation** - Intuitive keybindings for efficient navigation
 - ✅ **Command Auto-completion** - Intelligent command completion in minibuffer
-- ✅ **Buffer Management** - Emacs-style buffers for different views
+- ✅ **Buffer Management** - Multiple buffers for different views
 - ✅ **Theme System** - Multiple themes (dark, light, high-contrast, solarized)
 - ✅ **Cross-platform Build** - Windows and Linux build support
 
@@ -133,55 +139,60 @@ See [BUILD_COMMANDS.md](BUILD_COMMANDS.md) for quick reference or [BUILD_SYSTEM.
 **Note:** Audio playback is not yet implemented. Current features include subscription management, episode browsing, and downloading.
 
 1. Start the application: `podcast-tui`
-2. Press `M-x` (Alt+x) and type `subscribe` to add your first podcast
+2. Press `a` to add your first podcast
 3. Enter an RSS feed URL (try: `https://feeds.simplecast.com/54nAGcIl`)
-4. Navigate with `C-n`/`C-p` to browse episodes
-5. Press `D` to download episodes, `C-h ?` for help
+4. Navigate with arrow keys or Up/Down to browse episodes
+5. Press `D` to download episodes, `F1` or `?` for help
 
 ## 🎹 Keybindings
 
-Podcast TUI uses Emacs-style keybindings for efficient keyboard navigation:
-
 ### Navigation
-- `C-n` / `C-p` - Next/previous item
-- `C-f` / `C-b` - Move right/left  
-- `C-a` / `C-e` - Beginning/end of line
-- `RET` - Select/activate item
-
-### Buffer Management
-- `C-x b` - Switch between buffers (podcasts, episodes, playlists)
-- `C-x 1` - Focus current buffer
-- `C-x 2` - Split horizontally
-- `C-x 3` - Split vertically
-- `C-x o` - Switch window
+- `↑` / `↓` - Move up/down
+- `←` / `→` - Move left/right
+- `Page Up` / `Page Down` - Scroll by page
+- `Home` / `End` - Jump to top/bottom
+- `Enter` - Select/activate item
+- `Space` - Select/activate item
+- `Tab` - Next buffer
+- `Shift+Tab` - Previous buffer
+- `Ctrl+Page Up` - Previous buffer (alternative)
+- `Ctrl+Page Down` - Next buffer (alternative)
 
 ### Podcast Management
 - `a` - Add new podcast subscription
 - `d` - Delete selected podcast
 - `r` - Refresh selected podcast feed
-- `R` - Refresh all podcast feeds
+- `Shift+R` - Refresh all podcast feeds
+- `Ctrl+r` - Hard refresh (re-parse all episodes)
 
 ### Episode Management  
-- `RET` - Play selected episode
-- `D` - Download episode
-- `X` - Delete downloaded file
-- `C-x` - Delete ALL downloaded episodes and clean up
-- `N` - Add/edit episode note
-- `m` - Mark as played/unplayed
+- `Enter` - Play selected episode (when playback implemented)
+- `Shift+D` - Download episode
+- `Shift+X` - Delete downloaded file for selected episode
+- `Ctrl+x` - Delete ALL downloaded episodes and clean up
 
-### Playback Controls
-- `SPC` - Play/pause
-- `s` - Stop playback
-- `f` / `b` - Seek forward/backward (30s)
-- `+` / `-` - Volume up/down
-- `n` / `p` - Next/previous episode
+### Buffer Management
+- `F2` - Switch to podcast list
+- `F3` - Switch to help
+- `F4` - Switch to downloads
+- `F5` - Refresh current buffer
+- `Ctrl+b` - Show buffer list / Switch buffer
+- `Ctrl+k` - Close current buffer
+- `Ctrl+l` - List all buffers
 
-### Help System
-- `C-h ?` - Help overview
-- `C-h k` - Describe key
-- `C-h b` - Show all keybindings
+### Application
+- `F1` - Show help
+- `h` or `?` - Show help
+- `:` - Command prompt
+- `Esc` - Cancel/hide minibuffer
+- `q` - Quit application
+- `F10` - Quit application
 
-See [complete keybinding reference](docs/EMACS_KEYBINDINGS.md) for all shortcuts.
+### Future Playback Controls (Not Yet Implemented)
+- `Space` - Play/pause
+- Audio controls coming in Sprint 4
+
+See [complete keybinding reference](docs/KEYBINDINGS.md) for all shortcuts.
 
 ## ⚙️ Configuration
 
@@ -340,7 +351,7 @@ Licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 - [Ratatui](https://ratatui.rs/) community for excellent TUI framework
 - [feed-rs](https://github.com/feed-rs/feed-rs) for robust RSS parsing
-- Emacs community for keybinding inspiration
+- Terminal UI community for design inspiration
 - Rust community for excellent tooling and libraries
 
 ---

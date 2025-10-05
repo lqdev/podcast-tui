@@ -256,7 +256,7 @@ impl UIApp {
         self.update_status_bar();
 
         // Show welcome message
-        self.show_message("Welcome to Podcast TUI! Press C-h for help.".to_string());
+        self.show_message("Welcome to Podcast TUI! Press F1 or ? for help.".to_string());
 
         Ok(())
     }

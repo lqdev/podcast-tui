@@ -1,7 +1,7 @@
 # GitHub Copilot Instructions for Podcast TUI Development
 
 ## Project Overview
-This is a cross-platform terminal user interface (TUI) application for podcast management written in Rust. The application uses Emacs-style keybindings and prioritizes MVP delivery over production-scale features.
+This is a cross-platform terminal user interface (TUI) application for podcast management written in Rust. The application uses simple, universal keybindings that work reliably across all terminal emulators and prioritizes MVP delivery over production-scale features.
 
 ## Code Style and Architecture Guidelines
 
@@ -18,7 +18,7 @@ This is a cross-platform terminal user interface (TUI) application for podcast m
 - **Storage Abstraction**: Always code against the `Storage` trait, never directly against JSON implementation
 - **Component Separation**: Maintain clear separation between UI, business logic, and data persistence
 - **Event-Driven**: Use event-driven patterns for UI updates and user interactions
-- **Buffer-Based UI**: Follow Emacs paradigms with buffers, windows, and minibuffer patterns
+- **Buffer-Based UI**: Use buffers, windows, and minibuffer patterns for organizing different views
 - **Async-First**: Design for async operations, especially for network I/O and file operations
 
 ### Error Handling
@@ -51,7 +51,7 @@ let podcast = storage.load_podcast(&id)
 
 ### UI Components (Ratatui)
 - Create reusable components that encapsulate rendering and event handling
-- Use proper focus management for Emacs-style navigation
+- Use proper focus management for keyboard navigation
 - Implement responsive layouts that adapt to terminal size
 - Always provide keyboard navigation alternatives to mouse actions
 

@@ -7,7 +7,7 @@
 - Browse episodes with full metadata
 - Download episodes (2-3 at a time)
 - OPML import/export
-- Emacs keyboard shortcuts
+- Intuitive keyboard shortcuts
 - 4 color themes
 
 ### ❌ Not Yet Working
@@ -58,18 +58,19 @@ cargo build --release
 ### Must Know
 | Key | Action |
 |-----|--------|
-| `C-h ?` | Help (press this first!) |
-| `M-x` | Command prompt |
-| `C-g` | Cancel |
-| `C-x C-c` | Quit |
+| `F1` or `?` | Help (press this first!) |
+| `:` | Command prompt |
+| `Esc` | Cancel |
+| `q` or `F10` | Quit |
 
 ### Navigation
 | Key | Action |
 |-----|--------|
-| `C-n` / `↓` | Next item |
-| `C-p` / `↑` | Previous item |
+| `↓` / `↑` | Next/Previous item |
 | `Enter` | Select/Activate |
-| `C-x b` | Switch buffer |
+| `Tab` | Next buffer |
+| `Shift+Tab` | Previous buffer |
+| `Ctrl+b` | Switch buffer |
 
 ### Podcast Management
 | Key | Action |
@@ -82,17 +83,17 @@ cargo build --release
 ### Episode Actions
 | Key | Action |
 |-----|--------|
-| `D` | Download episode |
-| `X` | Delete download |
-| `C-x` | Delete ALL downloads |
+| `Shift+D` | Download episode |
+| `Shift+X` | Delete download |
+| `Ctrl+x` | Delete ALL downloads |
 
 ## First 5 Minutes
 
 1. **Start app**: `podcast-tui`
-2. **Add podcast**: Press `M-x`, type `subscribe`, paste feed URL
-3. **Browse**: Use `C-n`/`C-p` (or arrow keys)
-4. **Download**: Press `D` on an episode
-5. **Get help**: Press `C-h ?` anytime
+2. **Add podcast**: Press `a`, paste feed URL, press Enter
+3. **Browse**: Use arrow keys (`↑`/`↓`) or `j`/`k`
+4. **Download**: Press `Shift+D` on an episode
+5. **Get help**: Press `F1` or `?` anytime
 
 ## Common Issues
 
@@ -133,7 +134,7 @@ Reply All: https://feeds.megaphone.fm/replyall
 
 - Detailed guide: [GETTING_STARTED.md](GETTING_STARTED.md)
 - Full README: [README.md](README.md)
-- Keybindings: [docs/EMACS_KEYBINDINGS.md](docs/EMACS_KEYBINDINGS.md)
+- Keybindings: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)
 - Report issues: GitHub Issues
 
 ---

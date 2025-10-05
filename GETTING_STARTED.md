@@ -8,10 +8,10 @@ This guide will help you get Podcast TUI running on your system, regardless of p
 
 **✅ What Works:**
 - Subscribe to podcast RSS feeds
-- Browse episode lists with metadata
+- Browse episode lists with metadat- **Keybindings Reference**: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)
 - Download episodes (2-3 concurrent downloads)
 - OPML import/export
-- Emacs-style keyboard navigation
+- Intuitive keyboard navigation
 - Multiple color themes
 - Cross-platform builds (Windows/Linux)
 
@@ -143,15 +143,15 @@ sudo pacman -S base-devel rust openssl
 
 ### 2. Subscribe to Your First Podcast
 
-**Method 1: Using M-x Command**
-1. Press `M-x` (Alt+x or Esc then x)
-2. Type `subscribe` and press Enter
-3. Enter the RSS feed URL
-4. Wait for the feed to parse and episodes to load
-
-**Method 2: Using Keybinding**
+**Method 1: Using Quick Key**
 1. Press `a` from the podcast list
 2. Enter the RSS feed URL
+3. Press Enter
+4. Wait for the feed to parse and episodes to load
+
+**Method 2: Using Command Prompt**
+1. Press `:` to open command prompt
+2. Type `add-podcast <URL>` and press Enter
 3. Wait for the feed to parse
 
 **Popular Test Feeds:**
@@ -161,46 +161,49 @@ sudo pacman -S base-devel rust openssl
 
 ### 3. Browse and Download Episodes
 
-1. Use `C-n` / `C-p` to navigate episodes (or Up/Down arrows)
+1. Use Up/Down arrow keys to navigate episodes
 2. Press `Enter` on an episode to view details
-3. Press `D` to download the selected episode
-4. Press `C-x b` to switch between buffers (podcast list, episode list)
+3. Press `Shift+D` to download the selected episode
+4. Press `Tab` or `Ctrl+b` to switch between buffers (podcast list, episode list, downloads)
 
 ### 4. Essential Keybindings
 
 **Navigation:**
-- `C-n` / `C-p` - Next/Previous item (or Down/Up arrows)
-- `C-f` / `C-b` - Forward/Backward character (or Right/Left arrows)
-- `C-a` / `C-e` - Beginning/End of line
+- `↑` / `↓` - Previous/Next item
+- `←` / `→` - Left/Right
+- `Home` / `End` - First/Last item
+- `Page Up` / `Page Down` - Scroll by page
 - `Enter` - Select/Activate item
 
 **Buffer Management:**
-- `C-x b` - Switch buffer
-- `C-x 1` - Focus current buffer
-- `C-x 2` - Split horizontally
-- `C-x 3` - Split vertically
+- `Tab` / `Shift+Tab` - Next/Previous buffer
+- `Ctrl+b` - Switch buffer (with completion)
+- `Ctrl+k` - Close current buffer
+- `Ctrl+l` - List all buffers
+- `F2` - Podcast list
+- `F3` - Help
+- `F4` - Downloads
 
 **Podcast Management:**
 - `a` - Add podcast subscription
 - `d` - Delete podcast
 - `r` - Refresh podcast feed
-- `R` - Refresh all feeds
+- `Shift+R` - Refresh all feeds
+- `Ctrl+r` - Hard refresh (re-parse all episodes)
 
 **Episode Actions:**
-- `D` - Download episode
-- `X` - Delete downloaded file
-- `C-x` - Delete ALL downloads for podcast
+- `Shift+D` - Download episode
+- `Shift+X` - Delete downloaded file
+- `Ctrl+x` - Delete ALL downloads
 
 **Help:**
-- `C-h ?` - Show help
-- `C-h k` - Describe key
-- `C-h b` - Show all bindings
-- `M-x help` - M-x command for help
+- `F1` or `?` or `h` - Show help
+- `:` - Open command prompt
 
 **Application:**
-- `C-g` - Cancel current operation
-- `C-x C-c` - Quit application
-- `M-x quit` - Alternative quit command
+- `Esc` - Cancel current operation
+- `q` or `F10` - Quit application
+- `:quit` - Alternative quit command
 
 ## Configuration
 
@@ -269,8 +272,10 @@ sudo pacman -S openssl
 
 #### Keybindings don't work
 - Some terminal emulators intercept certain key combinations
-- Try alternative bindings (arrow keys instead of C-n/C-p)
+- Most navigation works with arrow keys, Page Up/Down, Home/End
+- Function keys (F1-F10) work in most terminals
 - Check terminal emulator settings for key mapping conflicts
+- Try Windows Terminal on Windows for best compatibility
 
 #### Download fails
 - Check internet connection
@@ -285,16 +290,16 @@ sudo pacman -S openssl
 
 ## Getting Help
 
-1. **Built-in Help**: Press `C-h ?` for the help system
+1. **Built-in Help**: Press `F1` or `?` for the help system
 2. **Documentation**: See [docs/](docs/) directory for detailed documentation
 3. **Issues**: Report bugs at https://github.com/yourusername/podcast-tui/issues
-4. **Keybindings Reference**: [docs/EMACS_KEYBINDINGS.md](docs/EMACS_KEYBINDINGS.md)
+4. **Keybindings Reference**: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)
 
 ## Next Steps
 
-1. **Import existing subscriptions**: Use OPML import (`M-x import-opml`)
+1. **Import existing subscriptions**: Use OPML import (press `:` then type `import-opml`)
 2. **Customize configuration**: Edit `config.json` to your preferences
-3. **Explore themes**: Try different color themes (`M-x theme`)
+3. **Explore themes**: Try different color themes (press `:` then type `theme <name>`)
 4. **Check for updates**: The project is in active development
 
 ## Development Status

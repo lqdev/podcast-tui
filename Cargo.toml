@@ -18,7 +18,11 @@ crossterm = "0.29"
 tokio = { version = "1.0", features = ["full"] }
 
 # HTTP and RSS
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = [
+    "json",
+    "stream",
+    "rustls-tls",
+], default-features = false }
 feed-rs = "2.0"
 futures-util = "0.3"
 

@@ -1,0 +1,103 @@
+name: Release Builds
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-releases:
+    name: Build cross-platform releases
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Install build dependencies
+        run: |
+          chmod +x scripts/install-build-deps.sh
+          ./scripts/install-build-deps.sh
+      
+      - name: Build releases
+        run: |
+          chmod +x scripts/build-releases.sh
+          ./scripts/build-releases.sh
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: podcast-tui-releases
+          path: releases/
+          retention-days: 30
+      
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            releases/**/*.zip
+            releases/**/*.tar.gz
+            releases/**/*.sha256
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test-builds:
+    name: Test release artifacts
+    needs: build-releases
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: podcast-tui-releases
+          path: releases/
+      
+      - name: Test Linux binary
+        if: runner.os == 'Linux'
+        run: |
+          cd releases/v*/
+          tar -xzf *linux-x86_64.tar.gz
+          cd *linux-x86_64/
+          chmod +x podcast-tui
+          ./podcast-tui --version || true
+      
+      - name: Test Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cd releases/v*
+          Expand-Archive -Path *windows-x86_64.zip -DestinationPath .
+          cd *windows-x86_64
+          ./podcast-tui.exe --version

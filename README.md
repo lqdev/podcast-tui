@@ -29,6 +29,23 @@ A cross-platform terminal user interface for podcast management built with Rust 
 
 ### Installation
 
+#### Pre-built Binaries
+Download the latest release for your platform from the [releases page](https://github.com/yourusername/podcast-tui/releases).
+
+**Windows:**
+```powershell
+# Download and extract podcast-tui-vX.X.X-windows-x86_64.zip
+# Run podcast-tui.exe
+```
+
+**Linux:**
+```bash
+# Download and extract podcast-tui-vX.X.X-linux-x86_64.tar.gz
+tar -xzf podcast-tui-vX.X.X-linux-x86_64.tar.gz
+cd podcast-tui-vX.X.X-linux-x86_64
+./podcast-tui
+```
+
 #### From Source
 ```bash
 git clone https://github.com/yourusername/podcast-tui.git
@@ -36,6 +53,18 @@ cd podcast-tui
 cargo build --release
 ./target/release/podcast-tui
 ```
+
+#### Building Cross-Platform Releases
+To build release binaries for all supported platforms:
+```bash
+# Install build dependencies (one-time setup)
+./scripts/install-build-deps.sh
+
+# Build all releases
+./scripts/build-releases.sh
+```
+
+See [BUILD_SYSTEM.md](docs/BUILD_SYSTEM.md) for detailed build documentation.
 
 #### Using DevContainer (Recommended for Development)
 1. Install [Docker](https://docker.com) and [VS Code](https://code.visualstudio.com)

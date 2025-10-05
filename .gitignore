@@ -43,3 +43,6 @@ podcasts/
 
 # Test artifacts
 test_output/
+
+# Release builds
+releases/

@@ -3,11 +3,9 @@
 // This module provides the core event system for handling keyboard input,
 // converting them to UI actions, and managing the event loop.
 
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
-
-use crate::ui::{UIAction, UIError, UIResult};
 
 /// UI event handler for processing terminal events
 #[derive(Clone)]
@@ -31,15 +29,42 @@ impl UIEventHandler {
                 .checked_sub(last_tick.elapsed())
                 .unwrap_or(Duration::ZERO);
 
-            if event::poll(timeout).unwrap_or(false) {
-                match event::read() {
-                    Ok(crossterm_event) => {
-                        let ui_event = Self::convert_event(crossterm_event);
-                        if event_tx.send(ui_event).is_err() {
-                            break;
+            // Use a timeout to prevent hanging
+            let poll_timeout = std::cmp::min(timeout, Duration::from_millis(100));
+
+            // Use spawn_blocking to handle the blocking crossterm calls
+            let poll_result = tokio::time::timeout(
+                Duration::from_millis(200),
+                tokio::task::spawn_blocking(move || event::poll(poll_timeout)),
+            )
+            .await;
+
+            match poll_result {
+                Ok(Ok(Ok(true))) => {
+                    // Event is available, read it
+                    let read_result = tokio::time::timeout(
+                        Duration::from_millis(100),
+                        tokio::task::spawn_blocking(|| event::read()),
+                    )
+                    .await;
+
+                    match read_result {
+                        Ok(Ok(Ok(crossterm_event))) => {
+                            let ui_event = Self::convert_event(crossterm_event);
+                            if event_tx.send(ui_event).is_err() {
+                                break;
+                            }
+                        }
+                        Ok(Ok(Err(_))) | Ok(Err(_)) | Err(_) => {
+                            // Error or timeout, continue
                         }
                     }
-                    Err(_) => break,
+                }
+                Ok(Ok(Ok(false))) => {
+                    // No event available, continue to tick check
+                }
+                Ok(Ok(Err(_))) | Ok(Err(_)) | Err(_) => {
+                    // Error or timeout, continue
                 }
             }
 
@@ -49,6 +74,9 @@ impl UIEventHandler {
                 }
                 last_tick = Instant::now();
             }
+
+            // Small yield to prevent tight loop
+            tokio::task::yield_now().await;
         }
     }
 

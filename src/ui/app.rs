@@ -8,7 +8,6 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -1632,13 +1631,13 @@ impl UIApp {
     /// Refresh all buffer list buffers when buffers change
     fn refresh_buffer_lists(&mut self) {
         let buffer_names = self.buffer_manager.buffer_names();
-        let current_buffer = self.buffer_manager.current_buffer_id();
+        let _current_buffer = self.buffer_manager.current_buffer_id();
 
         // Find and update any buffer list buffers
         let buffer_ids = self.buffer_manager.get_buffer_ids();
         for buffer_id in buffer_ids {
             if buffer_id == "*Buffer List*" {
-                if let Some(buffer) = self.buffer_manager.get_buffer(&buffer_id) {
+                if let Some(_buffer) = self.buffer_manager.get_buffer(&buffer_id) {
                     // We need to downcast to update the buffer list
                     // For now, we'll handle this by recreating the buffer when needed
                 }

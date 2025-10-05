@@ -3,7 +3,7 @@
 //! This module handles RSS/Atom feed parsing and metadata extraction
 //! for podcast subscriptions.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use feed_rs::parser;
 use reqwest::Client;
@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use crate::podcast::{Episode, EpisodeStatus, Podcast};
 use crate::storage::models::{EpisodeId, PodcastId};
-use crate::utils::{time::parse_duration, validation::validate_feed_url};
+use crate::utils::validation::validate_feed_url;
 
 /// RSS feed parser and manager
 pub struct FeedParser {
@@ -157,7 +157,7 @@ impl FeedParser {
             .map_err(|e| FeedError::Network(e))?;
 
         let status = response.status();
-        let final_url = response.url().clone();
+        let _final_url = response.url().clone();
 
         if !status.is_success() {
             return Err(FeedError::Network(reqwest::Error::from(

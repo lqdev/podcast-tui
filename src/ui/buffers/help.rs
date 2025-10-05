@@ -4,8 +4,8 @@
 // following Emacs conventions for help display.
 
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    layout::Rect,
+    widgets::{Block, Borders, List, ListItem, Paragraph},
     Frame,
 };
 

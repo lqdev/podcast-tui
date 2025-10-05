@@ -1,4 +1,4 @@
-use crate::ui::{events::AppEvent, UIApp};
+use crate::ui::UIApp;
 use crate::{
     download::DownloadManager,
     podcast::subscription::SubscriptionManager,

@@ -239,6 +239,15 @@ pub struct UiConfig {
     pub time_format: String,
     pub compact_mode: bool,
     pub mouse_support: bool,
+    
+    // What's New buffer settings
+    #[serde(default = "default_whats_new_episode_limit")]
+    pub whats_new_episode_limit: usize,
+}
+
+// Default function for serde
+fn default_whats_new_episode_limit() -> usize {
+    100
 }
 
 impl Default for UiConfig {
@@ -251,6 +260,7 @@ impl Default for UiConfig {
             time_format: "%H:%M:%S".to_string(),
             compact_mode: false,
             mouse_support: true,
+            whats_new_episode_limit: 100,
         }
     }
 }

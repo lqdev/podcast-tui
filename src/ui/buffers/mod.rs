@@ -8,6 +8,7 @@ pub mod downloads;
 pub mod episode_list;
 pub mod help;
 pub mod podcast_list;
+pub mod whats_new;
 
 use ratatui::layout::Rect;
 use std::collections::HashMap;
@@ -279,6 +280,18 @@ impl BufferManager {
         let _ = self.add_buffer(Box::new(downloads_buffer));
     }
 
+    /// Create What's New buffer
+    pub fn create_whats_new_buffer(
+        &mut self,
+        subscription_manager: Arc<SubscriptionManager<JsonStorage>>,
+        download_manager: Arc<DownloadManager<JsonStorage>>,
+        max_episodes: usize,
+    ) {
+        let mut whats_new_buffer = crate::ui::buffers::whats_new::WhatsNewBuffer::new(max_episodes);
+        whats_new_buffer.set_managers(subscription_manager, download_manager);
+        let _ = self.add_buffer(Box::new(whats_new_buffer));
+    }
+
     /// Get mutable reference to podcast list buffer
     pub fn get_podcast_list_buffer_mut(
         &mut self,
@@ -332,6 +345,18 @@ impl BufferManager {
             // This is safe because we know downloads buffer is always DownloadsBuffer
             let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
             unsafe { (raw_ptr as *mut crate::ui::buffers::downloads::DownloadsBuffer).as_mut() }
+        })
+    }
+
+    /// Get mutable reference to What's New buffer
+    pub fn get_whats_new_buffer_mut(
+        &mut self,
+    ) -> Option<&mut crate::ui::buffers::whats_new::WhatsNewBuffer> {
+        let buffer_id = "whats-new".to_string();
+        self.get_buffer(&buffer_id).and_then(|buffer| {
+            // This is safe because we know whats-new buffer is always WhatsNewBuffer
+            let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
+            unsafe { (raw_ptr as *mut crate::ui::buffers::whats_new::WhatsNewBuffer).as_mut() }
         })
     }
 

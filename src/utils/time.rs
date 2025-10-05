@@ -57,6 +57,11 @@ pub fn time_ago(datetime: DateTime<Utc>) -> String {
     }
 }
 
+/// Alias for time_ago - formats a DateTime as a relative time string
+pub fn format_relative_time(datetime: &DateTime<Utc>) -> String {
+    time_ago(*datetime)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

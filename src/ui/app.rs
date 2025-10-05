@@ -225,6 +225,11 @@ impl UIApp {
             self.download_manager.clone(),
             self.download_manager.storage().clone(),
         );
+        self.buffer_manager.create_whats_new_buffer(
+            self.subscription_manager.clone(),
+            self.download_manager.clone(),
+            self.config.ui.whats_new_episode_limit,
+        );
 
         // Debug: Print all buffer names after creation
         let buffer_names = self.buffer_manager.buffer_names();
@@ -249,6 +254,13 @@ impl UIApp {
         if let Some(downloads_buffer) = self.buffer_manager.get_downloads_buffer_mut() {
             if let Err(e) = downloads_buffer.refresh_downloads().await {
                 self.show_error(format!("Failed to load downloads: {}", e));
+            }
+        }
+
+        // Load initial What's New data
+        if let Some(whats_new_buffer) = self.buffer_manager.get_whats_new_buffer_mut() {
+            if let Err(e) = whats_new_buffer.load_episodes().await {
+                self.show_error(format!("Failed to load What's New episodes: {}", e));
             }
         }
 
@@ -578,6 +590,17 @@ impl UIApp {
                                 self.show_message("Downloads refreshed".to_string());
                             }
                         }
+                    } else if buffer_id == "whats-new" {
+                        // If it's the What's New buffer, refresh episodes
+                        if let Some(whats_new_buffer) =
+                            self.buffer_manager.get_whats_new_buffer_mut()
+                        {
+                            if let Err(e) = whats_new_buffer.load_episodes().await {
+                                self.show_error(format!("Failed to refresh What's New: {}", e));
+                            } else {
+                                self.show_message("What's New refreshed".to_string());
+                            }
+                        }
                     } else {
                         self.show_message("Refresh not supported for this buffer".to_string());
                     }
@@ -706,6 +729,8 @@ impl UIApp {
                         self.show_error(format!("Failed to refresh podcast list: {}", e));
                     }
                 }
+                // Refresh What's New buffer to show new episodes
+                self.refresh_whats_new_buffer().await;
                 if new_episode_count > 0 {
                     self.show_message(format!("Found {} new episode(s)", new_episode_count));
                 } else {
@@ -725,6 +750,8 @@ impl UIApp {
                         self.show_error(format!("Failed to refresh podcast list: {}", e));
                     }
                 }
+                // Refresh What's New buffer to show all new episodes
+                self.refresh_whats_new_buffer().await;
                 if total_new_episodes > 0 {
                     self.show_message(format!(
                         "Refresh completed. Found {} new episode(s) total",
@@ -790,6 +817,8 @@ impl UIApp {
                 self.refresh_episode_buffers(&podcast_id).await;
                 // Refresh downloads buffer to show new completed download
                 self.refresh_downloads_buffer().await;
+                // Refresh What's New buffer to remove downloaded episode
+                self.refresh_whats_new_buffer().await;
                 self.show_message("Episode download completed successfully".to_string());
             }
             AppEvent::EpisodeDownloadFailed {
@@ -1013,6 +1042,7 @@ impl UIApp {
             "podcasts" | "podcast" | "main" => "podcast-list".to_string(),
             "help" => "*Help*".to_string(),
             "download" | "dl" => "downloads".to_string(),
+            "new" | "whats-new" | "latest" => "whats-new".to_string(),
             _ => buffer_name.clone(),
         };
 
@@ -1615,6 +1645,20 @@ impl UIApp {
             if buffer_id == "downloads" {
                 if let Some(downloads_buffer) = self.buffer_manager.get_downloads_buffer_mut() {
                     let _ = downloads_buffer.refresh_downloads().await;
+                }
+                break;
+            }
+        }
+    }
+
+    /// Refresh What's New buffer
+    async fn refresh_whats_new_buffer(&mut self) {
+        // Find the What's New buffer and refresh it
+        let buffer_ids = self.buffer_manager.get_buffer_ids();
+        for buffer_id in buffer_ids {
+            if buffer_id == "whats-new" {
+                if let Some(whats_new_buffer) = self.buffer_manager.get_whats_new_buffer_mut() {
+                    let _ = whats_new_buffer.load_episodes().await;
                 }
                 break;
             }

@@ -258,6 +258,82 @@ impl<S: Storage> DownloadManager<S> {
         Ok(())
     }
 
+    /// Delete all downloaded episodes for a specific podcast
+    /// This is called when unsubscribing from a podcast to clean up downloaded files
+    pub async fn delete_podcast_downloads(
+        &self,
+        podcast_id: &PodcastId,
+    ) -> Result<usize, DownloadError> {
+        // Load podcast info before deleting episodes (needed for folder cleanup)
+        let podcast = self
+            .storage
+            .load_podcast(podcast_id)
+            .await
+            .map_err(|e| DownloadError::Storage(e.to_string()))?;
+        
+        let folder_name = self.generate_podcast_folder_name(&podcast);
+
+        // Load episodes for this podcast
+        let episodes = self
+            .storage
+            .load_episodes(podcast_id)
+            .await
+            .map_err(|e| DownloadError::Storage(e.to_string()))?;
+
+        let mut deleted_count = 0;
+        let mut failed_count = 0;
+
+        for mut episode in episodes {
+            // Only process downloaded episodes
+            if matches!(episode.status, EpisodeStatus::Downloaded) {
+                if let Some(ref local_path) = episode.local_path {
+                    // Try to delete the file
+                    if local_path.exists() {
+                        match fs::remove_file(local_path).await {
+                            Ok(_) => {
+                                deleted_count += 1;
+                                // Update episode status
+                                episode.local_path = None;
+                                episode.status = EpisodeStatus::New;
+
+                                // Save updated episode
+                                if let Err(_) =
+                                    self.storage.save_episode(podcast_id, &episode).await
+                                {
+                                    failed_count += 1;
+                                }
+                            }
+                            Err(_) => {
+                                failed_count += 1;
+                            }
+                        }
+                    } else {
+                        // File doesn't exist, but episode thinks it's downloaded
+                        // Clean up the status
+                        episode.local_path = None;
+                        episode.status = EpisodeStatus::New;
+
+                        if let Err(_) = self.storage.save_episode(podcast_id, &episode).await {
+                            failed_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try to remove the podcast-specific directory if it exists and is empty
+        self.cleanup_podcast_directory_by_name(&folder_name).await?;
+
+        if failed_count > 0 {
+            return Err(DownloadError::Storage(format!(
+                "Deleted {} files for podcast, but {} operations failed",
+                deleted_count, failed_count
+            )));
+        }
+
+        Ok(deleted_count)
+    }
+
     /// Delete all downloaded episodes and clean up the downloads folder
     pub async fn delete_all_downloads(&self) -> Result<usize, DownloadError> {
         // Load all podcast IDs
@@ -347,6 +423,49 @@ impl<S: Storage> DownloadManager<S> {
                 if subdir_entries.next_entry().await?.is_none() {
                     // Directory is empty, remove it
                     let _ = fs::remove_dir(&dir_path).await;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Clean up podcast-specific directory after deleting its episodes
+    async fn cleanup_podcast_directory(&self, podcast_id: &PodcastId) -> Result<(), DownloadError> {
+        if !self.downloads_dir.exists() {
+            return Ok(());
+        }
+
+        // Load podcast to get folder name
+        let podcast = self
+            .storage
+            .load_podcast(podcast_id)
+            .await
+            .map_err(|e| DownloadError::Storage(e.to_string()))?;
+
+        let folder_name = self.generate_podcast_folder_name(&podcast);
+        self.cleanup_podcast_directory_by_name(&folder_name).await
+    }
+
+    /// Clean up podcast-specific directory by folder name
+    async fn cleanup_podcast_directory_by_name(&self, folder_name: &str) -> Result<(), DownloadError> {
+        if !self.downloads_dir.exists() {
+            return Ok(());
+        }
+
+        let podcast_dir = self.downloads_dir.join(folder_name);
+
+        if podcast_dir.exists() {
+            // Check if directory is empty
+            match fs::read_dir(&podcast_dir).await {
+                Ok(mut entries) => {
+                    if entries.next_entry().await?.is_none() {
+                        // Directory is empty, remove it
+                        let _ = fs::remove_dir(&podcast_dir).await;
+                    }
+                }
+                Err(_) => {
+                    // Directory doesn't exist or can't be read, ignore
                 }
             }
         }
@@ -739,7 +858,10 @@ mod tests {
         );
 
         let filename = manager.generate_filename(&episode).unwrap();
-        assert!(filename.contains("Test_Episode"));
+        // With default config, it includes dates and preserves title formatting
+        assert!(filename.contains("Test Episode"));
         assert!(filename.ends_with(".mp3"));
+        // Should include date in YYYY-MM-DD format
+        assert!(filename.contains(&Utc::now().format("%Y-%m-%d").to_string()));
     }
 }

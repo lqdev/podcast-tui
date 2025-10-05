@@ -1,5 +1,6 @@
 //! Podcast subscription management
 
+use crate::download::DownloadManager;
 use crate::podcast::{Episode, FeedError, FeedParser, Podcast};
 use crate::storage::{PodcastId, Storage};
 use chrono::Utc;
@@ -9,6 +10,7 @@ use std::sync::Arc;
 pub struct SubscriptionManager<S: Storage> {
     pub storage: Arc<S>,
     feed_parser: FeedParser,
+    download_manager: Option<Arc<DownloadManager<S>>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -35,7 +37,25 @@ impl<S: Storage> SubscriptionManager<S> {
         Self {
             storage,
             feed_parser: FeedParser::new(),
+            download_manager: None,
         }
+    }
+
+    /// Create a new subscription manager with download manager for automatic cleanup
+    pub fn with_download_manager(
+        storage: Arc<S>,
+        download_manager: Arc<DownloadManager<S>>,
+    ) -> Self {
+        Self {
+            storage,
+            feed_parser: FeedParser::new(),
+            download_manager: Some(download_manager),
+        }
+    }
+
+    /// Set the download manager for automatic cleanup during unsubscribe
+    pub fn set_download_manager(&mut self, download_manager: Arc<DownloadManager<S>>) {
+        self.download_manager = Some(download_manager);
     }
 
     /// Get all subscribed podcasts
@@ -104,6 +124,7 @@ impl<S: Storage> SubscriptionManager<S> {
     }
 
     /// Unsubscribe from a podcast
+    /// This will also delete all downloaded episodes for the podcast
     pub async fn unsubscribe(&self, podcast_id: &PodcastId) -> Result<(), SubscriptionError> {
         // Check if podcast exists
         let exists = self
@@ -113,6 +134,14 @@ impl<S: Storage> SubscriptionManager<S> {
             .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
         if !exists {
             return Err(SubscriptionError::NotFound(podcast_id.to_string()));
+        }
+
+        // Delete all downloaded episodes for this podcast if download manager is available
+        if let Some(ref download_manager) = self.download_manager {
+            if let Err(e) = download_manager.delete_podcast_downloads(podcast_id).await {
+                // Log the error but don't fail the unsubscribe operation
+                eprintln!("Warning: Failed to delete some downloaded episodes: {}", e);
+            }
         }
 
         // Delete the podcast (this should cascade to episodes in the storage implementation)

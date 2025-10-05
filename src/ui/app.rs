@@ -746,6 +746,14 @@ impl UIApp {
                 }
                 self.show_message(format!("Successfully deleted: {}", podcast_title));
             }
+            AppEvent::PodcastDownloadsDeleted {
+                podcast_id: _,
+                deleted_count,
+            } => {
+                if deleted_count > 0 {
+                    self.show_message(format!("Deleted {} downloaded episodes", deleted_count));
+                }
+            }
             AppEvent::PodcastDeletionFailed {
                 podcast_id: _,
                 error,
@@ -1943,7 +1951,6 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
-        let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
         let download_manager = Arc::new(
             DownloadManager::new(
                 storage.clone(),
@@ -1952,6 +1959,10 @@ mod tests {
             )
             .unwrap(),
         );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
         let app = UIApp::new(
@@ -1978,7 +1989,6 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
-        let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
         let download_manager = Arc::new(
             DownloadManager::new(
                 storage.clone(),
@@ -1987,6 +1997,10 @@ mod tests {
             )
             .unwrap(),
         );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
         let mut app = UIApp::new(
@@ -2014,7 +2028,18 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
-        let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_dir.path().to_path_buf(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
         let download_manager = Arc::new(
             DownloadManager::new(
                 storage.clone(),
@@ -2053,7 +2078,6 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
-        let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
         let download_manager = Arc::new(
             DownloadManager::new(
                 storage.clone(),
@@ -2062,6 +2086,10 @@ mod tests {
             )
             .unwrap(),
         );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
         let mut app = UIApp::new(
@@ -2099,7 +2127,6 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
-        let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
         let download_manager = Arc::new(
             DownloadManager::new(
                 storage.clone(),
@@ -2108,6 +2135,10 @@ mod tests {
             )
             .unwrap(),
         );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
 
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
         let mut app = UIApp::new(

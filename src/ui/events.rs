@@ -146,6 +146,12 @@ pub enum AppEvent {
         error: String,
     },
 
+    /// Podcast downloads deleted during unsubscribe
+    PodcastDownloadsDeleted {
+        podcast_id: crate::storage::PodcastId,
+        deleted_count: usize,
+    },
+
     /// Episodes loaded successfully
     EpisodesLoaded {
         podcast_id: crate::storage::PodcastId,

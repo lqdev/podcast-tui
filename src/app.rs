@@ -33,9 +33,6 @@ impl App {
 
         let storage = Arc::new(storage);
 
-        // Create subscription manager
-        let subscription_manager = Arc::new(SubscriptionManager::new(storage.clone()));
-
         // Create download manager with configured downloads directory
         let downloads_dir = shellexpand::tilde(&config.downloads.directory)
             .into_owned()
@@ -45,6 +42,12 @@ impl App {
             downloads_dir,
             config.downloads.clone(),
         )?);
+
+        // Create subscription manager with download manager for automatic cleanup
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
 
         // Create app event channel for async communication
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();

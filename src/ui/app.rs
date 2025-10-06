@@ -2185,9 +2185,11 @@ impl UIApp {
                 self.minibuffer.tab_complete();
                 Ok(true)
             }
-            // Cancel on Ctrl+G or Escape
+            // Cancel on Ctrl+G or Escape (also clear any pending operations)
             (KeyCode::Esc, _) | (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
                 self.minibuffer.clear();
+                self.pending_deletion = None;
+                self.pending_bulk_deletion = false;
                 Ok(true)
             }
             // Backspace

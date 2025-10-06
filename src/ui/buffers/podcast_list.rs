@@ -34,6 +34,7 @@ pub struct PodcastListBuffer {
     id: String,
     podcasts: Vec<Podcast>,
     selected_index: Option<usize>,
+    scroll_offset: usize,
     focused: bool,
     theme: Theme,
     state: PodcastListState,
@@ -48,6 +49,7 @@ impl PodcastListBuffer {
             id: "podcast-list".to_string(),
             podcasts: Vec::new(),
             selected_index: None,
+            scroll_offset: 0,
             focused: false,
             theme: Theme::default(),
             state: PodcastListState::Ready,
@@ -128,6 +130,25 @@ impl PodcastListBuffer {
         };
     }
 
+    /// Adjust scroll offset to ensure selected item is visible
+    fn adjust_scroll(&mut self, visible_height: usize) {
+        if let Some(selected) = self.selected_index {
+            // Ensure we have at least one line visible
+            if visible_height == 0 {
+                return;
+            }
+
+            // If selected item is above the visible area, scroll up
+            if selected < self.scroll_offset {
+                self.scroll_offset = selected;
+            }
+            // If selected item is below the visible area, scroll down
+            else if selected >= self.scroll_offset + visible_height {
+                self.scroll_offset = selected.saturating_sub(visible_height - 1);
+            }
+        }
+    }
+
     /// Set the theme for this buffer
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
@@ -166,10 +187,38 @@ impl UIComponent for PodcastListBuffer {
         match action {
             UIAction::MoveUp => {
                 self.select_previous();
+                // Scroll adjustment happens in render based on area size
                 UIAction::Render
             }
             UIAction::MoveDown => {
                 self.select_next();
+                // Scroll adjustment happens in render based on area size
+                UIAction::Render
+            }
+            UIAction::PageUp => {
+                if self.podcasts.is_empty() {
+                    return UIAction::None;
+                }
+                
+                // Move up by 10 items or to the top
+                if let Some(current) = self.selected_index {
+                    self.selected_index = Some(current.saturating_sub(10));
+                } else {
+                    self.selected_index = Some(0);
+                }
+                UIAction::Render
+            }
+            UIAction::PageDown => {
+                if self.podcasts.is_empty() {
+                    return UIAction::None;
+                }
+                
+                // Move down by 10 items or to the bottom
+                if let Some(current) = self.selected_index {
+                    self.selected_index = Some((current + 10).min(self.podcasts.len() - 1));
+                } else {
+                    self.selected_index = Some(0);
+                }
                 UIAction::Render
             }
             UIAction::SelectItem => {
@@ -186,6 +235,7 @@ impl UIComponent for PodcastListBuffer {
             UIAction::MoveToTop => {
                 if !self.podcasts.is_empty() {
                     self.selected_index = Some(0);
+                    self.scroll_offset = 0;
                     UIAction::Render
                 } else {
                     UIAction::None
@@ -194,6 +244,7 @@ impl UIComponent for PodcastListBuffer {
             UIAction::MoveToBottom => {
                 if !self.podcasts.is_empty() {
                     self.selected_index = Some(self.podcasts.len() - 1);
+                    // Scroll adjustment happens in render based on area size
                     UIAction::Render
                 } else {
                     UIAction::None
@@ -275,17 +326,27 @@ impl UIComponent for PodcastListBuffer {
 
                     frame.render_widget(empty_text, chunks[0]);
                 } else {
-                    let items: Vec<ListItem> = self
-                        .podcasts
+                    // Calculate visible height (subtract 2 for borders)
+                    let visible_height = chunks[0].height.saturating_sub(2) as usize;
+                    
+                    // Adjust scroll to keep selected item visible
+                    self.adjust_scroll(visible_height);
+
+                    // Calculate the range of items to display
+                    let end_index = (self.scroll_offset + visible_height).min(self.podcasts.len());
+                    let visible_podcasts = &self.podcasts[self.scroll_offset..end_index];
+
+                    let items: Vec<ListItem> = visible_podcasts
                         .iter()
                         .enumerate()
-                        .map(|(i, podcast)| {
+                        .map(|(visible_i, podcast)| {
+                            let actual_i = self.scroll_offset + visible_i;
                             let title = podcast.title.clone();
                             let author = podcast.author.as_deref().unwrap_or("Unknown");
                             let episode_count = ""; // TODO: Add episode count when available
 
                             let content = format!("  {} - {}{}", title, author, episode_count);
-                            let style = if Some(i) == self.selected_index {
+                            let style = if Some(actual_i) == self.selected_index {
                                 self.theme.selected_style()
                             } else {
                                 self.theme.text_style()

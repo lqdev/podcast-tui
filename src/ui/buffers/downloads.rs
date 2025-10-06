@@ -38,6 +38,7 @@ pub struct DownloadsBuffer {
     id: String,
     downloads: Vec<DownloadEntry>,
     selected_index: Option<usize>,
+    scroll_offset: usize,
     focused: bool,
     theme: Theme,
     download_manager: Option<Arc<DownloadManager<JsonStorage>>>,
@@ -51,6 +52,7 @@ impl DownloadsBuffer {
             id: "downloads".to_string(),
             downloads: Vec::new(),
             selected_index: None,
+            scroll_offset: 0,
             focused: false,
             theme: Theme::default(),
             download_manager: None,
@@ -169,6 +171,25 @@ impl DownloadsBuffer {
         }
     }
 
+    /// Adjust scroll offset to ensure selected item is visible
+    fn adjust_scroll(&mut self, visible_height: usize) {
+        if let Some(selected) = self.selected_index {
+            // Ensure we have at least one line visible
+            if visible_height == 0 {
+                return;
+            }
+
+            // If selected item is above the visible area, scroll up
+            if selected < self.scroll_offset {
+                self.scroll_offset = selected;
+            }
+            // If selected item is below the visible area, scroll down
+            else if selected >= self.scroll_offset + visible_height {
+                self.scroll_offset = selected.saturating_sub(visible_height - 1);
+            }
+        }
+    }
+
     /// Format file size for display
     fn format_progress(&self, progress: Option<(u64, u64)>) -> String {
         match progress {
@@ -233,6 +254,32 @@ impl UIComponent for DownloadsBuffer {
                 self.select_next();
                 UIAction::Render
             }
+            UIAction::PageUp => {
+                if self.downloads.is_empty() {
+                    return UIAction::None;
+                }
+                
+                // Move up by 10 items or to the top
+                if let Some(current) = self.selected_index {
+                    self.selected_index = Some(current.saturating_sub(10));
+                } else {
+                    self.selected_index = Some(0);
+                }
+                UIAction::Render
+            }
+            UIAction::PageDown => {
+                if self.downloads.is_empty() {
+                    return UIAction::None;
+                }
+                
+                // Move down by 10 items or to the bottom
+                if let Some(current) = self.selected_index {
+                    self.selected_index = Some((current + 10).min(self.downloads.len() - 1));
+                } else {
+                    self.selected_index = Some(0);
+                }
+                UIAction::Render
+            }
             UIAction::Refresh => UIAction::TriggerRefreshDownloads,
             UIAction::DeleteDownloadedEpisode => {
                 if let Some(download) = self.selected_download() {
@@ -290,12 +337,22 @@ impl UIComponent for DownloadsBuffer {
             .constraints([Constraint::Min(3), Constraint::Length(3)])
             .split(area);
 
+        // Calculate visible height (subtract 2 for borders)
+        let visible_height = chunks[0].height.saturating_sub(2) as usize;
+        
+        // Adjust scroll to keep selected item visible
+        self.adjust_scroll(visible_height);
+
+        // Calculate the range of items to display
+        let end_index = (self.scroll_offset + visible_height).min(self.downloads.len());
+        let visible_downloads = &self.downloads[self.scroll_offset..end_index];
+
         // Main downloads list
-        let items: Vec<ListItem> = self
-            .downloads
+        let items: Vec<ListItem> = visible_downloads
             .iter()
             .enumerate()
-            .map(|(i, download)| {
+            .map(|(visible_i, download)| {
+                let actual_i = self.scroll_offset + visible_i;
                 let status_char = match download.status {
                     DownloadStatus::Queued => "⏳",
                     DownloadStatus::InProgress => "⬇️",
@@ -314,7 +371,7 @@ impl UIComponent for DownloadsBuffer {
                     status_char, download.podcast_name, download.episode_title, progress_info
                 );
 
-                if Some(i) == self.selected_index {
+                if Some(actual_i) == self.selected_index {
                     ListItem::new(content).style(self.theme.selected_style())
                 } else {
                     ListItem::new(content).style(self.theme.text_style())

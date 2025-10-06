@@ -502,25 +502,44 @@ impl<S: Storage> SubscriptionManager<S> {
                     result.imported += 1;
                 }
                 Err(e) => {
+                    // Check if this is an "already subscribed" error
+                    // If so, treat it as a skip rather than a failure (defensive programming)
                     let error_msg = e.to_string();
-                    progress_callback(format!(
-                        "✗ Failed [{}/{}]: {} - {}",
-                        current, total_feeds, feed_title, error_msg
-                    ));
+                    if error_msg.contains("already subscribed") || error_msg.contains("AlreadySubscribed") {
+                        progress_callback(format!(
+                            "⊘ Skipped [{}/{}]: {} (already subscribed)",
+                            current, total_feeds, feed_title
+                        ));
 
-                    log_content.push_str(&format!(
-                        "[{}] [{}/{}] ✗ Failed: {}\n",
-                        Local::now().format("%H:%M:%S"),
-                        current,
-                        total_feeds,
-                        error_msg
-                    ));
+                        log_content.push_str(&format!(
+                            "[{}] [{}/{}] ⊘ Skipped (already subscribed, caught by subscribe)\n",
+                            Local::now().format("%H:%M:%S"),
+                            current,
+                            total_feeds
+                        ));
 
-                    result.failed.push(FailedImport {
-                        url: feed_url.to_string(),
-                        title: Some(feed_title.to_string()),
-                        error: error_msg,
-                    });
+                        result.skipped += 1;
+                    } else {
+                        // Genuine error - add to failed list
+                        progress_callback(format!(
+                            "✗ Failed [{}/{}]: {} - {}",
+                            current, total_feeds, feed_title, error_msg
+                        ));
+
+                        log_content.push_str(&format!(
+                            "[{}] [{}/{}] ✗ Failed: {}\n",
+                            Local::now().format("%H:%M:%S"),
+                            current,
+                            total_feeds,
+                            error_msg
+                        ));
+
+                        result.failed.push(FailedImport {
+                            url: feed_url.to_string(),
+                            title: Some(feed_title.to_string()),
+                            error: error_msg,
+                        });
+                    }
                 }
             }
         }

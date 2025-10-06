@@ -253,9 +253,10 @@ fn render_splash_screen_initial() -> Result<()> {
     execute!(stdout, SetForegroundColor(Color::Cyan))?;
     println!("                                 v1.0.0-mvp");
     
-    // Initial status message area (line 29)
+    // Initial status message area (line 29) - centered to match update_splash_status
+    println!();
     execute!(stdout, SetForegroundColor(Color::Yellow))?;
-    println!("\n                      Initializing...");
+    print!("{:^80}", "Initializing...");
     
     execute!(stdout, ResetColor)?;
     stdout.flush()?;

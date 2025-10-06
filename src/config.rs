@@ -216,6 +216,12 @@ pub struct StorageConfig {
     pub backup_enabled: bool,
     pub backup_frequency_days: u32,
     pub max_backups: u32,
+    #[serde(default = "default_opml_export_directory")]
+    pub opml_export_directory: String,
+}
+
+fn default_opml_export_directory() -> String {
+    "~/Documents/podcast-exports".to_string()
 }
 
 impl Default for StorageConfig {
@@ -225,6 +231,7 @@ impl Default for StorageConfig {
             backup_enabled: true,
             backup_frequency_days: 7,
             max_backups: 5,
+            opml_export_directory: default_opml_export_directory(),
         }
     }
 }

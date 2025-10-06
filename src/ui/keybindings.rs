@@ -147,6 +147,10 @@ impl KeyHandler {
             KeyChord::ctrl(KeyCode::Char('k')),
             UIAction::CloseCurrentBuffer,
         );
+
+        // OPML Import/Export
+        self.bind_key(KeyChord::shift(KeyCode::Char('A')), UIAction::ImportOpml);
+        self.bind_key(KeyChord::shift(KeyCode::Char('E')), UIAction::ExportOpml);
     }
 
     /// Bind a key chord to an action

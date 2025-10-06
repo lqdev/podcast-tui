@@ -29,6 +29,12 @@ pub enum SubscriptionError {
 
     #[error("No new episodes found")]
     NoNewEpisodes,
+
+    #[error("OPML error: {0}")]
+    Opml(#[from] crate::podcast::OpmlError),
+
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 impl<S: Storage> SubscriptionManager<S> {
@@ -378,6 +384,213 @@ impl<S: Storage> SubscriptionManager<S> {
             .await
             .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
         Ok(podcasts.len())
+    }
+
+    /// Import podcasts from OPML file or URL
+    ///
+    /// Non-destructive import that skips duplicates and processes feeds sequentially.
+    /// Returns detailed statistics about the import operation.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - File path or HTTP(S) URL to OPML file
+    /// * `progress_callback` - Callback function for progress updates
+    ///
+    /// # Returns
+    ///
+    /// ImportResult with statistics (total, imported, skipped, failed)
+    pub async fn import_opml<F>(
+        &self,
+        source: &str,
+        progress_callback: F,
+    ) -> Result<(crate::podcast::ImportResult, String), SubscriptionError>
+    where
+        F: Fn(String) + Send + Sync,
+    {
+        use crate::podcast::{FailedImport, ImportResult, OpmlParser};
+        use chrono::Local;
+
+        progress_callback("Validating OPML file...".to_string());
+
+        // Parse and validate OPML
+        let parser = OpmlParser::new();
+        let document = parser.parse(source).await?;
+
+        let total_feeds = document.outlines.len();
+        progress_callback(format!("Found {} feeds in OPML", total_feeds));
+
+        // Create log file
+        let log_dir = dirs::data_local_dir()
+            .ok_or_else(|| SubscriptionError::Storage("Cannot determine data directory".to_string()))?
+            .join("podcast-tui")
+            .join("logs");
+
+        tokio::fs::create_dir_all(&log_dir).await?;
+
+        let timestamp = Local::now().format("%Y-%m-%d-%H%M%S");
+        let log_path = log_dir.join(format!("opml-import-{}.log", timestamp));
+        let log_path_str = log_path.to_string_lossy().to_string();
+
+        let mut log_content = format!(
+            "OPML Import Log\nStarted: {}\nSource: {}\n\n=== Processing ===\n",
+            Local::now().format("%Y-%m-%d %H:%M:%S"),
+            source
+        );
+
+        let mut result = ImportResult::new(total_feeds);
+
+        // Process feeds sequentially
+        for (index, outline) in document.outlines.iter().enumerate() {
+            let feed_url = match outline.feed_url() {
+                Some(url) => url,
+                None => {
+                    // Skip outlines without feed URLs
+                    continue;
+                }
+            };
+
+            let feed_title = outline.title.as_deref().or(Some(&outline.text)).unwrap();
+            let current = index + 1;
+
+            progress_callback(format!(
+                "Importing [{}/{}]: {}...",
+                current, total_feeds, feed_title
+            ));
+
+            log_content.push_str(&format!(
+                "[{}] [{}/{}] Importing: {} ({})\n",
+                Local::now().format("%H:%M:%S"),
+                current,
+                total_feeds,
+                feed_title,
+                feed_url
+            ));
+
+            // Check if already subscribed
+            if self.is_subscribed(feed_url).await {
+                progress_callback(format!(
+                    "⊘ Skipped [{}/{}]: {} (already subscribed)",
+                    current, total_feeds, feed_title
+                ));
+
+                log_content.push_str(&format!(
+                    "[{}] [{}/{}] ⊘ Skipped (already subscribed)\n",
+                    Local::now().format("%H:%M:%S"),
+                    current,
+                    total_feeds
+                ));
+
+                result.skipped += 1;
+                continue;
+            }
+
+            // Attempt to subscribe
+            match self.subscribe(feed_url).await {
+                Ok(_) => {
+                    progress_callback(format!(
+                        "✓ Imported [{}/{}]: {}",
+                        current, total_feeds, feed_title
+                    ));
+
+                    log_content.push_str(&format!(
+                        "[{}] [{}/{}] ✓ Success\n",
+                        Local::now().format("%H:%M:%S"),
+                        current,
+                        total_feeds
+                    ));
+
+                    result.imported += 1;
+                }
+                Err(e) => {
+                    let error_msg = e.to_string();
+                    progress_callback(format!(
+                        "✗ Failed [{}/{}]: {} - {}",
+                        current, total_feeds, feed_title, error_msg
+                    ));
+
+                    log_content.push_str(&format!(
+                        "[{}] [{}/{}] ✗ Failed: {}\n",
+                        Local::now().format("%H:%M:%S"),
+                        current,
+                        total_feeds,
+                        error_msg
+                    ));
+
+                    result.failed.push(FailedImport {
+                        url: feed_url.to_string(),
+                        title: Some(feed_title.to_string()),
+                        error: error_msg,
+                    });
+                }
+            }
+        }
+
+        // Write summary to log
+        log_content.push_str(&format!(
+            "\n=== Summary ===\nCompleted: {}\nTotal feeds: {}\nImported: {}\nSkipped: {}\nFailed: {}\n",
+            Local::now().format("%Y-%m-%d %H:%M:%S"),
+            result.total_feeds,
+            result.imported,
+            result.skipped,
+            result.failed.len()
+        ));
+
+        if result.has_failures() {
+            log_content.push_str("\n=== Failed Imports ===\n");
+            for (i, failure) in result.failed.iter().enumerate() {
+                log_content.push_str(&format!(
+                    "{}. {} ({})\n   Error: {}\n\n",
+                    i + 1,
+                    failure.title.as_deref().unwrap_or("Unknown"),
+                    failure.url,
+                    failure.error
+                ));
+            }
+        }
+
+        // Write log file
+        tokio::fs::write(&log_path, log_content).await?;
+
+        Ok((result, log_path_str))
+    }
+
+    /// Export all subscriptions to OPML file
+    ///
+    /// Generates a valid OPML 2.0 document with all current subscriptions.
+    ///
+    /// # Arguments
+    ///
+    /// * `output_path` - Path where OPML file should be written
+    /// * `progress_callback` - Callback function for progress updates
+    ///
+    /// # Returns
+    ///
+    /// Number of feeds exported
+    pub async fn export_opml<F>(
+        &self,
+        output_path: &std::path::Path,
+        progress_callback: F,
+    ) -> Result<usize, SubscriptionError>
+    where
+        F: Fn(String) + Send + Sync,
+    {
+        use crate::podcast::OpmlExporter;
+
+        progress_callback("Loading subscriptions...".to_string());
+
+        // Load all podcasts
+        let podcasts = self.list_subscriptions().await?;
+        let feed_count = podcasts.len();
+
+        progress_callback(format!("Generating OPML ({} feeds)...", feed_count));
+
+        // Generate and write OPML
+        let exporter = OpmlExporter::new();
+        exporter.export(&podcasts, output_path).await?;
+
+        progress_callback("Writing to file...".to_string());
+
+        Ok(feed_count)
     }
 }
 

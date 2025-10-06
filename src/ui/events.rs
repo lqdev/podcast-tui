@@ -207,4 +207,39 @@ pub enum AppEvent {
 
     /// All downloads deletion failed
     AllDownloadsDeletionFailed { error: String },
+
+    // OPML Import/Export events
+    /// OPML import started
+    OpmlImportStarted { source: String },
+
+    /// OPML import progress update
+    OpmlImportProgress {
+        current: usize,
+        total: usize,
+        status: String,
+    },
+
+    /// OPML import completed
+    OpmlImportCompleted {
+        result: crate::podcast::ImportResult,
+        log_path: String,
+    },
+
+    /// OPML import failed
+    OpmlImportFailed { source: String, error: String },
+
+    /// OPML export started
+    OpmlExportStarted { path: String },
+
+    /// OPML export progress update
+    OpmlExportProgress { status: String },
+
+    /// OPML export completed
+    OpmlExportCompleted {
+        path: String,
+        feed_count: usize,
+    },
+
+    /// OPML export failed
+    OpmlExportFailed { path: String, error: String },
 }

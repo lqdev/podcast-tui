@@ -625,6 +625,39 @@ impl UIApp {
                 self.pending_bulk_deletion = true;
                 Ok(true)
             }
+            UIAction::ImportOpml => {
+                // Show prompt for file path or URL
+                self.minibuffer.set_content(MinibufferContent::Input {
+                    prompt: "Import OPML from (file path or URL): ".to_string(),
+                    input: String::new(),
+                });
+                Ok(true)
+            }
+            UIAction::ExportOpml => {
+                // Show prompt for output path with default
+                let default_path = shellexpand::tilde(&self.config.storage.opml_export_directory).to_string();
+                self.minibuffer.set_content(MinibufferContent::Input {
+                    prompt: format!("Export to (default: {}): ", default_path),
+                    input: String::new(),
+                });
+                Ok(true)
+            }
+            UIAction::TriggerOpmlImport { source } => {
+                self.show_message(format!("Importing OPML from: {}...", source));
+                self.trigger_async_opml_import(source);
+                Ok(true)
+            }
+            UIAction::TriggerOpmlExport { path } => {
+                let output_path = if let Some(p) = path {
+                    p
+                } else {
+                    // Use default from config
+                    shellexpand::tilde(&self.config.storage.opml_export_directory).to_string()
+                };
+                self.show_message(format!("Exporting OPML to: {}...", output_path));
+                self.trigger_async_opml_export(output_path);
+                Ok(true)
+            }
             UIAction::Refresh => {
                 // Handle F5 refresh - refresh current buffer based on its type
                 let current_buffer_id = self.buffer_manager.current_buffer_id();
@@ -944,6 +977,51 @@ impl UIApp {
                 self.refresh_downloads_buffer().await;
                 self.show_error(format!("Failed to delete all downloads: {}", error));
             }
+            AppEvent::OpmlImportStarted { source } => {
+                self.show_message(format!("Starting OPML import from: {}...", source));
+            }
+            AppEvent::OpmlImportProgress { status, .. } => {
+                self.show_message(status);
+            }
+            AppEvent::OpmlImportCompleted { result, log_path } => {
+                // Refresh podcast list to show newly imported podcasts
+                if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
+                    if let Err(e) = podcast_buffer.load_podcasts().await {
+                        self.show_error(format!("Failed to refresh podcast list: {}", e));
+                    }
+                }
+
+                // Build summary message
+                let mut summary = format!(
+                    "Import complete: {} imported, {} skipped",
+                    result.imported, result.skipped
+                );
+
+                if result.has_failures() {
+                    summary.push_str(&format!(", {} failed", result.failed.len()));
+                    summary.push_str(&format!("\nSee log: {}", log_path));
+                }
+
+                self.show_message(summary);
+            }
+            AppEvent::OpmlImportFailed { source, error } => {
+                self.show_error(format!("OPML import from {} failed: {}", source, error));
+            }
+            AppEvent::OpmlExportStarted { path } => {
+                self.show_message(format!("Starting OPML export to: {}...", path));
+            }
+            AppEvent::OpmlExportProgress { status } => {
+                self.show_message(status);
+            }
+            AppEvent::OpmlExportCompleted { path, feed_count } => {
+                self.show_message(format!(
+                    "Successfully exported {} feeds to {}",
+                    feed_count, path
+                ));
+            }
+            AppEvent::OpmlExportFailed { path, error } => {
+                self.show_error(format!("OPML export to {} failed: {}", path, error));
+            }
         }
         Ok(())
     }
@@ -1040,6 +1118,36 @@ impl UIApp {
                 });
                 self.pending_bulk_deletion = true;
                 Ok(true)
+            }
+            "import-opml" => {
+                if parts.len() > 1 {
+                    let source = parts[1..].join(" ");
+                    self.show_message(format!("Importing OPML from: {}...", source));
+                    self.trigger_async_opml_import(source);
+                    Ok(true)
+                } else {
+                    // Prompt for file path/URL
+                    self.minibuffer.set_content(MinibufferContent::Input {
+                        prompt: "Import OPML from (file path or URL): ".to_string(),
+                        input: String::new(),
+                    });
+                    Ok(true)
+                }
+            }
+            "export-opml" => {
+                if parts.len() > 1 {
+                    let path = parts[1..].join(" ");
+                    self.trigger_async_opml_export(path);
+                    Ok(true)
+                } else {
+                    // Prompt for output path with default
+                    let default_path = shellexpand::tilde(&self.config.storage.opml_export_directory).to_string();
+                    self.minibuffer.set_content(MinibufferContent::Input {
+                        prompt: format!("Export to (default: {}): ", default_path),
+                        input: String::new(),
+                    });
+                    Ok(true)
+                }
             }
             _ => {
                 self.show_error(format!("Unknown command: {}", parts[0]));
@@ -1834,6 +1942,100 @@ impl UIApp {
         self.show_message("Deleting podcast...".to_string());
     }
 
+    /// Trigger async OPML import
+    fn trigger_async_opml_import(&mut self, source: String) {
+        let subscription_manager = self.subscription_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let source_clone = source.clone();
+
+        // Send start event
+        let _ = app_event_tx.send(AppEvent::OpmlImportStarted {
+            source: source.clone(),
+        });
+
+        tokio::spawn(async move {
+            // Create progress callback
+            let app_event_tx_progress = app_event_tx.clone();
+            let progress_callback = move |status: String| {
+                let _ = app_event_tx_progress.send(AppEvent::OpmlImportProgress {
+                    current: 0,
+                    total: 0,
+                    status,
+                });
+            };
+
+            match subscription_manager
+                .import_opml(&source, progress_callback)
+                .await
+            {
+                Ok((result, log_path)) => {
+                    let _ = app_event_tx.send(AppEvent::OpmlImportCompleted { result, log_path });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::OpmlImportFailed {
+                        source: source_clone,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    /// Trigger async OPML export
+    fn trigger_async_opml_export(&mut self, output_path: String) {
+        let subscription_manager = self.subscription_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let output_path_clone = output_path.clone();
+
+        // Expand tilde and generate filename if needed
+        let expanded_path = shellexpand::tilde(&output_path).to_string();
+        let final_path = if std::path::Path::new(&expanded_path).is_dir()
+            || !expanded_path.contains('.')
+        {
+            // It's a directory or doesn't have an extension, generate filename
+            use chrono::Local;
+            let timestamp = Local::now().format("%Y-%m-%d-%H%M%S");
+            let filename = format!("podcasts-export-{}.opml", timestamp);
+            std::path::PathBuf::from(expanded_path).join(filename)
+        } else {
+            // It's a full file path
+            std::path::PathBuf::from(expanded_path)
+        };
+
+        let final_path_str = final_path.to_string_lossy().to_string();
+
+        // Send start event
+        let _ = app_event_tx.send(AppEvent::OpmlExportStarted {
+            path: final_path_str.clone(),
+        });
+
+        tokio::spawn(async move {
+            // Create progress callback
+            let app_event_tx_progress = app_event_tx.clone();
+            let progress_callback = move |status: String| {
+                let _ = app_event_tx_progress.send(AppEvent::OpmlExportProgress { status });
+            };
+
+            match subscription_manager
+                .export_opml(&final_path, progress_callback)
+                .await
+            {
+                Ok(feed_count) => {
+                    let _ = app_event_tx.send(AppEvent::OpmlExportCompleted {
+                        path: final_path_str,
+                        feed_count,
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::OpmlExportFailed {
+                        path: output_path_clone,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
     /// Trigger async episode loading
     fn trigger_async_load_episodes(
         &mut self,
@@ -1868,14 +2070,48 @@ impl UIApp {
         });
     }
 
-    /// Handle minibuffer input submission
-    fn handle_minibuffer_input(&mut self, input: String) {
+    /// Handle minibuffer input submission with context
+    fn handle_minibuffer_input_with_context(&mut self, input: String, prompt_context: Option<String>) {
         let input = input.trim();
 
         if input.is_empty() {
-            self.minibuffer.clear();
+            // Handle empty input for specific prompts
+            if let Some(prompt) = &prompt_context {
+                if prompt.starts_with("Export to") {
+                    // Empty input means use default export path
+                    let default_path = shellexpand::tilde(&self.config.storage.opml_export_directory).to_string();
+                    self.trigger_async_opml_export(default_path);
+                    return;
+                }
+            }
             return;
         }
+
+        // Check context from prompt FIRST (before checking for URLs)
+        if let Some(prompt) = &prompt_context {
+            if prompt.starts_with("Import OPML from") {
+                // This is an OPML import
+                self.trigger_async_opml_import(input.to_string());
+                return;
+            } else if prompt.starts_with("Export to") {
+                // This is an OPML export
+                self.trigger_async_opml_export(input.to_string());
+                return;
+            }
+        }
+
+        // If no prompt context, fall back to old behavior
+        self.handle_minibuffer_input_legacy(input.to_string());
+    }
+
+    /// Handle minibuffer input submission (legacy method for backward compatibility)
+    fn handle_minibuffer_input(&mut self, input: String) {
+        self.handle_minibuffer_input_legacy(input);
+    }
+
+    /// Legacy minibuffer input handler
+    fn handle_minibuffer_input_legacy(&mut self, input: String) {
+        let input = input.trim();
 
         // Check if this looks like a URL (basic heuristic for podcast addition)
         if input.starts_with("http://") || input.starts_with("https://") {
@@ -1937,8 +2173,10 @@ impl UIApp {
         match (key_event.code, key_event.modifiers) {
             // Submit input on Enter
             (KeyCode::Enter, _) => {
+                // Get the prompt BEFORE submit() clears it
+                let prompt = self.minibuffer.current_prompt();
                 if let Some(input) = self.minibuffer.submit() {
-                    self.handle_minibuffer_input(input);
+                    self.handle_minibuffer_input_with_context(input, prompt);
                 }
                 Ok(true)
             }

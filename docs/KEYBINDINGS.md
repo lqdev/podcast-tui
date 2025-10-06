@@ -46,6 +46,8 @@ This document outlines the keybinding system for the Podcast TUI application.
 - `r` - Refresh selected podcast feed
 - `Shift+R` - Refresh all podcast feeds
 - `Ctrl+r` - Hard refresh selected podcast (re-parse all episodes)
+- `Shift+A` - Import podcasts from OPML file or URL
+- `Shift+E` - Export subscriptions to OPML file
 
 ### Episode Management
 - `Enter` - Play selected episode (when playback is implemented in Sprint 4)
@@ -86,6 +88,8 @@ This document outlines the keybinding system for the Podcast TUI application.
 
 #### Podcast Commands
 - `add-podcast <url>` - Add new podcast subscription
+- `import-opml [path/url]` - Import subscriptions from OPML file or URL
+- `export-opml [path]` - Export subscriptions to OPML file
 
 #### Download Commands
 - `delete-all-downloads` / `clean-downloads` - Delete ALL downloaded episodes

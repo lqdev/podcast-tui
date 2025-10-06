@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>Sample Podcast Subscriptions</title>
+    <dateCreated>Mon, 06 Oct 2025 12:00:00 GMT</dateCreated>
+    <docs>http://opml.org/spec2.opml</docs>
+  </head>
+  <body>
+    <!-- Technology Podcasts -->
+    <outline type="rss" 
+             text="Syntax - Tasty Web Development Treats" 
+             title="Syntax - Tasty Web Development Treats"
+             description="Full Stack Developers Wes Bos and Scott Tolinski dive deep into web development topics, explaining how they work and talking about their own experiences."
+             xmlUrl="https://feed.syntax.fm/rss"/>
+    
+    <outline type="rss" 
+             text="The Changelog" 
+             title="The Changelog"
+             description="Conversations with the hackers, leaders, and innovators of the software world."
+             xmlUrl="https://changelog.com/podcast/feed"/>
+    
+    <outline type="rss" 
+             text="Rust in Production" 
+             title="Rust in Production"
+             description="Discover how leading software engineers use Rust to build reliable, scalable systems."
+             xmlUrl="https://feeds.fireside.fm/rust-in-production/rss"/>
+    
+    <!-- News & Current Events -->
+    <outline type="rss" 
+             text="NPR News Now" 
+             title="NPR News Now"
+             description="The latest news in five minutes. Updated hourly."
+             xmlUrl="https://feeds.npr.org/500005/podcast.xml"/>
+    
+    <!-- Science & Education -->
+    <outline type="rss" 
+             text="Radiolab" 
+             title="Radiolab"
+             description="Radiolab is a show about curiosity. Where sound illuminates ideas, and the boundaries blur between science, philosophy, and human experience."
+             xmlUrl="https://feeds.wnyc.org/radiolab"/>
+    
+    <outline type="rss" 
+             text="Science Vs" 
+             title="Science Vs"
+             description="Science Vs takes on fads, trends, and the opinionated mob to find out what's fact, what's not, and what's somewhere in between."
+             xmlUrl="https://feeds.megaphone.fm/sciencevs"/>
+  </body>
+</opml>

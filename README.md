@@ -1,6 +1,9 @@
 # Podcast TUI
 
-A cross-platform terminal user interface for podcast management built with Rust.
+A cross-platform terminal u✅ **Completed Features:**
+- ✅ **RSS Subscription Management** - Subscribe to podcasts via RSS feeds
+- ✅ **OPML Import/Export** - Import/export subscriptions with duplicate detection ([docs](docs/OPML_SUPPORT.md))
+- ✅ **Episode Management** - Browse and manage episodesinterface for podcast management built with Rust.
 
 ![Build Status](https://github.com/yourusername/podcast-tui/workflows/CI/badge.svg)
 ![License](https://img.shiel### Architecture

@@ -76,18 +76,20 @@ else
         print_status "Installing Zig via pip3..."
         pip3 install ziglang
         
-        # Add Python user bin directory to PATH if not already there
+        # Add Python user bin directory to PATH
         PYTHON_USER_BASE=$(python3 -m site --user-base 2>/dev/null || echo "$HOME/.local")
         PYTHON_BIN_DIR="$PYTHON_USER_BASE/bin"
-        if [[ -d "$PYTHON_BIN_DIR" ]] && [[ ":$PATH:" != *":$PYTHON_BIN_DIR:"* ]]; then
+        
+        # Add to current session PATH if not already there
+        if [[ ":$PATH:" != *":$PYTHON_BIN_DIR:"* ]]; then
             export PATH="$PYTHON_BIN_DIR:$PATH"
             print_status "Added $PYTHON_BIN_DIR to PATH"
-            
-            # Also add to GitHub Actions PATH if running in CI
-            if [[ -n "$GITHUB_PATH" ]]; then
-                echo "$PYTHON_BIN_DIR" >> "$GITHUB_PATH"
-                print_status "Added $PYTHON_BIN_DIR to GITHUB_PATH for future steps"
-            fi
+        fi
+        
+        # Also add to GitHub Actions PATH if running in CI (for subsequent steps)
+        if [[ -n "$GITHUB_PATH" ]]; then
+            echo "$PYTHON_BIN_DIR" >> "$GITHUB_PATH"
+            print_status "Added $PYTHON_BIN_DIR to GITHUB_PATH for future steps"
         fi
         
         print_status "✓ Zig installed successfully via pip"
@@ -95,18 +97,20 @@ else
         print_status "Installing Zig via pip..."
         pip install ziglang
         
-        # Add Python user bin directory to PATH if not already there
+        # Add Python user bin directory to PATH
         PYTHON_USER_BASE=$(python -m site --user-base 2>/dev/null || echo "$HOME/.local")
         PYTHON_BIN_DIR="$PYTHON_USER_BASE/bin"
-        if [[ -d "$PYTHON_BIN_DIR" ]] && [[ ":$PATH:" != *":$PYTHON_BIN_DIR:"* ]]; then
+        
+        # Add to current session PATH if not already there
+        if [[ ":$PATH:" != *":$PYTHON_BIN_DIR:"* ]]; then
             export PATH="$PYTHON_BIN_DIR:$PATH"
             print_status "Added $PYTHON_BIN_DIR to PATH"
-            
-            # Also add to GitHub Actions PATH if running in CI
-            if [[ -n "$GITHUB_PATH" ]]; then
-                echo "$PYTHON_BIN_DIR" >> "$GITHUB_PATH"
-                print_status "Added $PYTHON_BIN_DIR to GITHUB_PATH for future steps"
-            fi
+        fi
+        
+        # Also add to GitHub Actions PATH if running in CI (for subsequent steps)
+        if [[ -n "$GITHUB_PATH" ]]; then
+            echo "$PYTHON_BIN_DIR" >> "$GITHUB_PATH"
+            print_status "Added $PYTHON_BIN_DIR to GITHUB_PATH for future steps"
         fi
         
         print_status "✓ Zig installed successfully via pip"

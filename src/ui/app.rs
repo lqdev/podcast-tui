@@ -49,8 +49,8 @@ pub struct UIApp {
     /// Download manager
     download_manager: Arc<DownloadManager<JsonStorage>>,
 
-    /// Storage
-    storage: Arc<JsonStorage>,
+    /// Storage (reserved for future direct access)
+    _storage: Arc<JsonStorage>,
 
     /// Buffer manager
     buffer_manager: BufferManager,
@@ -109,7 +109,7 @@ impl UIApp {
             theme,
             subscription_manager,
             download_manager,
-            storage,
+            _storage: storage,
             buffer_manager,
             status_bar,
             minibuffer,
@@ -181,7 +181,7 @@ impl UIApp {
             theme,
             subscription_manager,
             download_manager,
-            storage,
+            _storage: storage,
             buffer_manager,
             status_bar,
             minibuffer,
@@ -1157,6 +1157,7 @@ impl UIApp {
     }
 
     /// Set the application theme
+    #[allow(dead_code)]
     async fn set_theme(&mut self, theme_name: &str) -> UIResult<bool> {
         match Theme::from_name(theme_name) {
             Ok(new_theme) => {
@@ -1863,8 +1864,9 @@ impl UIApp {
     }
 
     /// Refresh all buffer list buffers when buffers change
+    #[allow(dead_code)]
     fn refresh_buffer_lists(&mut self) {
-        let buffer_names = self.buffer_manager.buffer_names();
+        let _buffer_names = self.buffer_manager.buffer_names();
         let _current_buffer = self.buffer_manager.current_buffer_id();
 
         // Find and update any buffer list buffers

@@ -124,6 +124,16 @@ pub enum UIAction {
     /// Hard refresh podcast (re-parse existing episodes)
     HardRefreshPodcast,
 
+    // OPML Import/Export actions
+    /// Import podcasts from OPML file or URL
+    ImportOpml,
+    /// Export subscriptions to OPML file
+    ExportOpml,
+    /// Trigger async OPML import with source path
+    TriggerOpmlImport { source: String },
+    /// Trigger async OPML export with output path
+    TriggerOpmlExport { path: Option<String> },
+
     // Render request
     Render,
 

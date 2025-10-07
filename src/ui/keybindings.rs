@@ -128,7 +128,10 @@ impl KeyHandler {
         self.bind_key(KeyChord::none(KeyCode::Char('q')), UIAction::Quit);
         self.bind_key(KeyChord::none(KeyCode::Char('h')), UIAction::ShowHelp);
         self.bind_key(KeyChord::none(KeyCode::Char('?')), UIAction::ShowHelp);
+        // Bind ':' without modifiers (crossterm handles the shift automatically for the char)
         self.bind_key(KeyChord::none(KeyCode::Char(':')), UIAction::PromptCommand);
+        // Also bind with shift modifier in case some terminals report it that way
+        self.bind_key(KeyChord::shift(KeyCode::Char(':')), UIAction::PromptCommand);
 
         // Buffer switching (Emacs-style)
         self.bind_key(
@@ -147,6 +150,10 @@ impl KeyHandler {
             KeyChord::ctrl(KeyCode::Char('k')),
             UIAction::CloseCurrentBuffer,
         );
+
+        // OPML Import/Export
+        self.bind_key(KeyChord::shift(KeyCode::Char('A')), UIAction::ImportOpml);
+        self.bind_key(KeyChord::shift(KeyCode::Char('E')), UIAction::ExportOpml);
     }
 
     /// Bind a key chord to an action

@@ -282,6 +282,16 @@ impl Minibuffer {
         }
     }
 
+    /// Get the current prompt text
+    pub fn current_prompt(&self) -> Option<String> {
+        match &self.content {
+            MinibufferContent::Input { prompt, .. } => Some(prompt.clone()),
+            MinibufferContent::Prompt { prompt, .. } => Some(prompt.clone()),
+            MinibufferContent::PromptWithCompletion { prompt, .. } => Some(prompt.clone()),
+            _ => None,
+        }
+    }
+
     /// Submit the current input and return the result
     pub fn submit(&mut self) -> Option<String> {
         let input = self.current_input()?;

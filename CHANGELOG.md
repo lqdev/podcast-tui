@@ -5,9 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - Sprint 3 Complete
+## [Unreleased] - Sprint 3 Complete + OPML Support
 
 ### Added
+
+**OPML Import/Export Support - ✅ COMPLETE**
+- **OPML Import**: Import podcast subscriptions from OPML files or URLs
+  - Support for local files and remote URLs
+  - Non-destructive import (skips duplicates)
+  - Sequential processing with progress callbacks
+  - Detailed logging with timestamped import reports
+  - Real-world OPML compatibility (handles malformed XML)
+  - Robust XML sanitization for unescaped entities
+  - Flexible `@text`/`@title` attribute handling
+- **OPML Export**: Export current subscriptions to OPML 2.0 format
+  - Configurable export directory
+  - Timestamped filenames for version tracking
+  - Atomic writes for data safety
+  - Full OPML 2.0 compliance with both `@text` and `@title` attributes
+- **UI Integration**: Seamless OPML workflows
+  - Keybindings: `Shift+A` (import), `Shift+E` (export)
+  - Commands: `:import-opml`, `:export-opml`
+  - Real-time progress feedback
+  - Detailed import/export summaries
+- **Error Handling**: Comprehensive error reporting
+  - Validation errors with clear messages
+  - Network error handling with retries
+  - Per-feed error tracking during import
+  - Detailed log files for troubleshooting
+
+### Fixed
+- **OPML Real-World Compatibility**: Fixed parsing of OPML files from popular services
+  - Handle OPML files missing required `@text` attribute (fall back to `@title`)
+  - Sanitize unescaped ampersands and special characters in XML attributes
+  - Support OPML files that violate strict XML/OPML specifications
+- **Minibuffer Context Preservation**: Fixed race condition in minibuffer input handling
+  - Prompt context now captured before submit() clears state
+  - OPML import from URLs no longer misidentified as podcast subscription
 
 **Sprint 3: Downloads & Episode Management (Week 4) - ✅ COMPLETE**
 - **Download System**: Full parallel download implementation with progress tracking
@@ -39,9 +73,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Feed refresh with smart episode detection
   - Hard refresh option to update existing episodes
 - **OPML Support**: Import/export podcast subscriptions
-  - Non-destructive OPML import (preserves existing subscriptions)
-  - Standard OPML export format
+  - Non-destructive OPML import with duplicate detection
+  - Import from local files or HTTP(S) URLs
+  - Sequential processing with real-time progress updates
+  - Detailed error logging for failed imports
+  - Standard OPML 2.0 compliant export format
+  - Configurable export directory with timestamped filenames
   - Batch subscription handling
+  - Keyboard shortcuts: `Shift+A` (import), `Shift+E` (export)
+  - Commands: `:import-opml` and `:export-opml`
 - **Episode Detection**: Intelligent episode management
   - Deterministic episode IDs based on GUID for deduplication
   - Multi-strategy duplicate detection (GUID, URL, title+date)

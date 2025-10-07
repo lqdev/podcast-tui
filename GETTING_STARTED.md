@@ -4,6 +4,57 @@
 
 This guide will help you get Podcast TUI running on your system, regardless of platform.
 
+---
+
+## TL;DR - 5 Minute Quick Start
+
+### What Works Right Now (Sprint 3 Complete)
+✅ Subscribe to RSS podcast feeds  
+✅ Browse episodes with full metadata  
+✅ Download episodes (2-3 at a time)  
+✅ OPML import/export  
+✅ Intuitive keyboard shortcuts  
+✅ 4 color themes  
+
+### Not Yet Working
+❌ Audio playback (coming in Sprint 4)  
+❌ Playlists (Sprint 5)  
+❌ Episode notes (Sprint 5)  
+❌ Statistics (Sprint 6)  
+
+### Speed Run Installation
+
+**Windows x64:**
+```powershell
+winget install Rustlang.Rustup
+winget install Microsoft.VisualStudio.2022.BuildTools
+git clone https://github.com/yourusername/podcast-tui.git
+cd podcast-tui
+cargo build --release
+.\target\release\podcast-tui.exe
+```
+
+**Linux:**
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+sudo apt install build-essential pkg-config libssl-dev  # Ubuntu/Debian
+git clone https://github.com/yourusername/podcast-tui.git
+cd podcast-tui
+cargo build --release
+./target/release/podcast-tui
+```
+
+### Essential Keys to Know
+- `F1` or `?` → Help
+- `:` → Command prompt
+- `a` → Add podcast
+- `↓`/`↑` → Navigate
+- `Enter` → Select
+- `Shift+D` → Download episode
+- `q` or `F10` → Quit
+
+---
+
 ## Current Development Status (October 2025)
 
 **✅ What Works:**
@@ -238,6 +289,14 @@ The application will create configuration files on first run:
   }
 }
 ```
+
+## Good Test Feeds
+
+Try these popular podcasts to get started:
+
+- **The Changelog**: `https://changelog.com/podcast/feed`
+- **Syntax**: `https://feed.syntax.fm/rss`
+- **Reply All**: `https://feeds.megaphone.fm/replyall`
 
 ## Troubleshooting
 

@@ -3,6 +3,8 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use crate::constants::{audio, downloads, storage, ui};
+
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -78,8 +80,8 @@ pub struct AudioConfig {
 impl Default for AudioConfig {
     fn default() -> Self {
         Self {
-            volume: 0.8,
-            seek_seconds: 30,
+            volume: audio::DEFAULT_VOLUME,
+            seek_seconds: audio::SEEK_STEP_SECS as u32,
             external_player: None,
             auto_play_next: false,
             remember_position: true,
@@ -145,8 +147,8 @@ impl Default for DownloadConfig {
     fn default() -> Self {
         Self {
             directory: "~/Downloads/Podcasts".to_string(),
-            concurrent_downloads: 3,
-            cleanup_after_days: Some(30),
+            concurrent_downloads: downloads::DEFAULT_CONCURRENT_DOWNLOADS,
+            cleanup_after_days: Some(storage::DEFAULT_CLEANUP_AFTER_DAYS as u32),
             auto_download_new: false,
             max_download_size_mb: Some(500), // 500MB limit
 
@@ -230,7 +232,7 @@ impl Default for StorageConfig {
             data_directory: None, // Use system default
             backup_enabled: true,
             backup_frequency_days: 7,
-            max_backups: 5,
+            max_backups: storage::MAX_BACKUPS as u32,
             opml_export_directory: default_opml_export_directory(),
         }
     }
@@ -254,7 +256,7 @@ pub struct UiConfig {
 
 // Default function for serde
 fn default_whats_new_episode_limit() -> usize {
-    100
+    ui::DEFAULT_WHATS_NEW_LIMIT
 }
 
 impl Default for UiConfig {
@@ -267,7 +269,7 @@ impl Default for UiConfig {
             time_format: "%H:%M:%S".to_string(),
             compact_mode: false,
             mouse_support: true,
-            whats_new_episode_limit: 100,
+            whats_new_episode_limit: ui::DEFAULT_WHATS_NEW_LIMIT,
         }
     }
 }
@@ -281,9 +283,9 @@ mod tests {
     fn test_config_default() {
         let config = Config::default();
 
-        assert_eq!(config.audio.volume, 0.8);
-        assert_eq!(config.audio.seek_seconds, 30);
-        assert_eq!(config.downloads.concurrent_downloads, 3);
+        assert_eq!(config.audio.volume, audio::DEFAULT_VOLUME);
+        assert_eq!(config.audio.seek_seconds, audio::SEEK_STEP_SECS as u32);
+        assert_eq!(config.downloads.concurrent_downloads, downloads::DEFAULT_CONCURRENT_DOWNLOADS);
         assert_eq!(config.keybindings.play_pause, "SPC");
         assert_eq!(config.ui.theme, "default");
     }

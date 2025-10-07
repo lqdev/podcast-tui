@@ -21,6 +21,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     config::Config,
+    constants::ui as ui_constants,
     download::DownloadManager,
     podcast::subscription::SubscriptionManager,
     storage::{JsonStorage, Storage},
@@ -102,7 +103,7 @@ impl UIApp {
 
         let minibuffer = Minibuffer::new();
         let key_handler = KeyHandler::new();
-        let event_handler = UIEventHandler::new(Duration::from_millis(250)); // 250ms tick rate
+        let event_handler = UIEventHandler::new(Duration::from_millis(ui_constants::UI_TICK_RATE_MS));
 
         Ok(Self {
             config,
@@ -140,7 +141,7 @@ impl UIApp {
 
         let minibuffer = Minibuffer::new();
         let key_handler = KeyHandler::new();
-        let event_handler = UIEventHandler::new(Duration::from_millis(250)); // 250ms tick rate
+        let event_handler = UIEventHandler::new(Duration::from_millis(ui_constants::UI_TICK_RATE_MS));
 
         // Create buffers with progress updates
         status_tx.send(crate::InitStatus::CreatingBuffers).ok();

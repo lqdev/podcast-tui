@@ -136,8 +136,6 @@ pub mod feed {
 /// Audio playback constants (for future Sprint 4)
 #[allow(dead_code)]
 pub mod audio {
-    use super::*;
-
     /// Default volume level (0.0 to 1.0)
     pub const DEFAULT_VOLUME: f32 = 0.8;
 
@@ -178,7 +176,7 @@ pub mod opml {
 mod tests {
     #[test]
     fn test_constants_are_valid() {
-        use super::{audio, downloads, feed, filesystem, network, opml, storage, ui};
+        use super::{audio, downloads, feed, network, opml, storage, ui};
         // Network constants
         assert!(network::HTTP_TIMEOUT.as_secs() > 0);
         assert!(network::DOWNLOAD_TIMEOUT > network::HTTP_TIMEOUT);

@@ -41,7 +41,7 @@ fi
 
 # Add Rust targets
 print_status "Adding compilation targets..."
-rustup target add x86_64-pc-windows-msvc aarch64-pc-windows-msvc x86_64-unknown-linux-gnu
+rustup target add x86_64-pc-windows-msvc aarch64-pc-windows-msvc x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
 print_status "✓ Compilation targets added"
 
 # Check if zig is installed
@@ -75,10 +75,40 @@ else
     if command -v pip3 &> /dev/null; then
         print_status "Installing Zig via pip3..."
         pip3 install ziglang
+        
+        # Add Python user bin directory to PATH if not already there
+        PYTHON_USER_BASE=$(python3 -m site --user-base 2>/dev/null || echo "$HOME/.local")
+        PYTHON_BIN_DIR="$PYTHON_USER_BASE/bin"
+        if [[ -d "$PYTHON_BIN_DIR" ]] && [[ ":$PATH:" != *":$PYTHON_BIN_DIR:"* ]]; then
+            export PATH="$PYTHON_BIN_DIR:$PATH"
+            print_status "Added $PYTHON_BIN_DIR to PATH"
+            
+            # Also add to GitHub Actions PATH if running in CI
+            if [[ -n "$GITHUB_PATH" ]]; then
+                echo "$PYTHON_BIN_DIR" >> "$GITHUB_PATH"
+                print_status "Added $PYTHON_BIN_DIR to GITHUB_PATH for future steps"
+            fi
+        fi
+        
         print_status "✓ Zig installed successfully via pip"
     elif command -v pip &> /dev/null; then
         print_status "Installing Zig via pip..."
         pip install ziglang
+        
+        # Add Python user bin directory to PATH if not already there
+        PYTHON_USER_BASE=$(python -m site --user-base 2>/dev/null || echo "$HOME/.local")
+        PYTHON_BIN_DIR="$PYTHON_USER_BASE/bin"
+        if [[ -d "$PYTHON_BIN_DIR" ]] && [[ ":$PATH:" != *":$PYTHON_BIN_DIR:"* ]]; then
+            export PATH="$PYTHON_BIN_DIR:$PATH"
+            print_status "Added $PYTHON_BIN_DIR to PATH"
+            
+            # Also add to GitHub Actions PATH if running in CI
+            if [[ -n "$GITHUB_PATH" ]]; then
+                echo "$PYTHON_BIN_DIR" >> "$GITHUB_PATH"
+                print_status "Added $PYTHON_BIN_DIR to GITHUB_PATH for future steps"
+            fi
+        fi
+        
         print_status "✓ Zig installed successfully via pip"
     else
         print_warning "pip not found. Attempting to install via package manager..."

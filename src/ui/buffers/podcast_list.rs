@@ -428,9 +428,6 @@ mod tests {
 
     #[test]
     fn test_set_podcasts() {
-        use crate::storage::PodcastId;
-        use chrono::Utc;
-
         let mut buffer = PodcastListBuffer::new();
 
         // Create mock podcasts
@@ -446,8 +443,6 @@ mod tests {
 
     #[test]
     fn test_navigation_with_podcasts() {
-        use chrono::Utc;
-
         let mut buffer = PodcastListBuffer::new();
 
         // Add mock podcasts

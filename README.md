@@ -17,6 +17,8 @@ The application follows a modular architecture with clear separation of concerns
 ![Development Status](https://img.shields.io/badge/status-Sprint%203%20Complete-blue)
 ![Progress](https://img.shields.io/badge/MVP%20Progress-37.5%25-yellow)
 
+> 📚 **Documentation:** For comprehensive architecture and design patterns, see [**ARCHITECTURE.md**](docs/ARCHITECTURE.md)
+
 ## 📊 Current Status (October 2025)
 
 **🎉 Sprint 3 Complete!** The application has completed its first 3 sprints (37.5% of MVP):
@@ -66,8 +68,8 @@ The application follows a modular architecture with clear separation of concerns
 ## 🚀 Quick Start
 
 > 📖 **Documentation:**
-> - 🏃 **Fastest start**: [**QUICKSTART.md**](QUICKSTART.md) - TL;DR guide with essential commands
-> - 📚 **Complete guide**: [**GETTING_STARTED.md**](GETTING_STARTED.md) - Detailed platform-specific instructions and troubleshooting
+> - 📚 **Complete guide**: [**GETTING_STARTED.md**](GETTING_STARTED.md) - Detailed platform-specific instructions and quick start
+> - 🏗️ **Architecture**: [**ARCHITECTURE.md**](docs/ARCHITECTURE.md) - System design and technical documentation
 
 ### Prerequisites
 - Rust 1.75 or later
@@ -129,7 +131,7 @@ cargo build --release
 .\scripts\build-windows.ps1
 ```
 
-See [BUILD_COMMANDS.md](BUILD_COMMANDS.md) for quick reference or [BUILD_SYSTEM.md](docs/BUILD_SYSTEM.md) for detailed documentation.
+See [BUILD_SYSTEM.md](docs/BUILD_SYSTEM.md) for detailed build documentation and cross-platform build instructions.
 
 #### Using DevContainer (Recommended for Development)
 1. Install [Docker](https://docker.com) and [VS Code](https://code.visualstudio.com)
@@ -257,19 +259,26 @@ This design allows for:
 ### Architecture
 The application follows a modular architecture with clear separation of concerns:
 
-- **Storage Layer** - Abstracted JSON-based persistence
-- **Domain Logic** - Podcast, episode, and playlist management
-- **UI Layer** - Emacs-style terminal interface using Ratatui
-- **Audio System** - Cross-platform playback with Rodio
+- **Storage Layer** - Trait-based abstraction with JSON implementation
+- **Domain Logic** - Podcast, episode, and download management
+- **UI Layer** - Buffer-based terminal interface using Ratatui
+- **Network Layer** - Async HTTP with connection pooling
 
-See [architecture documentation](docs/ARCHITECTURE.md) for details.
+See [**ARCHITECTURE.md**](docs/ARCHITECTURE.md) for comprehensive technical documentation including:
+- Core architectural principles and design patterns
+- Module structure and dependencies
+- Storage abstraction design
+- UI component patterns
+- Data flow diagrams
 
 ### Contributing
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 - Development setup instructions
-- Code style guidelines  
+- Code style guidelines (also in [.github/copilot-instructions.md](.github/copilot-instructions.md))
 - Sprint process and project management
 - Pull request requirements
+- Architecture guidelines and best practices
+- Testing strategy and guidelines (see [docs/TESTING.md](docs/TESTING.md))
 
 ### Project Management
 - **PRD**: [Product Requirements Document](docs/PRD.md)

@@ -26,7 +26,7 @@ use std::sync::Arc;
 
 /// Aggregated episode with podcast information
 #[derive(Debug, Clone)]
-struct AggregatedEpisode {
+pub struct AggregatedEpisode {
     pub podcast_id: PodcastId,
     pub podcast_title: String,
     pub episode: Episode,

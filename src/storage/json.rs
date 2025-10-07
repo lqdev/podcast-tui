@@ -373,7 +373,7 @@ impl Default for JsonStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::podcast::{Episode, Podcast};
+    use crate::podcast::Podcast;
     use tempfile::TempDir;
 
     fn create_test_storage() -> (JsonStorage, TempDir) {

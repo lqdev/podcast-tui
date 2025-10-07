@@ -69,6 +69,7 @@ Examples:
 - Integration tests for user workflows
 - Mock external dependencies in tests
 - Maintain test coverage above 80%
+- Follow guidelines in [docs/TESTING.md](docs/TESTING.md)
 
 #### Performance Guidelines
 - Profile performance-critical code
@@ -98,28 +99,52 @@ Examples:
 
 ## Architecture Guidelines
 
-### Storage Abstraction
-- Always code against the `Storage` trait
-- Never directly implement against JSON storage
+> 📖 **Complete Architecture Documentation**: See [**docs/ARCHITECTURE.md**](docs/ARCHITECTURE.md) for comprehensive technical documentation
+
+### Core Principles (Summary)
+
+**Storage Abstraction**
+- Always code against the `Storage` trait, never directly against JSON implementation
 - Write storage-agnostic tests using mocks
+- Use proper serialization with serde
+- Implement atomic writes for data consistency
 
-### UI Components
-- Follow Emacs paradigms (buffers, windows, minibuffer)
-- Create reusable components
+**UI Components**
+- Follow buffer-based UI patterns (buffers, windows, minibuffer)
+- Create reusable components that encapsulate rendering and event handling
 - Implement proper focus management
-- Use responsive layouts
+- Use responsive layouts that adapt to terminal size
 
-### Error Handling
+**Error Handling**
 - Create custom error types with `thiserror`
 - Provide user-friendly error messages
-- Implement graceful degradation
-- Log errors appropriately
+- Always provide context in error chains
+- Never use `unwrap()` or `expect()` in user-facing code
 
-### Configuration
-- Use JSON for human-readable config
-- Support configuration hot-reload
-- Provide sensible defaults
-- Document all configuration options
+**Configuration**
+- Use centralized constants module (`src/constants.rs`)
+- All default values defined in one place
+- JSON for human-readable config files
+- Provide sensible defaults for all options
+
+### Code Style
+
+Follow the project's comprehensive code style guidelines in [**.github/copilot-instructions.md**](.github/copilot-instructions.md), which includes:
+- Rust style conventions (snake_case, PascalCase)
+- Architecture patterns (Storage, Event-Driven, Buffer-Based UI, Async-First)
+- Error handling patterns with examples
+- Testing strategies
+- Common patterns to follow and anti-patterns to avoid
+
+### Module Organization
+
+The project follows a clear module structure documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md):
+- `src/storage/` - Data persistence abstraction
+- `src/podcast/` - Domain models and RSS logic
+- `src/download/` - Download management
+- `src/ui/` - Terminal UI with buffers and components
+- `src/constants.rs` - Centralized configuration constants
+- `src/utils/` - Shared utilities (filesystem, validation, etc.)
 
 ## Pull Request Process
 
@@ -186,10 +211,25 @@ Examples:
 ## Getting Help
 
 ### Documentation
-- [PRD](docs/PRD.md) - Product requirements and scope
-- [Implementation Plan](docs/IMPLEMENTATION_PLAN.md) - Technical roadmap
-- [Storage Design](docs/STORAGE_DESIGN.md) - Storage architecture
-- [Emacs Keybindings](docs/EMACS_KEYBINDINGS.md) - UI interaction patterns
+
+**Essential Reading:**
+- [**ARCHITECTURE.md**](docs/ARCHITECTURE.md) - Complete system architecture and design patterns
+- [**PRD**](docs/PRD.md) - Product requirements and scope
+- [**Implementation Plan**](docs/IMPLEMENTATION_PLAN.md) - Technical roadmap and sprint status
+- [**GETTING_STARTED.md**](GETTING_STARTED.md) - Quick start and platform-specific setup
+
+**Technical Documentation:**
+- [**Storage Design**](docs/STORAGE_DESIGN.md) - Storage abstraction architecture
+- [**OPML Support**](docs/OPML_SUPPORT.md) - OPML import/export implementation
+- [**Testing**](docs/TESTING.md) - Comprehensive testing strategy and guidelines
+- [**Keybindings**](docs/KEYBINDINGS.md) - Complete keyboard shortcuts reference
+- [**Build System**](docs/BUILD_SYSTEM.md) - Cross-platform build instructions
+
+**Code Guidelines:**
+- [**.github/copilot-instructions.md**](.github/copilot-instructions.md) - Comprehensive code style and architecture patterns
+
+**Historical Documentation:**
+- [**docs/archive/**](docs/archive/) - Historical implementation notes and bug fixes
 
 ### Communication
 - **GitHub Issues**: Bug reports and feature requests
@@ -200,16 +240,25 @@ Examples:
 ### Common Questions
 
 **Q: How do I add a new storage backend?**
-A: Implement the `Storage` trait in `src/storage/`. See `json.rs` for reference.
+A: Implement the `Storage` trait in `src/storage/`. See `json.rs` for reference. Read [docs/STORAGE_DESIGN.md](docs/STORAGE_DESIGN.md) for architecture details.
 
 **Q: How do I add a new UI buffer?**
-A: Create a new module in `src/ui/buffers/` following the pattern in existing buffers.
+A: Create a new module in `src/ui/buffers/` following the pattern in existing buffers. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#ui-layer) for buffer component patterns.
 
 **Q: How do I test cross-platform compatibility?**
-A: Use the DevContainer for Linux testing. For Windows, test in Windows Terminal and PowerShell.
+A: Use the DevContainer for Linux testing. For Windows, test in Windows Terminal and PowerShell. See [docs/BUILD_SYSTEM.md](docs/BUILD_SYSTEM.md) for platform-specific build instructions.
 
 **Q: What's the MVP scope?**
-A: See the PRD for detailed scope. Focus on core functionality over advanced features.
+A: See the [PRD](docs/PRD.md) for detailed scope. Focus on core functionality over advanced features. Current progress: 37.5% (3/8 sprints complete).
+
+**Q: Where are magic numbers defined?**
+A: All configuration defaults are centralized in `src/constants.rs` organized by category (network, downloads, ui, storage, audio, etc.). Never use hard-coded values.
+
+**Q: What documentation should I read first?**
+A: Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system design, then [.github/copilot-instructions.md](.github/copilot-instructions.md) for code patterns, and [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for sprint status.
+
+**Q: How should I write tests for my changes?**
+A: Follow the comprehensive testing guidelines in [docs/TESTING.md](docs/TESTING.md), which covers unit tests, integration tests, mocking patterns, and test organization.
 
 ## Code of Conduct
 

@@ -431,6 +431,7 @@ impl<S: Storage> DownloadManager<S> {
     }
 
     /// Clean up podcast-specific directory after deleting its episodes
+    #[allow(dead_code)]
     async fn cleanup_podcast_directory(&self, podcast_id: &PodcastId) -> Result<(), DownloadError> {
         if !self.downloads_dir.exists() {
             return Ok(());

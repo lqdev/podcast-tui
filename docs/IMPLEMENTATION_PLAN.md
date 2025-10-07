@@ -133,7 +133,7 @@ src/
 
 ## Sprint Planning
 
-### Sprint 0: Project Setup (Week 1)
+### Sprint 0: Project Setup (Week 1) - ✅ **COMPLETE**
 **Goal**: Establish development environment and project foundation
 
 #### Day 1-2: Environment Setup
@@ -144,50 +144,53 @@ src/
 - [x] Set up development tooling (rustfmt, clippy)
 
 #### Day 3-4: Storage Foundation  
-- [ ] Define storage traits and interfaces
-- [ ] Implement JSON storage backend
-- [ ] Create basic data models (Podcast, Episode, Config)
-- [ ] Write storage layer tests
-- [ ] Set up configuration system
+- [x] Define storage traits and interfaces
+- [x] Implement JSON storage backend
+- [x] Create basic data models (Podcast, Episode, Config)
+- [x] Write storage layer tests
+- [x] Set up configuration system
 
 #### Day 5-7: Basic App Structure
-- [ ] Create main application entry point
-- [ ] Implement event system foundation
-- [ ] Set up basic TUI framework integration
-- [ ] Create simple key handling system
-- [ ] Basic app state management
+- [x] Create main application entry point
+- [x] Implement event system foundation
+- [x] Set up basic TUI framework integration
+- [x] Create simple key handling system
+- [x] Basic app state management
 
 **Deliverables**:
 - ✅ Working development environment
 - ✅ Storage abstraction with JSON implementation
 - ✅ Basic application skeleton that compiles and runs
+- ✅ Constants module for configuration defaults
 
-### Sprint 1: Core UI Framework (Week 2)
-**Goal**: Implement Emacs-style UI foundation
+### Sprint 1: Core UI Framework (Week 2) - ✅ **COMPLETE**
+**Goal**: Implement buffer-based UI foundation
 
 #### Day 1-3: Buffer System
-- [ ] Implement buffer management (create, switch, destroy)
-- [ ] Create basic buffer rendering system
-- [ ] Implement window management and splitting
-- [ ] Basic minibuffer for command input
+- [x] Implement buffer management (create, switch, destroy)
+- [x] Create basic buffer rendering system
+- [x] Implement buffer navigation and focus management
+- [x] Basic minibuffer for command input
 
-#### Day 4-5: Emacs Keybindings
-- [ ] Implement core Emacs navigation (C-n, C-p, C-f, C-b)
-- [ ] Buffer switching commands (C-x b)
-- [ ] Window management commands (C-x 1, C-x 2, C-x 3, C-x o)
-- [ ] Basic command execution (M-x)
+#### Day 4-5: Keybindings
+- [x] Implement core navigation (arrow keys, Page Up/Down, Home/End)
+- [x] Buffer switching commands (Ctrl+B, Tab, F-keys)
+- [x] Universal keybindings that work across terminals
+- [x] Command execution with auto-completion
 
 #### Day 6-7: Core Components
-- [ ] Status bar implementation
-- [ ] Help system foundation (C-h)
-- [ ] Basic list component for data display
-- [ ] Progress indicator components
+- [x] Status bar implementation
+- [x] Help system foundation (F1, ?)
+- [x] List component for data display
+- [x] Progress indicator components
+- [x] Multi-theme support system
 
 **Deliverables**:
-- [ ] Functional Emacs-style navigation
-- [ ] Buffer system that can display different content
-- [ ] Basic help system
-- [ ] Core UI components ready for content
+- [x] Functional buffer-based navigation
+- [x] Buffer system that can display different content
+- [x] Complete help system
+- [x] Core UI components ready for content
+- [x] Theme switching capability
 
 ### Sprint 2: RSS and Podcasts (Week 3) - ✅ **COMPLETE**
 **Goal**: Implement podcast subscription and RSS handling
@@ -448,8 +451,28 @@ src/
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2025-09-28  
+---
+
+## Progress Summary
+
+### Completed Sprints (3/8 = 37.5%)
+- ✅ **Sprint 0**: Project Setup - Foundation, storage, constants
+- ✅ **Sprint 1**: Core UI Framework - Buffers, themes, navigation
+- ✅ **Sprint 2**: RSS and Podcasts - Subscriptions, OPML, feeds
+- ✅ **Sprint 3**: Episodes and Downloads - Download manager, file organization
+
+### Current Sprint
+- 🚧 **Sprint 4**: Audio Playback (Next Up)
+
+### Upcoming Sprints
+- ⏳ **Sprint 5**: Enhanced Features (Playlists, notes, search)
+- ⏳ **Sprint 6**: Statistics and Cleanup
+- ⏳ **Sprint 7**: Polish and Cross-Platform
+
+---
+
+**Document Version**: 1.1
+**Last Updated**: 2025-10-07  
 **Sprint Reviews**: Weekly on Fridays
 **Retrospectives**: End of each sprint
 **Daily Standups**: Personal daily check-ins with progress tracking

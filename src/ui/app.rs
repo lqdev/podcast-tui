@@ -21,6 +21,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     config::Config,
+    constants::ui as ui_constants,
     download::DownloadManager,
     podcast::subscription::SubscriptionManager,
     storage::{JsonStorage, Storage},
@@ -49,8 +50,8 @@ pub struct UIApp {
     /// Download manager
     download_manager: Arc<DownloadManager<JsonStorage>>,
 
-    /// Storage
-    storage: Arc<JsonStorage>,
+    /// Storage (reserved for future direct access)
+    _storage: Arc<JsonStorage>,
 
     /// Buffer manager
     buffer_manager: BufferManager,
@@ -102,14 +103,14 @@ impl UIApp {
 
         let minibuffer = Minibuffer::new();
         let key_handler = KeyHandler::new();
-        let event_handler = UIEventHandler::new(Duration::from_millis(250)); // 250ms tick rate
+        let event_handler = UIEventHandler::new(Duration::from_millis(ui_constants::UI_TICK_RATE_MS));
 
         Ok(Self {
             config,
             theme,
             subscription_manager,
             download_manager,
-            storage,
+            _storage: storage,
             buffer_manager,
             status_bar,
             minibuffer,
@@ -140,7 +141,7 @@ impl UIApp {
 
         let minibuffer = Minibuffer::new();
         let key_handler = KeyHandler::new();
-        let event_handler = UIEventHandler::new(Duration::from_millis(250)); // 250ms tick rate
+        let event_handler = UIEventHandler::new(Duration::from_millis(ui_constants::UI_TICK_RATE_MS));
 
         // Create buffers with progress updates
         status_tx.send(crate::InitStatus::CreatingBuffers).ok();
@@ -181,7 +182,7 @@ impl UIApp {
             theme,
             subscription_manager,
             download_manager,
-            storage,
+            _storage: storage,
             buffer_manager,
             status_bar,
             minibuffer,
@@ -1157,6 +1158,7 @@ impl UIApp {
     }
 
     /// Set the application theme
+    #[allow(dead_code)]
     async fn set_theme(&mut self, theme_name: &str) -> UIResult<bool> {
         match Theme::from_name(theme_name) {
             Ok(new_theme) => {
@@ -1863,8 +1865,9 @@ impl UIApp {
     }
 
     /// Refresh all buffer list buffers when buffers change
+    #[allow(dead_code)]
     fn refresh_buffer_lists(&mut self) {
-        let buffer_names = self.buffer_manager.buffer_names();
+        let _buffer_names = self.buffer_manager.buffer_names();
         let _current_buffer = self.buffer_manager.current_buffer_id();
 
         // Find and update any buffer list buffers

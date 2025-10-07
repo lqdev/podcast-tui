@@ -1306,6 +1306,9 @@ impl UIApp {
             // Downloads commands
             "delete-all-downloads".to_string(),
             "clean-downloads".to_string(),
+            // OPML commands
+            "import-opml".to_string(),
+            "export-opml".to_string(),
         ]
     }
 

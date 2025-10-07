@@ -5,7 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - Sprint 3 Complete + OPML Support
+## [Unreleased] - Sprint 3 Complete + Project Cleanup
+
+### Added
+
+**Code Quality & Documentation Improvements - October 2025**
+- **Constants Module**: Centralized configuration defaults in `src/constants.rs`
+  - 8 organized categories (network, filesystem, downloads, ui, storage, feed, audio, opml)
+  - 240 lines with comprehensive documentation
+  - Validated in unit tests
+  - Eliminated all magic numbers from codebase
+- **Architecture Documentation**: Created comprehensive `docs/ARCHITECTURE.md` (500+ lines)
+  - Core architectural principles and design patterns
+  - Module structure and dependencies
+  - Storage abstraction design
+  - UI component patterns
+  - Data flow diagrams
+- **Testing Documentation**: Created comprehensive `docs/TESTING.md` (450+ lines)
+  - Testing philosophy and goals
+  - Test categories and organization
+  - Component-specific testing strategies
+  - Test implementation roadmap
+  - Quality guidelines and best practices
+
+### Changed
+
+**Documentation Organization - October 2025**
+- Reorganized root directory from 27 files to ~12 essential files
+- Archived 19 historical documents to `docs/archive/` structure
+- Created `docs/archive/cleanup/` for cleanup progress tracking documents
+- Enhanced `CONTRIBUTING.md` with architecture and testing references
+- Updated `README.md` with clear documentation hierarchy
+- Updated `IMPLEMENTATION_PLAN.md` with accurate sprint status (3/8 complete = 37.5%)
+- Added comprehensive cross-references between documentation files
+
+### Removed
+
+**Documentation Cleanup - October 2025**
+- Removed 5 redundant documentation files:
+  - `BUILD_COMMANDS.md` (consolidated into `docs/BUILD_SYSTEM.md`)
+  - `BUILD_SYSTEM_FINAL.md` (consolidated into `docs/BUILD_SYSTEM.md`)
+  - `GIT_COMMIT_INFO.md` (outdated)
+  - `QUICKSTART.md` (merged into `GETTING_STARTED.md`)
+  - `docs/BUILD_SYSTEM_SUMMARY.md` (consolidated into main build docs)
+
+### Fixed
+
+**Code Quality - October 2025**
+- Fixed 8 clippy warnings (unused imports, visibility issues, dead code markers)
+- Removed all magic numbers by introducing constants module
+- Improved code maintainability with single source of truth for defaults
+- Enhanced error handling with proper field prefixes for intentional unused values
 
 ### Added
 

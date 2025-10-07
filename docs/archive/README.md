@@ -8,6 +8,18 @@ This directory contains historical documentation that is no longer actively main
 
 ## Structure
 
+### `cleanup/`
+Project cleanup initiative documentation (October 2025).
+
+**Purpose**: Documents the systematic cleanup effort that improved code quality, documentation structure, and maintainability.
+
+**Contents:**
+- Progress tracking documents (Phases 1-5)
+- Completion reports with metrics and outcomes
+- Lessons learned from the cleanup process
+
+See [cleanup/README.md](cleanup/README.md) for detailed information.
+
 ### `fixes/`
 Bug fix documentation and post-mortems from various issues encountered during development.
 

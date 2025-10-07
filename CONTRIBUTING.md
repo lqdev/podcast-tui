@@ -69,6 +69,7 @@ Examples:
 - Integration tests for user workflows
 - Mock external dependencies in tests
 - Maintain test coverage above 80%
+- Follow guidelines in [docs/TESTING.md](docs/TESTING.md)
 
 #### Performance Guidelines
 - Profile performance-critical code
@@ -220,6 +221,7 @@ The project follows a clear module structure documented in [docs/ARCHITECTURE.md
 **Technical Documentation:**
 - [**Storage Design**](docs/STORAGE_DESIGN.md) - Storage abstraction architecture
 - [**OPML Support**](docs/OPML_SUPPORT.md) - OPML import/export implementation
+- [**Testing**](docs/TESTING.md) - Comprehensive testing strategy and guidelines
 - [**Keybindings**](docs/KEYBINDINGS.md) - Complete keyboard shortcuts reference
 - [**Build System**](docs/BUILD_SYSTEM.md) - Cross-platform build instructions
 
@@ -254,6 +256,9 @@ A: All configuration defaults are centralized in `src/constants.rs` organized by
 
 **Q: What documentation should I read first?**
 A: Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system design, then [.github/copilot-instructions.md](.github/copilot-instructions.md) for code patterns, and [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for sprint status.
+
+**Q: How should I write tests for my changes?**
+A: Follow the comprehensive testing guidelines in [docs/TESTING.md](docs/TESTING.md), which covers unit tests, integration tests, mocking patterns, and test organization.
 
 ## Code of Conduct
 

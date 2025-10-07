@@ -278,6 +278,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 - Sprint process and project management
 - Pull request requirements
 - Architecture guidelines and best practices
+- Testing strategy and guidelines (see [docs/TESTING.md](docs/TESTING.md))
 
 ### Project Management
 - **PRD**: [Product Requirements Document](docs/PRD.md)

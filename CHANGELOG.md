@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - Sprint 3 Complete + Project Cleanup
 
+### Fixed
+
+**GitHub Actions Release Build - October 2025**
+- **Release Build Workflow**: Fixed failing GitHub Actions release build workflow
+  - Fixed Zig installation PATH issue where `zig` binary wasn't accessible after pip install
+  - Created symlink from `~/.local/bin/zig` to the ziglang package binary
+  - Added missing `aarch64-unknown-linux-gnu` Rust target to installation script
+  - Improved PATH handling to ensure zig is available for cargo-zigbuild
+  - Updated `scripts/install-build-deps.sh` with proper GitHub Actions PATH integration
+
 ### Added
 
 **Code Quality & Documentation Improvements - October 2025**

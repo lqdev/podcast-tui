@@ -192,6 +192,26 @@ The project follows a clear module structure documented in [docs/ARCHITECTURE.md
 - [ ] Performance benchmarked
 - [ ] Release notes prepared
 
+### Creating a Release
+
+**Option 1: Automatic Release via Tag**
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+**Option 2: Manual Release via GitHub Actions**
+1. Go to [Actions > Release Builds](https://github.com/lqdev/podcast-tui/actions/workflows/release.yml)
+2. Click "Run workflow"
+3. Enter the tag name (e.g., `v1.0.0`)
+4. Click "Run workflow"
+
+Both methods will:
+- Build releases for Linux and Windows
+- Test the built artifacts
+- Create a GitHub release with binaries
+- Upload all artifacts with checksums
+
 ## Issue Triage
 
 ### Labels

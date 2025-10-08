@@ -132,6 +132,10 @@ build_target() {
             else
                 sha256sum "$RELEASE_DIR/${archive_name}.tar.gz" > "$RELEASE_DIR/${archive_name}.tar.gz.sha256" 2>/dev/null || true
             fi
+            
+            # Clean up archive directory to avoid conflicts when extracting
+            rm -rf "$RELEASE_DIR/$archive_name"
+            print_status "✓ Cleaned up temporary directory"
         else
             print_error "Binary not found at $binary_path"
             return 1

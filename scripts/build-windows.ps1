@@ -267,6 +267,10 @@ if (Test-Path $zipPath) {
     $checksumFile = "$zipPath.sha256"
     "$hash  $archiveName.zip" | Out-File -FilePath $checksumFile -Encoding ASCII
     Write-Status "✓ Created checksum file"
+    
+    # Clean up archive directory to avoid conflicts when extracting
+    Remove-Item -Recurse -Force $archiveDir
+    Write-Status "✓ Cleaned up temporary directory"
 }
 
 # Display results

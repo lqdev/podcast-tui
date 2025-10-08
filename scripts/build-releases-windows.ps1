@@ -206,6 +206,10 @@ foreach ($target in $targets) {
                 "$hash  $archiveName.zip" | Out-File -FilePath $checksumFile -Encoding ASCII
                 Write-Status "✓ Created checksum"
                 
+                # Clean up archive directory to avoid conflicts when extracting
+                Remove-Item -Recurse -Force $archiveDir
+                Write-Status "✓ Cleaned up temporary directory"
+                
                 $successful += $target.Description
             } else {
                 Write-Error-Custom "Binary not found at $binaryPath"

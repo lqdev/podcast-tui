@@ -58,6 +58,8 @@ cp README.md "$ARCHIVE_DIR/" 2>/dev/null || true
 cd "$RELEASE_DIR"
 tar -czf "${ARCHIVE_NAME}.tar.gz" "$ARCHIVE_NAME"
 sha256sum "${ARCHIVE_NAME}.tar.gz" > "${ARCHIVE_NAME}.tar.gz.sha256"
+# Clean up archive directory to avoid conflicts when extracting
+rm -rf "$ARCHIVE_NAME"
 cd - > /dev/null
 
 print_status "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

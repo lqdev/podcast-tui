@@ -45,8 +45,8 @@ jobs:
       
       - name: Build Linux releases
         run: |
-          chmod +x scripts/build-releases.sh
-          ./scripts/build-releases.sh --linux-only
+          chmod +x scripts/build-linux.sh
+          ./scripts/build-linux.sh
       
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4

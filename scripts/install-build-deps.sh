@@ -41,7 +41,7 @@ fi
 
 # Add Rust targets
 print_status "Adding compilation targets..."
-rustup target add x86_64-pc-windows-msvc aarch64-pc-windows-msvc x86_64-unknown-linux-gnu
+rustup target add x86_64-pc-windows-msvc aarch64-pc-windows-msvc x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
 print_status "✓ Compilation targets added"
 
 # Check if zig is installed
@@ -75,10 +75,62 @@ else
     if command -v pip3 &> /dev/null; then
         print_status "Installing Zig via pip3..."
         pip3 install ziglang
+        
+        # Add Python user bin directory to PATH
+        PYTHON_USER_BASE=$(python3 -m site --user-base 2>/dev/null || echo "$HOME/.local")
+        PYTHON_BIN_DIR="$PYTHON_USER_BASE/bin"
+        
+        # Create a symlink to zig in the bin directory
+        # The ziglang pip package installs the zig binary in the package directory
+        ZIG_PACKAGE_BIN=$(python3 -c "import ziglang, os; print(os.path.join(os.path.dirname(ziglang.__file__), 'zig'))" 2>/dev/null)
+        if [[ -n "$ZIG_PACKAGE_BIN" ]] && [[ -f "$ZIG_PACKAGE_BIN" ]]; then
+            mkdir -p "$PYTHON_BIN_DIR"
+            ln -sf "$ZIG_PACKAGE_BIN" "$PYTHON_BIN_DIR/zig"
+            print_status "Created symlink: $PYTHON_BIN_DIR/zig -> $ZIG_PACKAGE_BIN"
+        fi
+        
+        # Add to current session PATH if not already there
+        if [[ ":$PATH:" != *":$PYTHON_BIN_DIR:"* ]]; then
+            export PATH="$PYTHON_BIN_DIR:$PATH"
+            print_status "Added $PYTHON_BIN_DIR to PATH"
+        fi
+        
+        # Also add to GitHub Actions PATH if running in CI (for subsequent steps)
+        if [[ -n "$GITHUB_PATH" ]]; then
+            echo "$PYTHON_BIN_DIR" >> "$GITHUB_PATH"
+            print_status "Added $PYTHON_BIN_DIR to GITHUB_PATH for future steps"
+        fi
+        
         print_status "✓ Zig installed successfully via pip"
     elif command -v pip &> /dev/null; then
         print_status "Installing Zig via pip..."
         pip install ziglang
+        
+        # Add Python user bin directory to PATH
+        PYTHON_USER_BASE=$(python -m site --user-base 2>/dev/null || echo "$HOME/.local")
+        PYTHON_BIN_DIR="$PYTHON_USER_BASE/bin"
+        
+        # Create a symlink to zig in the bin directory
+        # The ziglang pip package installs the zig binary in the package directory
+        ZIG_PACKAGE_BIN=$(python -c "import ziglang, os; print(os.path.join(os.path.dirname(ziglang.__file__), 'zig'))" 2>/dev/null)
+        if [[ -n "$ZIG_PACKAGE_BIN" ]] && [[ -f "$ZIG_PACKAGE_BIN" ]]; then
+            mkdir -p "$PYTHON_BIN_DIR"
+            ln -sf "$ZIG_PACKAGE_BIN" "$PYTHON_BIN_DIR/zig"
+            print_status "Created symlink: $PYTHON_BIN_DIR/zig -> $ZIG_PACKAGE_BIN"
+        fi
+        
+        # Add to current session PATH if not already there
+        if [[ ":$PATH:" != *":$PYTHON_BIN_DIR:"* ]]; then
+            export PATH="$PYTHON_BIN_DIR:$PATH"
+            print_status "Added $PYTHON_BIN_DIR to PATH"
+        fi
+        
+        # Also add to GitHub Actions PATH if running in CI (for subsequent steps)
+        if [[ -n "$GITHUB_PATH" ]]; then
+            echo "$PYTHON_BIN_DIR" >> "$GITHUB_PATH"
+            print_status "Added $PYTHON_BIN_DIR to GITHUB_PATH for future steps"
+        fi
+        
         print_status "✓ Zig installed successfully via pip"
     else
         print_warning "pip not found. Attempting to install via package manager..."

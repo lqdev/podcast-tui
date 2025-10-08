@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added missing `aarch64-unknown-linux-gnu` Rust target to installation script
   - Improved PATH handling to ensure zig is available for cargo-zigbuild
   - Updated `scripts/install-build-deps.sh` with proper GitHub Actions PATH integration
+- **GitHub Release Creation**: Fixed 403 error when creating GitHub releases
+  - Added `permissions: contents: write` to `create-release` job in `.github/workflows/release.yml`
+  - GitHub Actions now requires explicit permissions for GITHUB_TOKEN to create releases
+  - Resolves "⚠️ GitHub release failed with status: 403" error
 
 ### Added
 

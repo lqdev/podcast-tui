@@ -121,6 +121,7 @@ The `.github/workflows/release.yml` workflow:
 
 ### Usage
 
+**Option 1: Automatic via Tag Push**
 ```bash
 # Create and push a tag
 git tag v1.0.0
@@ -131,6 +132,18 @@ git push origin v1.0.0
 # 2. Create a GitHub release
 # 3. Upload all artifacts
 ```
+
+**Option 2: Manual Trigger**
+1. Go to the [Actions tab](https://github.com/lqdev/podcast-tui/actions/workflows/release.yml) in GitHub
+2. Click "Run workflow"
+3. Enter the desired tag name (e.g., `v1.0.0`)
+4. Click "Run workflow"
+
+The workflow will:
+1. Build Linux and Windows releases
+2. Test the built artifacts
+3. Create a GitHub release with the specified tag
+4. Upload all artifacts to the release
 
 ## Troubleshooting
 

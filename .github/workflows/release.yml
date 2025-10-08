@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-releases:
-    name: Build cross-platform releases
+  build-linux:
+    name: Build Linux releases
     runs-on: ubuntu-latest
     
     steps:
@@ -43,20 +43,86 @@ jobs:
           chmod +x scripts/install-build-deps.sh
           ./scripts/install-build-deps.sh
       
-      - name: Build releases
+      - name: Build Linux releases
         run: |
           chmod +x scripts/build-releases.sh
-          ./scripts/build-releases.sh
+          ./scripts/build-releases.sh --linux-only
       
-      - name: Upload artifacts
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: podcast-tui-releases
+          name: podcast-tui-linux-releases
           path: releases/
           retention-days: 30
+
+  build-windows:
+    name: Build Windows releases
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          ./scripts/install-build-deps.ps1
+      
+      - name: Build Windows releases
+        shell: pwsh
+        run: |
+          ./scripts/build-releases-windows.ps1
+      
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: podcast-tui-windows-releases
+          path: releases/
+          retention-days: 30
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: podcast-tui-linux-releases
+          path: releases/
+      
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: podcast-tui-windows-releases
+          path: releases/
       
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -71,17 +137,25 @@ jobs:
 
   test-builds:
     name: Test release artifacts
-    needs: build-releases
+    needs: [build-linux, build-windows]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
     
     steps:
-      - name: Download artifacts
+      - name: Download Linux artifacts
+        if: runner.os == 'Linux'
         uses: actions/download-artifact@v4
         with:
-          name: podcast-tui-releases
+          name: podcast-tui-linux-releases
+          path: releases/
+      
+      - name: Download Windows artifacts
+        if: runner.os == 'Windows'
+        uses: actions/download-artifact@v4
+        with:
+          name: podcast-tui-windows-releases
           path: releases/
       
       - name: Test Linux binary

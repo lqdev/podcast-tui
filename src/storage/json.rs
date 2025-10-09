@@ -5,6 +5,7 @@ use tokio::fs;
 
 use crate::podcast::{Episode, Podcast};
 use crate::storage::{EpisodeId, PodcastId, Storage, StorageError};
+use crate::utils::text::strip_html;
 
 /// JSON-based file storage implementation
 ///
@@ -125,7 +126,14 @@ impl Storage for JsonStorage {
             .await
             .map_err(|e| StorageError::file_operation("read", &path, e))?;
 
-        let podcast: Podcast = serde_json::from_str(&content)?;
+        let mut podcast: Podcast = serde_json::from_str(&content)?;
+
+        // Migration: Clean HTML from descriptions for podcasts stored before fix
+        if let Some(ref description) = podcast.description {
+            if description.contains('<') || description.contains("&lt;") {
+                podcast.description = Some(strip_html(description));
+            }
+        }
 
         Ok(podcast)
     }
@@ -224,7 +232,15 @@ impl Storage for JsonStorage {
             .await
             .map_err(|e| StorageError::file_operation("read", &path, e))?;
 
-        let episode: Episode = serde_json::from_str(&content)?;
+        let mut episode: Episode = serde_json::from_str(&content)?;
+
+        // Migration: Clean HTML from descriptions for episodes stored before fix
+        // This ensures existing episodes with HTML get sanitized on load
+        if let Some(ref description) = episode.description {
+            if description.contains('<') || description.contains("&lt;") {
+                episode.description = Some(strip_html(description));
+            }
+        }
 
         Ok(episode)
     }

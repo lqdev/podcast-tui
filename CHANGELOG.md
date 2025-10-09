@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+**Episode Description Rendering - October 2025**
+- **HTML Content in Descriptions**: Fixed rendering of episode descriptions containing HTML/CDATA
+  - Added `utils::text` module with HTML stripping functionality
+  - Implemented `strip_html()` function to remove HTML tags from RSS feed content
+  - Added HTML entity decoding for common entities (&amp;, &lt;, &gt;, etc.)
+  - Added smart whitespace cleanup to handle excessive newlines and spaces
+  - Applied sanitization to both episode and podcast descriptions in feed parser
+  - Resolves issue with feeds like Audioboom that include raw HTML in descriptions
+  - Clean text feeds (like Libsyn) remain unchanged
+  - Comprehensive test coverage with 10 unit tests
+
 **GitHub Actions Release Build - October 2025**
 - **Release Build Workflow**: Fixed failing GitHub Actions release build workflow
   - Fixed Zig installation PATH issue where `zig` binary wasn't accessible after pip install

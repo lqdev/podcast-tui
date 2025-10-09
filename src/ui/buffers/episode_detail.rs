@@ -325,7 +325,7 @@ impl UIComponent for EpisodeDetailBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{EpisodeId, PodcastId};
+    use crate::storage::PodcastId;
     use chrono::Utc;
 
     #[test]

@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use crate::podcast::{Episode, EpisodeStatus, Podcast};
 use crate::storage::models::{EpisodeId, PodcastId};
+use crate::utils::text::strip_html;
 use crate::utils::validation::validate_feed_url;
 
 /// RSS feed parser and manager
@@ -188,7 +189,11 @@ impl FeedParser {
                 .as_ref()
                 .map(|t| t.content.clone())
                 .unwrap_or_else(|| "Untitled Podcast".to_string()),
-            description: feed.description.as_ref().map(|d| d.content.clone()),
+            description: feed
+                .description
+                .as_ref()
+                .map(|d| strip_html(&d.content))
+                .filter(|s| !s.is_empty()),
             language: feed.language.clone(),
             author: feed.authors.first().map(|a| a.name.clone()),
             image_url: feed
@@ -224,16 +229,19 @@ impl FeedParser {
             .map(|t| t.content.clone())
             .unwrap_or_else(|| format!("Episode {}", index + 1));
 
+        // Extract and sanitize description
+        // RSS descriptions can contain HTML/CDATA that needs to be stripped for TUI display
         let description = entry
             .summary
             .as_ref()
-            .map(|t| t.content.clone())
+            .map(|t| strip_html(&t.content))
             .or_else(|| {
                 entry
                     .content
                     .as_ref()
-                    .map(|c| c.body.clone().unwrap_or_default())
-            });
+                    .and_then(|c| c.body.as_ref().map(|body| strip_html(body)))
+            })
+            .filter(|s| !s.is_empty()); // Filter out empty descriptions
 
         // Find audio enclosure using comprehensive strategy
         let audio_url = self.extract_audio_url(entry);

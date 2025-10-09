@@ -5,6 +5,7 @@
 
 pub mod buffer_list;
 pub mod downloads;
+pub mod episode_detail;
 pub mod episode_list;
 pub mod help;
 pub mod podcast_list;
@@ -371,6 +372,12 @@ impl BufferManager {
         let mut episode_buffer =
             crate::ui::buffers::episode_list::EpisodeListBuffer::new(podcast_name, podcast_id);
         episode_buffer.set_managers(subscription_manager, download_manager);
+        let _ = self.add_buffer(Box::new(episode_buffer));
+    }
+
+    /// Create episode detail buffer
+    pub fn create_episode_detail_buffer(&mut self, episode: crate::podcast::Episode) {
+        let episode_buffer = crate::ui::buffers::episode_detail::EpisodeDetailBuffer::new(episode);
         let _ = self.add_buffer(Box::new(episode_buffer));
     }
 

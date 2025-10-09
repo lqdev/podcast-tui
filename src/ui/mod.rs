@@ -117,6 +117,10 @@ pub enum UIAction {
         podcast_name: String,
         podcast_id: crate::storage::PodcastId,
     },
+    /// Open episode detail view
+    OpenEpisodeDetail {
+        episode: crate::podcast::Episode,
+    },
     /// Trigger async downloads refresh
     TriggerRefreshDownloads,
     RefreshPodcast,

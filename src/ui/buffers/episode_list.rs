@@ -201,7 +201,7 @@ impl Buffer for EpisodeListBuffer {
             "Episode List Commands:".to_string(),
             "  C-n, ↓    Next episode".to_string(),
             "  C-p, ↑    Previous episode".to_string(),
-            "  Enter     View episode info".to_string(),
+            "  Enter     View episode details".to_string(),
             "  D         Download episode".to_string(),
             "  X         Delete downloaded file".to_string(),
             "  m         Mark as played".to_string(),
@@ -225,12 +225,11 @@ impl UIComponent for EpisodeListBuffer {
             UIAction::SelectItem => {
                 if let Some(_index) = self.selected_index {
                     if !self.episodes.is_empty() {
-                        // For now, just show episode info
+                        // Open episode detail buffer
                         if let Some(episode) = self.selected_episode() {
-                            UIAction::ShowMinibuffer(format!(
-                                "Episode: {} [{}]",
-                                episode.title, episode.status
-                            ))
+                            UIAction::OpenEpisodeDetail {
+                                episode: episode.clone(),
+                            }
                         } else {
                             UIAction::None
                         }
@@ -529,14 +528,13 @@ mod tests {
         )];
         buffer.selected_index = Some(0);
 
-        // Select an episode
+        // Select an episode - should now open episode detail
         let action = buffer.handle_action(UIAction::SelectItem);
         match action {
-            UIAction::ShowMinibuffer(msg) => {
-                assert!(msg.contains("Episode:"));
-                assert!(msg.contains("Ep1"));
+            UIAction::OpenEpisodeDetail { episode } => {
+                assert_eq!(episode.title, "Ep1");
             }
-            _ => panic!("Expected ShowMinibuffer action"),
+            _ => panic!("Expected OpenEpisodeDetail action"),
         }
     }
 }

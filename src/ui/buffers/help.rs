@@ -101,6 +101,7 @@ impl HelpBuffer {
             "  E (Shift-E)   Export podcasts to OPML file".to_string(),
             "".to_string(),
             "EPISODE MANAGEMENT (in episode list):".to_string(),
+            "  Enter         View episode details".to_string(),
             "  D             Download selected episode".to_string(),
             "  X             Delete downloaded episode file".to_string(),
             "  m             Mark episode as played".to_string(),

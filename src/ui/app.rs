@@ -780,6 +780,18 @@ impl UIApp {
 
                             self.show_message(format!("Loading episodes for: {}", podcast_name));
                         }
+                        UIAction::OpenEpisodeDetail { episode } => {
+                            // Create episode detail buffer
+                            self.buffer_manager.create_episode_detail_buffer(episode.clone());
+
+                            // Get the buffer ID and switch to it
+                            let episode_buffer_id = format!("episode-detail-{}", episode.id);
+                            let _ = self.buffer_manager.switch_to_buffer(&episode_buffer_id);
+                            self.update_status_bar();
+
+                            // Refresh any open buffer list buffers
+                            self.refresh_buffer_list_if_open();
+                        }
                         UIAction::ShowMessage(msg) => {
                             self.show_message(msg);
                         }

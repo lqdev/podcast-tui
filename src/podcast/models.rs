@@ -56,7 +56,7 @@ impl Podcast {
 }
 
 /// Represents a podcast episode
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Episode {
     pub id: EpisodeId,
     pub podcast_id: PodcastId,
@@ -223,7 +223,7 @@ impl std::fmt::Display for EpisodeStatus {
 }
 
 /// Episode chapter information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Chapter {
     pub start_time: u32, // Start time in seconds
     pub title: String,

@@ -142,6 +142,12 @@ pub enum AppEvent {
     /// All podcasts refresh completed
     AllPodcastsRefreshed { total_new_episodes: usize },
 
+    /// Background buffer data refreshed
+    BufferDataRefreshed {
+        buffer_type: BufferRefreshType,
+        data: BufferRefreshData,
+    },
+
     /// Podcast deleted successfully
     PodcastDeleted {
         podcast_id: crate::storage::PodcastId,
@@ -242,4 +248,54 @@ pub enum AppEvent {
 
     /// OPML export failed
     OpmlExportFailed { path: String, error: String },
+}
+
+/// Types of buffer refresh operations
+#[derive(Debug, Clone)]
+pub enum BufferRefreshType {
+    /// Refresh podcast list buffer
+    PodcastList,
+    /// Refresh downloads buffer
+    Downloads,
+    /// Refresh What's New buffer
+    WhatsNew,
+    /// Refresh all episode buffers
+    AllEpisodeBuffers,
+    /// Refresh episode buffers for specific podcast
+    EpisodeBuffers { podcast_id: crate::storage::PodcastId },
+}
+
+/// Buffer refresh data payload
+#[derive(Debug, Clone)]
+pub enum BufferRefreshData {
+    /// Podcast list data
+    PodcastList { podcasts: Vec<crate::podcast::Podcast> },
+    /// Download entries data
+    Downloads { downloads: Vec<DownloadEntry> },
+    /// What's New episodes data
+    WhatsNew { episodes: Vec<AggregatedEpisode> },
+    /// Episode list data for specific podcast
+    Episodes { podcast_id: crate::storage::PodcastId, episodes: Vec<crate::podcast::Episode> },
+    /// Error occurred during refresh
+    Error { message: String },
+}
+
+/// Aggregated episode with podcast information (moved from whats_new buffer)
+#[derive(Debug, Clone)]
+pub struct AggregatedEpisode {
+    pub podcast_id: crate::storage::PodcastId,
+    pub podcast_title: String,
+    pub episode: crate::podcast::Episode,
+}
+
+/// Download entry for tracking downloads (moved from downloads buffer)
+#[derive(Debug, Clone)]
+pub struct DownloadEntry {
+    pub podcast_id: crate::storage::PodcastId,
+    pub episode_id: crate::storage::EpisodeId,
+    pub podcast_name: String,
+    pub episode_title: String,
+    pub status: crate::download::DownloadStatus,
+    pub file_path: Option<std::path::PathBuf>,
+    pub file_size: Option<u64>,
 }

@@ -5,9 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - Sprint 3 Complete + Project Cleanup
+## [Unreleased] - UI Thread Blocking Fix + Sprint 3 Complete
 
 ### Fixed
+
+**UI Thread Blocking - October 10, 2025**
+- **Responsive UI During Background Operations**: Fixed UI thread blocking during podcast refresh and downloads
+  - Moved all buffer refresh operations to background tasks using `tokio::spawn`
+  - Created `BufferRefreshType` enum to categorize different refresh operations
+  - Implemented `BufferDataRefreshed` app event to send pre-loaded data back to UI thread
+  - Added `set_downloads()`, `set_episodes()`, and `set_podcasts()` methods for non-blocking buffer updates
+  - Refactored podcast list, downloads, What's New, and episode buffer refreshes to use background loading
+  - Fixed F5 refresh action to use background refresh system instead of blocking `.await` calls
+  - UI now remains fully responsive during podcast refreshes, downloads, and data loading operations
+  - Users can scroll, navigate, and switch buffers while background operations are running
+  - Eliminates UI freezing and weird character artifacts during intensive operations
 
 **Episode Description Rendering - October 2025**
 - **HTML Content in Descriptions**: Fixed rendering of episode descriptions containing HTML/CDATA

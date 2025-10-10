@@ -151,6 +151,31 @@ impl DownloadsBuffer {
         self.selected_index.and_then(|i| self.downloads.get(i))
     }
 
+    /// Set downloads data directly (for background refresh)
+    pub fn set_downloads(&mut self, downloads: Vec<crate::ui::events::DownloadEntry>) {
+        // Convert from events::DownloadEntry to downloads::DownloadEntry
+        self.downloads = downloads.into_iter().map(|entry| DownloadEntry {
+            podcast_id: entry.podcast_id,
+            episode_id: entry.episode_id,
+            podcast_name: entry.podcast_name,
+            episode_title: entry.episode_title,
+            status: entry.status,
+            progress: entry.file_size.map(|size| (size, size)), // Assume completed downloads are full size
+            error_message: None,
+        }).collect();
+
+        // Set selection if we have downloads
+        if !self.downloads.is_empty() && self.selected_index.is_none() {
+            self.selected_index = Some(0);
+        }
+        // Reset selection if it's out of bounds
+        if let Some(selected) = self.selected_index {
+            if selected >= self.downloads.len() {
+                self.selected_index = if self.downloads.is_empty() { None } else { Some(self.downloads.len() - 1) };
+            }
+        }
+    }
+
     /// Move selection up
     fn select_previous(&mut self) {
         if let Some(selected) = self.selected_index {

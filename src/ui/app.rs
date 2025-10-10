@@ -28,7 +28,7 @@ use crate::{
     ui::{
         buffers::BufferManager,
         components::{minibuffer::Minibuffer, minibuffer::MinibufferContent, statusbar::StatusBar},
-        events::{AppEvent, UIEvent, UIEventHandler},
+        events::{AppEvent, UIEvent, UIEventHandler, BufferRefreshType, BufferRefreshData, DownloadEntry, AggregatedEpisode},
         keybindings::KeyHandler,
         themes::Theme,
         UIAction, UIComponent, UIError, UIResult,
@@ -664,48 +664,27 @@ impl UIApp {
                 let current_buffer_id = self.buffer_manager.current_buffer_id();
                 if let Some(buffer_id) = current_buffer_id {
                     if buffer_id.starts_with("episodes-") {
-                        // If it's an episode list buffer, refresh its episodes
+                        // If it's an episode list buffer, trigger background refresh of its episodes
                         if let Some(episode_buffer) = self
                             .buffer_manager
                             .get_episode_list_buffer_mut_by_id(&buffer_id)
                         {
-                            let _podcast_id = episode_buffer.podcast_id.clone();
-                            let _ = episode_buffer.load_episodes().await;
-                            self.show_message("Episode list refreshed".to_string());
+                            let podcast_id = episode_buffer.podcast_id.clone();
+                            self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
+                            self.show_message("Refreshing episode list...".to_string());
                         }
                     } else if buffer_id == "podcast-list" {
-                        // If it's the podcast list, refresh podcasts
-                        if let Some(podcast_buffer) =
-                            self.buffer_manager.get_podcast_list_buffer_mut()
-                        {
-                            if let Err(e) = podcast_buffer.load_podcasts().await {
-                                self.show_error(format!("Failed to refresh podcast list: {}", e));
-                            } else {
-                                self.show_message("Podcast list refreshed".to_string());
-                            }
-                        }
+                        // If it's the podcast list, trigger background refresh of podcasts
+                        self.trigger_background_refresh(BufferRefreshType::PodcastList);
+                        self.show_message("Refreshing podcast list...".to_string());
                     } else if buffer_id == "downloads" {
-                        // If it's the downloads buffer, refresh downloads
-                        if let Some(downloads_buffer) =
-                            self.buffer_manager.get_downloads_buffer_mut()
-                        {
-                            if let Err(e) = downloads_buffer.refresh_downloads().await {
-                                self.show_error(format!("Failed to refresh downloads: {}", e));
-                            } else {
-                                self.show_message("Downloads refreshed".to_string());
-                            }
-                        }
+                        // If it's the downloads buffer, trigger background refresh of downloads
+                        self.trigger_background_refresh(BufferRefreshType::Downloads);
+                        self.show_message("Refreshing downloads...".to_string());
                     } else if buffer_id == "whats-new" {
-                        // If it's the What's New buffer, refresh episodes
-                        if let Some(whats_new_buffer) =
-                            self.buffer_manager.get_whats_new_buffer_mut()
-                        {
-                            if let Err(e) = whats_new_buffer.load_episodes().await {
-                                self.show_error(format!("Failed to refresh What's New: {}", e));
-                            } else {
-                                self.show_message("What's New refreshed".to_string());
-                            }
-                        }
+                        // If it's the What's New buffer, trigger background refresh of episodes
+                        self.trigger_background_refresh(BufferRefreshType::WhatsNew);
+                        self.show_message("Refreshing What's New...".to_string());
                     } else {
                         self.show_message("Refresh not supported for this buffer".to_string());
                     }
@@ -825,12 +804,8 @@ impl UIApp {
     async fn handle_app_event(&mut self, event: AppEvent) -> UIResult<()> {
         match event {
             AppEvent::PodcastSubscribed { podcast } => {
-                // Refresh the podcast list
-                if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
-                    if let Err(e) = podcast_buffer.load_podcasts().await {
-                        self.show_error(format!("Failed to refresh podcast list: {}", e));
-                    }
-                }
+                // Trigger background refresh of podcast list
+                self.trigger_background_refresh(BufferRefreshType::PodcastList);
                 self.show_message(format!("Successfully subscribed to: {}", podcast.title));
             }
             AppEvent::PodcastSubscriptionFailed { url, error } => {
@@ -840,14 +815,9 @@ impl UIApp {
                 podcast_id: _,
                 new_episode_count,
             } => {
-                // Refresh the podcast list (or specific podcast view)
-                if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
-                    if let Err(e) = podcast_buffer.load_podcasts().await {
-                        self.show_error(format!("Failed to refresh podcast list: {}", e));
-                    }
-                }
-                // Refresh What's New buffer to show new episodes
-                self.refresh_whats_new_buffer().await;
+                // Trigger background refresh of buffers
+                self.trigger_background_refresh(BufferRefreshType::PodcastList);
+                self.trigger_background_refresh(BufferRefreshType::WhatsNew);
                 if new_episode_count > 0 {
                     self.show_message(format!("Found {} new episode(s)", new_episode_count));
                 } else {
@@ -861,14 +831,9 @@ impl UIApp {
                 self.show_error(format!("Failed to refresh podcast: {}", error));
             }
             AppEvent::AllPodcastsRefreshed { total_new_episodes } => {
-                // Refresh the podcast list
-                if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
-                    if let Err(e) = podcast_buffer.load_podcasts().await {
-                        self.show_error(format!("Failed to refresh podcast list: {}", e));
-                    }
-                }
-                // Refresh What's New buffer to show all new episodes
-                self.refresh_whats_new_buffer().await;
+                // Trigger background refresh of buffers
+                self.trigger_background_refresh(BufferRefreshType::PodcastList);
+                self.trigger_background_refresh(BufferRefreshType::WhatsNew);
                 if total_new_episodes > 0 {
                     self.show_message(format!(
                         "Refresh completed. Found {} new episode(s) total",
@@ -878,16 +843,16 @@ impl UIApp {
                     self.show_message("Refresh completed. No new episodes found".to_string());
                 }
             }
+            AppEvent::BufferDataRefreshed { buffer_type, data } => {
+                // Update buffer data without blocking the UI thread
+                self.handle_buffer_data_refresh(buffer_type, data);
+            }
             AppEvent::PodcastDeleted {
                 podcast_id: _,
                 podcast_title,
             } => {
-                // Refresh the podcast list
-                if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
-                    if let Err(e) = podcast_buffer.load_podcasts().await {
-                        self.show_error(format!("Failed to refresh podcast list: {}", e));
-                    }
-                }
+                // Trigger background refresh of podcast list
+                self.trigger_background_refresh(BufferRefreshType::PodcastList);
                 self.show_message(format!("Successfully deleted: {}", podcast_title));
             }
             AppEvent::PodcastDownloadsDeleted {
@@ -930,12 +895,10 @@ impl UIApp {
                 podcast_id,
                 episode_id: _,
             } => {
-                // Refresh the episode list to show updated status
-                self.refresh_episode_buffers(&podcast_id).await;
-                // Refresh downloads buffer to show new completed download
-                self.refresh_downloads_buffer().await;
-                // Refresh What's New buffer to remove downloaded episode
-                self.refresh_whats_new_buffer().await;
+                // Trigger background refresh of buffers
+                self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
+                self.trigger_background_refresh(BufferRefreshType::Downloads);
+                self.trigger_background_refresh(BufferRefreshType::WhatsNew);
                 self.show_message("Episode download completed successfully".to_string());
             }
             AppEvent::EpisodeDownloadFailed {
@@ -943,20 +906,18 @@ impl UIApp {
                 episode_id: _,
                 error,
             } => {
-                // Refresh the episode list to show updated status
-                self.refresh_episode_buffers(&podcast_id).await;
-                // Refresh downloads buffer to show failed download
-                self.refresh_downloads_buffer().await;
+                // Trigger background refresh of buffers
+                self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
+                self.trigger_background_refresh(BufferRefreshType::Downloads);
                 self.show_error(format!("Episode download failed: {}", error));
             }
             AppEvent::EpisodeDownloadDeleted {
                 podcast_id,
                 episode_id: _,
             } => {
-                // Refresh the episode list to show updated status
-                self.refresh_episode_buffers(&podcast_id).await;
-                // Refresh downloads buffer to remove deleted download
-                self.refresh_downloads_buffer().await;
+                // Trigger background refresh of buffers
+                self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
+                self.trigger_background_refresh(BufferRefreshType::Downloads);
                 self.show_message("Episode download deleted successfully".to_string());
             }
             AppEvent::EpisodeDownloadDeletionFailed {
@@ -964,30 +925,29 @@ impl UIApp {
                 episode_id: _,
                 error,
             } => {
-                // Refresh the episode list to show updated status
-                self.refresh_episode_buffers(&podcast_id).await;
-                // Refresh downloads buffer in case status changed
-                self.refresh_downloads_buffer().await;
+                // Trigger background refresh of buffers
+                self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
+                self.trigger_background_refresh(BufferRefreshType::Downloads);
                 self.show_error(format!("Failed to delete episode download: {}", error));
             }
             AppEvent::DownloadsRefreshed => {
-                // Refresh the downloads buffer
-                self.refresh_downloads_buffer().await;
+                // Trigger background refresh of downloads buffer
+                self.trigger_background_refresh(BufferRefreshType::Downloads);
                 self.show_message("Downloads refreshed".to_string());
             }
             AppEvent::AllDownloadsDeleted { deleted_count } => {
-                // Refresh all episode buffers and downloads buffer
-                self.refresh_all_episode_buffers().await;
-                self.refresh_downloads_buffer().await;
+                // Trigger background refresh of all episode buffers and downloads buffer
+                self.trigger_background_refresh(BufferRefreshType::AllEpisodeBuffers);
+                self.trigger_background_refresh(BufferRefreshType::Downloads);
                 self.show_message(format!(
                     "Successfully deleted {} downloaded episodes and cleaned up downloads folder",
                     deleted_count
                 ));
             }
             AppEvent::AllDownloadsDeletionFailed { error } => {
-                // Still refresh buffers in case some deletions succeeded
-                self.refresh_all_episode_buffers().await;
-                self.refresh_downloads_buffer().await;
+                // Still trigger background refresh of buffers in case some deletions succeeded
+                self.trigger_background_refresh(BufferRefreshType::AllEpisodeBuffers);
+                self.trigger_background_refresh(BufferRefreshType::Downloads);
                 self.show_error(format!("Failed to delete all downloads: {}", error));
             }
             AppEvent::OpmlImportStarted { source } => {
@@ -997,12 +957,8 @@ impl UIApp {
                 self.show_message(status);
             }
             AppEvent::OpmlImportCompleted { result, log_path } => {
-                // Refresh podcast list to show newly imported podcasts
-                if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
-                    if let Err(e) = podcast_buffer.load_podcasts().await {
-                        self.show_error(format!("Failed to refresh podcast list: {}", e));
-                    }
-                }
+                // Trigger background refresh of podcast list to show newly imported podcasts
+                self.trigger_background_refresh(BufferRefreshType::PodcastList);
 
                 // Build summary message
                 let mut summary = format!(
@@ -1814,68 +1770,6 @@ impl UIApp {
         });
     }
 
-    /// Refresh episode buffers for a specific podcast
-    async fn refresh_episode_buffers(&mut self, podcast_id: &crate::storage::PodcastId) {
-        // Find any episode buffers that belong to this podcast and refresh them
-        let buffer_ids = self.buffer_manager.get_buffer_ids();
-        for buffer_id in buffer_ids {
-            if buffer_id.starts_with("episodes-") {
-                if let Some(episode_buffer) = self
-                    .buffer_manager
-                    .get_episode_list_buffer_mut_by_id(&buffer_id)
-                {
-                    // Check if this buffer belongs to the podcast
-                    if &episode_buffer.podcast_id == podcast_id {
-                        let _ = episode_buffer.load_episodes().await;
-                    }
-                }
-            }
-        }
-    }
-
-    /// Refresh downloads buffer
-    async fn refresh_downloads_buffer(&mut self) {
-        // Find the downloads buffer and refresh it
-        let buffer_ids = self.buffer_manager.get_buffer_ids();
-        for buffer_id in buffer_ids {
-            if buffer_id == "downloads" {
-                if let Some(downloads_buffer) = self.buffer_manager.get_downloads_buffer_mut() {
-                    let _ = downloads_buffer.refresh_downloads().await;
-                }
-                break;
-            }
-        }
-    }
-
-    /// Refresh What's New buffer
-    async fn refresh_whats_new_buffer(&mut self) {
-        // Find the What's New buffer and refresh it
-        let buffer_ids = self.buffer_manager.get_buffer_ids();
-        for buffer_id in buffer_ids {
-            if buffer_id == "whats-new" {
-                if let Some(whats_new_buffer) = self.buffer_manager.get_whats_new_buffer_mut() {
-                    let _ = whats_new_buffer.load_episodes().await;
-                }
-                break;
-            }
-        }
-    }
-
-    /// Refresh all episode buffers (used after bulk operations)
-    async fn refresh_all_episode_buffers(&mut self) {
-        let buffer_ids = self.buffer_manager.get_buffer_ids();
-        for buffer_id in buffer_ids {
-            if buffer_id.starts_with("episodes-") {
-                if let Some(episode_buffer) = self
-                    .buffer_manager
-                    .get_episode_list_buffer_mut_by_id(&buffer_id)
-                {
-                    let _ = episode_buffer.load_episodes().await;
-                }
-            }
-        }
-    }
-
     /// Refresh all buffer list buffers when buffers change
     #[allow(dead_code)]
     fn refresh_buffer_lists(&mut self) {
@@ -2086,6 +1980,204 @@ impl UIApp {
                 }
             }
         });
+    }
+
+    /// Trigger background buffer refresh to avoid blocking UI thread
+    fn trigger_background_refresh(&mut self, refresh_type: BufferRefreshType) {
+        match refresh_type.clone() {
+            BufferRefreshType::PodcastList => {
+                let subscription_manager = self.subscription_manager.clone();
+                let app_event_tx = self.app_event_tx.clone();
+                
+                tokio::spawn(async move {
+                    match subscription_manager.storage.list_podcasts().await {
+                        Ok(podcast_ids) => {
+                            let mut podcasts = Vec::new();
+                            for podcast_id in podcast_ids {
+                                if let Ok(podcast) = subscription_manager.storage.load_podcast(&podcast_id).await {
+                                    podcasts.push(podcast);
+                                }
+                            }
+                            let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
+                                buffer_type: BufferRefreshType::PodcastList,
+                                data: BufferRefreshData::PodcastList { podcasts },
+                            });
+                        }
+                        Err(e) => {
+                            let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
+                                buffer_type: BufferRefreshType::PodcastList,
+                                data: BufferRefreshData::Error { message: e.to_string() },
+                            });
+                        }
+                    }
+                });
+            }
+            BufferRefreshType::Downloads => {
+                let download_manager = self.download_manager.clone();
+                let app_event_tx = self.app_event_tx.clone();
+                
+                tokio::spawn(async move {
+                    // Load download data in background
+                    let mut downloads = Vec::new();
+                    
+                    // Get all podcasts and their episodes to build download list
+                    if let Ok(podcast_ids) = download_manager.storage().list_podcasts().await {
+                        for podcast_id in podcast_ids {
+                            if let Ok(podcast) = download_manager.storage().load_podcast(&podcast_id).await {
+                                if let Ok(episodes) = download_manager.storage().load_episodes(&podcast_id).await {
+                                    for episode in episodes {
+                                        if episode.is_downloaded() || matches!(episode.status, crate::podcast::EpisodeStatus::Downloading) {
+                                            let status = match episode.status {
+                                                crate::podcast::EpisodeStatus::Downloaded => crate::download::DownloadStatus::Completed,
+                                                crate::podcast::EpisodeStatus::Downloading => crate::download::DownloadStatus::InProgress,
+                                                crate::podcast::EpisodeStatus::DownloadFailed => crate::download::DownloadStatus::Failed("Download failed".to_string()),
+                                                _ => continue,
+                                            };
+                                            
+                                            let file_size = episode.local_path.as_ref()
+                                                .and_then(|path| std::fs::metadata(path).ok())
+                                                .map(|metadata| metadata.len());
+                                            
+                                            downloads.push(DownloadEntry {
+                                                podcast_id: podcast_id.clone(),
+                                                episode_id: episode.id.clone(),
+                                                podcast_name: podcast.title.clone(),
+                                                episode_title: episode.title.clone(),
+                                                status,
+                                                file_path: episode.local_path.clone(),
+                                                file_size,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
+                        buffer_type: BufferRefreshType::Downloads,
+                        data: BufferRefreshData::Downloads { downloads },
+                    });
+                });
+            }
+            BufferRefreshType::WhatsNew => {
+                let subscription_manager = self.subscription_manager.clone();
+                let app_event_tx = self.app_event_tx.clone();
+                let episode_limit = self.config.ui.whats_new_episode_limit;
+                
+                tokio::spawn(async move {
+                    // Load What's New episodes data in background
+                    let mut all_episodes = Vec::new();
+                    
+                    if let Ok(podcast_ids) = subscription_manager.storage.list_podcasts().await {
+                        for podcast_id in podcast_ids {
+                            if let Ok(podcast) = subscription_manager.storage.load_podcast(&podcast_id).await {
+                                if let Ok(episodes) = subscription_manager.storage.load_episodes(&podcast_id).await {
+                                    for episode in episodes {
+                                        // Only show episodes that aren't downloaded or downloading
+                                        if !episode.is_downloaded() && !matches!(episode.status, crate::podcast::EpisodeStatus::Downloading) {
+                                            all_episodes.push(AggregatedEpisode {
+                                                podcast_id: podcast_id.clone(),
+                                                podcast_title: podcast.title.clone(),
+                                                episode,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Sort by publication date (newest first)
+                    all_episodes.sort_by(|a, b| b.episode.published.cmp(&a.episode.published));
+                    
+                    // Apply episode limit
+                    all_episodes.truncate(episode_limit);
+                    
+                    let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
+                        buffer_type: BufferRefreshType::WhatsNew,
+                        data: BufferRefreshData::WhatsNew { episodes: all_episodes },
+                    });
+                });
+            }
+            BufferRefreshType::EpisodeBuffers { podcast_id } => {
+                let subscription_manager = self.subscription_manager.clone();
+                let app_event_tx = self.app_event_tx.clone();
+                
+                tokio::spawn(async move {
+                    match subscription_manager.storage.load_episodes(&podcast_id).await {
+                        Ok(episodes) => {
+                            let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
+                                buffer_type: BufferRefreshType::EpisodeBuffers { podcast_id: podcast_id.clone() },
+                                data: BufferRefreshData::Episodes { podcast_id, episodes },
+                            });
+                        }
+                        Err(e) => {
+                            let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
+                                buffer_type: BufferRefreshType::EpisodeBuffers { podcast_id },
+                                data: BufferRefreshData::Error { message: e.to_string() },
+                            });
+                        }
+                    }
+                });
+            }
+            BufferRefreshType::AllEpisodeBuffers => {
+                // For all episode buffers, we'll just trigger individual refreshes
+                // This is simpler and avoids complex coordination
+                let app_event_tx = self.app_event_tx.clone();
+                
+                tokio::spawn(async move {
+                    // Signal that refresh is complete (no data to send)
+                    let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
+                        buffer_type: BufferRefreshType::AllEpisodeBuffers,
+                        data: BufferRefreshData::Error { message: "Use individual episode buffer refresh".to_string() },
+                    });
+                });
+            }
+        }
+    }
+
+    /// Handle buffer data refresh by updating buffers with pre-loaded data
+    fn handle_buffer_data_refresh(&mut self, buffer_type: BufferRefreshType, data: BufferRefreshData) {
+        match (buffer_type, data) {
+            (BufferRefreshType::PodcastList, BufferRefreshData::PodcastList { podcasts }) => {
+                if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
+                    podcast_buffer.set_podcasts(podcasts);
+                }
+            }
+            (BufferRefreshType::Downloads, BufferRefreshData::Downloads { downloads }) => {
+                if let Some(downloads_buffer) = self.buffer_manager.get_downloads_buffer_mut() {
+                    downloads_buffer.set_downloads(downloads);
+                }
+            }
+            (BufferRefreshType::WhatsNew, BufferRefreshData::WhatsNew { episodes }) => {
+                if let Some(whats_new_buffer) = self.buffer_manager.get_whats_new_buffer_mut() {
+                    whats_new_buffer.set_episodes(episodes);
+                }
+            }
+            (BufferRefreshType::EpisodeBuffers { podcast_id }, BufferRefreshData::Episodes { episodes, .. }) => {
+                let buffer_ids = self.buffer_manager.get_buffer_ids();
+                for buffer_id in buffer_ids {
+                    if buffer_id.starts_with("episodes-") {
+                        if let Some(episode_buffer) = self
+                            .buffer_manager
+                            .get_episode_list_buffer_mut_by_id(&buffer_id)
+                        {
+                            // Check if this buffer belongs to the podcast
+                            if episode_buffer.podcast_id == podcast_id {
+                                episode_buffer.set_episodes(episodes.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            (_, BufferRefreshData::Error { message }) => {
+                self.show_error(format!("Buffer refresh failed: {}", message));
+            }
+            _ => {
+                // Mismatched buffer type and data, ignore
+            }
+        }
     }
 
     /// Handle minibuffer input submission with context

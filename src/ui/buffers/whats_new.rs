@@ -139,6 +139,29 @@ impl WhatsNewBuffer {
         self.selected_index.and_then(|i| self.episodes.get(i))
     }
 
+    /// Set episodes data directly (for background refresh)
+    pub fn set_episodes(&mut self, episodes: Vec<crate::ui::events::AggregatedEpisode>) {
+        // Convert from events::AggregatedEpisode to local AggregatedEpisode format
+        self.episodes = episodes.into_iter().map(|agg_ep| AggregatedEpisode {
+            podcast_id: agg_ep.podcast_id,
+            podcast_title: agg_ep.podcast_title,
+            episode: agg_ep.episode,
+        }).collect();
+
+        // Set initial selection
+        if !self.episodes.is_empty() && self.selected_index.is_none() {
+            self.selected_index = Some(0);
+        }
+        // Reset selection if it's out of bounds
+        if let Some(selected) = self.selected_index {
+            if selected >= self.episodes.len() {
+                self.selected_index = if self.episodes.is_empty() { None } else { Some(self.episodes.len() - 1) };
+            }
+        }
+
+        self.scroll_offset = 0;
+    }
+
     /// Move selection up
     fn select_previous(&mut self) {
         if self.episodes.is_empty() {

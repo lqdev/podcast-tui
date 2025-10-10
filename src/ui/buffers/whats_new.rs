@@ -199,6 +199,7 @@ impl Buffer for WhatsNewBuffer {
             "What's New Commands:".to_string(),
             "  C-n, ↓    Next episode".to_string(),
             "  C-p, ↑    Previous episode".to_string(),
+            "  Enter     View episode details".to_string(),
             "  D         Download episode".to_string(),
             "  F5        Refresh episode list".to_string(),
             "  C-h       Show help".to_string(),
@@ -236,6 +237,16 @@ impl UIComponent for WhatsNewBuffer {
                     UIAction::Render
                 } else {
                     UIAction::None
+                }
+            }
+            UIAction::SelectItem => {
+                if let Some(agg_episode) = self.selected_episode() {
+                    // Open episode detail buffer
+                    UIAction::OpenEpisodeDetail {
+                        episode: agg_episode.episode.clone(),
+                    }
+                } else {
+                    UIAction::ShowMessage("No episode selected".to_string())
                 }
             }
             UIAction::DownloadEpisode => {
@@ -407,5 +418,56 @@ mod tests {
         assert_eq!(truncate_string("short", 10), "short");
         assert_eq!(truncate_string("this is a very long string", 10), "this is...");
         assert_eq!(truncate_string("exactly10!", 10), "exactly10!");
+    }
+
+    #[test]
+    fn test_select_item_opens_episode_detail() {
+        use crate::podcast::Episode;
+        use crate::storage::PodcastId;
+        
+        let mut buffer = WhatsNewBuffer::new(100);
+        
+        // Add a mock episode
+        let podcast_id = PodcastId::new();
+        let episode = Episode::new(
+            podcast_id.clone(),
+            "Test Episode".to_string(),
+            "https://example.com/audio.mp3".to_string(),
+            chrono::Utc::now(),
+        );
+        
+        buffer.episodes = vec![AggregatedEpisode {
+            podcast_id: podcast_id.clone(),
+            podcast_title: "Test Podcast".to_string(),
+            episode: episode.clone(),
+        }];
+        buffer.selected_index = Some(0);
+        
+        // Test SelectItem action
+        let action = buffer.handle_action(UIAction::SelectItem);
+        
+        // Should return OpenEpisodeDetail action
+        match action {
+            UIAction::OpenEpisodeDetail { episode: returned_episode } => {
+                assert_eq!(returned_episode.title, "Test Episode");
+            }
+            _ => panic!("Expected OpenEpisodeDetail action, got {:?}", action),
+        }
+    }
+    
+    #[test]
+    fn test_select_item_with_no_selection() {
+        let mut buffer = WhatsNewBuffer::new(100);
+        
+        // No episodes, no selection
+        let action = buffer.handle_action(UIAction::SelectItem);
+        
+        // Should return ShowMessage action
+        match action {
+            UIAction::ShowMessage(msg) => {
+                assert_eq!(msg, "No episode selected");
+            }
+            _ => panic!("Expected ShowMessage action, got {:?}", action),
+        }
     }
 }

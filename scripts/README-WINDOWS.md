@@ -185,6 +185,7 @@ git push origin v1.0.0
 
 - Detects current architecture (x64 or ARM64)
 - Builds optimized release binary
+- **Signs binary if code signing certificate is available**
 - Creates ZIP archive with binary + docs
 - Generates SHA256 checksum
 - ~2-5 minutes build time
@@ -193,10 +194,19 @@ git push origin v1.0.0
 
 - Builds for both x64 and ARM64
 - Ensures targets are installed
+- **Signs binaries if code signing certificate is available**
 - Creates separate archives for each architecture
 - Generates checksums for all archives
 - Comprehensive build summary
 - ~5-15 minutes build time
+
+### `sign-windows-binary.ps1`
+
+- Signs Windows executables with code signing certificate
+- Supports both certificate store and .pfx file methods
+- Automatic retry logic for timestamp servers
+- Conditional execution (skips if no certificate available)
+- See [`docs/CODE_SIGNING.md`](../docs/CODE_SIGNING.md) for setup
 
 ## Binary Size
 
@@ -226,6 +236,36 @@ releases\
     ├── podcast-tui-v1.0.0-mvp-windows-aarch64.zip
     └── podcast-tui-v1.0.0-mvp-windows-aarch64.zip.sha256
 ```
+
+## Code Signing (Optional)
+
+Windows binaries can be code signed to eliminate "Unknown Publisher" warnings and Windows Defender SmartScreen issues.
+
+### Quick Sign
+
+If you have a code signing certificate:
+
+```powershell
+# Sign a binary
+.\scripts\sign-windows-binary.ps1 -BinaryPath "target\release\podcast-tui.exe"
+
+# Verify signature
+signtool verify /pa "target\release\podcast-tui.exe"
+```
+
+### Automatic Signing
+
+The build scripts (`build-windows.ps1` and `build-releases-windows.ps1`) automatically attempt to sign binaries if a certificate is available. If no certificate is found, the build continues without signing.
+
+### Setup
+
+For detailed code signing setup instructions, including:
+- Certificate acquisition
+- Local development setup
+- CI/CD integration
+- Troubleshooting
+
+See: **[`docs/CODE_SIGNING.md`](../docs/CODE_SIGNING.md)**
 
 ## Verifying Checksums
 

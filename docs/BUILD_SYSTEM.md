@@ -247,9 +247,31 @@ cd releases/v1.0.0/
 sha256sum -c *.sha256
 ```
 
-### Signing
+### Code Signing
 
-Consider signing releases:
+#### Windows Code Signing
+
+Windows binaries are automatically signed during the build process if a code signing certificate is available. This eliminates "Unknown Publisher" warnings and Windows Defender SmartScreen issues.
+
+**Setup:**
+1. Acquire a code signing certificate (EV or OV recommended)
+2. Add certificate secrets to GitHub repository
+3. Build scripts will automatically sign binaries
+
+**For detailed instructions, see:** [`docs/CODE_SIGNING.md`](CODE_SIGNING.md)
+
+**Manual signing:**
+```powershell
+# Sign a Windows binary
+./scripts/sign-windows-binary.ps1 -BinaryPath "target\release\podcast-tui.exe"
+
+# Verify signature
+signtool verify /pa "target\release\podcast-tui.exe"
+```
+
+#### Linux/macOS GPG Signing
+
+For Linux and macOS releases, consider GPG signing:
 ```bash
 # GPG sign archives
 gpg --armor --detach-sign podcast-tui-v1.0.0-linux-x86_64.tar.gz

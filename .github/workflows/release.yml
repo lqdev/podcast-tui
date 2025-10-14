@@ -101,6 +101,40 @@ jobs:
         run: |
           ./scripts/build-releases-windows.ps1
       
+      - name: Sign Windows binaries
+        if: ${{ secrets.WINDOWS_CERT_BASE64 != '' || secrets.WINDOWS_CERT_THUMBPRINT != '' }}
+        shell: pwsh
+        env:
+          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          WINDOWS_CERT_THUMBPRINT: ${{ secrets.WINDOWS_CERT_THUMBPRINT }}
+        run: |
+          Write-Host "Code signing certificate detected, signing binaries..." -ForegroundColor Green
+          
+          # Find all built .exe files in releases directory
+          $exeFiles = Get-ChildItem -Path "releases" -Recurse -Filter "*.exe"
+          
+          foreach ($exe in $exeFiles) {
+            Write-Host "Signing: $($exe.FullName)" -ForegroundColor Cyan
+            
+            if ($env:WINDOWS_CERT_BASE64) {
+              # Sign using base64-encoded certificate
+              ./scripts/sign-windows-binary.ps1 `
+                -BinaryPath $exe.FullName `
+                -PfxBase64 $env:WINDOWS_CERT_BASE64 `
+                -PfxPassword $env:WINDOWS_CERT_PASSWORD `
+                -SkipIfNoCert
+            } elseif ($env:WINDOWS_CERT_THUMBPRINT) {
+              # Sign using certificate from store
+              ./scripts/sign-windows-binary.ps1 `
+                -BinaryPath $exe.FullName `
+                -CertThumbprint $env:WINDOWS_CERT_THUMBPRINT `
+                -SkipIfNoCert
+            }
+          }
+          
+          Write-Host "All binaries signed successfully!" -ForegroundColor Green
+      
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:

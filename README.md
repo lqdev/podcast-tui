@@ -350,9 +350,10 @@ See [full roadmap](docs/ROADMAP.md) for detailed planning.
 **Windows SmartScreen Warning:**
 - ⚠️ Windows may show "Unknown Publisher" warnings for downloaded binaries
 - This is expected until we acquire a code signing certificate
-- Infrastructure for code signing is in place (see [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md))
+- **The app is safe!** Always verify SHA256 checksums provided with releases
 - Click "More info" → "Run anyway" to bypass the warning
-- Binaries are safe - verify SHA256 checksums provided with releases
+- See [Windows SmartScreen Warning Guide](docs/WINDOWS_SMARTSCREEN_WARNING.md) for details
+- Infrastructure for code signing is in place (see [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md) for maintainers)
 
 **Current Limitations:**
 - Download concurrency configurable (default 2-3)

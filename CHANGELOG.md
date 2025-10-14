@@ -46,6 +46,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Windows Code Signing Infrastructure - October 14, 2025**
+- **Code Signing Support**: Infrastructure for signing Windows binaries to eliminate SmartScreen warnings
+  - Created comprehensive code signing documentation (`docs/CODE_SIGNING.md`)
+  - Added PowerShell signing script (`scripts/sign-windows-binary.ps1`) with automatic retry logic
+  - Integrated conditional code signing into GitHub Actions release workflow
+  - Updated `build-windows.ps1` and `build-releases-windows.ps1` to automatically sign binaries when certificate is available
+  - Support for both certificate store and .pfx file signing methods
+  - Automatic timestamp server retry with fallback servers (DigiCert, Sectigo, GlobalSign)
+  - Graceful handling when no certificate is present (builds continue without signing)
+  - Added GitHub Actions setup guide (`docs/GITHUB_ACTIONS_CODE_SIGNING_SETUP.md`)
+  - Updated `.gitignore` to prevent accidental certificate commits
+  - Added Windows SmartScreen warning documentation to README
+  - **Note**: Certificate must be purchased separately ($50-600/year depending on type)
+  - See `docs/CODE_SIGNING.md` for certificate acquisition and setup instructions
+
 **Code Quality & Documentation Improvements - October 2025**
 - **Constants Module**: Centralized configuration defaults in `src/constants.rs`
   - 8 organized categories (network, filesystem, downloads, ui, storage, feed, audio, opml)

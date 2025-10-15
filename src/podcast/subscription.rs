@@ -421,7 +421,9 @@ impl<S: Storage> SubscriptionManager<S> {
 
         // Create log file
         let log_dir = dirs::data_local_dir()
-            .ok_or_else(|| SubscriptionError::Storage("Cannot determine data directory".to_string()))?
+            .ok_or_else(|| {
+                SubscriptionError::Storage("Cannot determine data directory".to_string())
+            })?
             .join("podcast-tui")
             .join("logs");
 
@@ -505,7 +507,9 @@ impl<S: Storage> SubscriptionManager<S> {
                     // Check if this is an "already subscribed" error
                     // If so, treat it as a skip rather than a failure (defensive programming)
                     let error_msg = e.to_string();
-                    if error_msg.contains("already subscribed") || error_msg.contains("AlreadySubscribed") {
+                    if error_msg.contains("already subscribed")
+                        || error_msg.contains("AlreadySubscribed")
+                    {
                         progress_callback(format!(
                             "⊘ Skipped [{}/{}]: {} (already subscribed)",
                             current, total_feeds, feed_title

@@ -154,15 +154,18 @@ impl DownloadsBuffer {
     /// Set downloads data directly (for background refresh)
     pub fn set_downloads(&mut self, downloads: Vec<crate::ui::events::DownloadEntry>) {
         // Convert from events::DownloadEntry to downloads::DownloadEntry
-        self.downloads = downloads.into_iter().map(|entry| DownloadEntry {
-            podcast_id: entry.podcast_id,
-            episode_id: entry.episode_id,
-            podcast_name: entry.podcast_name,
-            episode_title: entry.episode_title,
-            status: entry.status,
-            progress: entry.file_size.map(|size| (size, size)), // Assume completed downloads are full size
-            error_message: None,
-        }).collect();
+        self.downloads = downloads
+            .into_iter()
+            .map(|entry| DownloadEntry {
+                podcast_id: entry.podcast_id,
+                episode_id: entry.episode_id,
+                podcast_name: entry.podcast_name,
+                episode_title: entry.episode_title,
+                status: entry.status,
+                progress: entry.file_size.map(|size| (size, size)), // Assume completed downloads are full size
+                error_message: None,
+            })
+            .collect();
 
         // Set selection if we have downloads
         if !self.downloads.is_empty() && self.selected_index.is_none() {
@@ -171,7 +174,11 @@ impl DownloadsBuffer {
         // Reset selection if it's out of bounds
         if let Some(selected) = self.selected_index {
             if selected >= self.downloads.len() {
-                self.selected_index = if self.downloads.is_empty() { None } else { Some(self.downloads.len() - 1) };
+                self.selected_index = if self.downloads.is_empty() {
+                    None
+                } else {
+                    Some(self.downloads.len() - 1)
+                };
             }
         }
     }
@@ -283,7 +290,7 @@ impl UIComponent for DownloadsBuffer {
                 if self.downloads.is_empty() {
                     return UIAction::None;
                 }
-                
+
                 // Move up by 10 items or to the top
                 if let Some(current) = self.selected_index {
                     self.selected_index = Some(current.saturating_sub(10));
@@ -296,7 +303,7 @@ impl UIComponent for DownloadsBuffer {
                 if self.downloads.is_empty() {
                     return UIAction::None;
                 }
-                
+
                 // Move down by 10 items or to the bottom
                 if let Some(current) = self.selected_index {
                     self.selected_index = Some((current + 10).min(self.downloads.len() - 1));
@@ -364,7 +371,7 @@ impl UIComponent for DownloadsBuffer {
 
         // Calculate visible height (subtract 2 for borders)
         let visible_height = chunks[0].height.saturating_sub(2) as usize;
-        
+
         // Adjust scroll to keep selected item visible
         self.adjust_scroll(visible_height);
 

@@ -241,10 +241,7 @@ pub enum AppEvent {
     OpmlExportProgress { status: String },
 
     /// OPML export completed
-    OpmlExportCompleted {
-        path: String,
-        feed_count: usize,
-    },
+    OpmlExportCompleted { path: String, feed_count: usize },
 
     /// OPML export failed
     OpmlExportFailed { path: String, error: String },
@@ -262,20 +259,27 @@ pub enum BufferRefreshType {
     /// Refresh all episode buffers
     AllEpisodeBuffers,
     /// Refresh episode buffers for specific podcast
-    EpisodeBuffers { podcast_id: crate::storage::PodcastId },
+    EpisodeBuffers {
+        podcast_id: crate::storage::PodcastId,
+    },
 }
 
 /// Buffer refresh data payload
 #[derive(Debug, Clone)]
 pub enum BufferRefreshData {
     /// Podcast list data
-    PodcastList { podcasts: Vec<crate::podcast::Podcast> },
+    PodcastList {
+        podcasts: Vec<crate::podcast::Podcast>,
+    },
     /// Download entries data
     Downloads { downloads: Vec<DownloadEntry> },
     /// What's New episodes data
     WhatsNew { episodes: Vec<AggregatedEpisode> },
     /// Episode list data for specific podcast
-    Episodes { podcast_id: crate::storage::PodcastId, episodes: Vec<crate::podcast::Episode> },
+    Episodes {
+        podcast_id: crate::storage::PodcastId,
+        episodes: Vec<crate::podcast::Episode>,
+    },
     /// Error occurred during refresh
     Error { message: String },
 }

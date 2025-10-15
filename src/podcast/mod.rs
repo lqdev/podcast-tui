@@ -4,7 +4,7 @@ pub mod opml;
 pub mod subscription;
 
 // Re-export main types
+pub use feed::{FeedError, FeedMetadata, FeedParser};
 pub use models::{Episode, EpisodeStatus, Podcast, PodcastSubscription};
+pub use opml::{FailedImport, ImportResult, OpmlDocument, OpmlError, OpmlExporter, OpmlParser};
 pub use subscription::{SubscriptionError, SubscriptionManager};
-pub use feed::{FeedParser, FeedError, FeedMetadata};
-pub use opml::{OpmlParser, OpmlExporter, OpmlError, OpmlDocument, ImportResult, FailedImport};

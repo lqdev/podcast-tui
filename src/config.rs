@@ -248,7 +248,7 @@ pub struct UiConfig {
     pub time_format: String,
     pub compact_mode: bool,
     pub mouse_support: bool,
-    
+
     // What's New buffer settings
     #[serde(default = "default_whats_new_episode_limit")]
     pub whats_new_episode_limit: usize,
@@ -285,7 +285,10 @@ mod tests {
 
         assert_eq!(config.audio.volume, audio::DEFAULT_VOLUME);
         assert_eq!(config.audio.seek_seconds, audio::SEEK_STEP_SECS as u32);
-        assert_eq!(config.downloads.concurrent_downloads, downloads::DEFAULT_CONCURRENT_DOWNLOADS);
+        assert_eq!(
+            config.downloads.concurrent_downloads,
+            downloads::DEFAULT_CONCURRENT_DOWNLOADS
+        );
         assert_eq!(config.keybindings.play_pause, "SPC");
         assert_eq!(config.ui.theme, "default");
     }

@@ -199,7 +199,7 @@ impl UIComponent for PodcastListBuffer {
                 if self.podcasts.is_empty() {
                     return UIAction::None;
                 }
-                
+
                 // Move up by 10 items or to the top
                 if let Some(current) = self.selected_index {
                     self.selected_index = Some(current.saturating_sub(10));
@@ -212,7 +212,7 @@ impl UIComponent for PodcastListBuffer {
                 if self.podcasts.is_empty() {
                     return UIAction::None;
                 }
-                
+
                 // Move down by 10 items or to the bottom
                 if let Some(current) = self.selected_index {
                     self.selected_index = Some((current + 10).min(self.podcasts.len() - 1));
@@ -328,7 +328,7 @@ impl UIComponent for PodcastListBuffer {
                 } else {
                     // Calculate visible height (subtract 2 for borders)
                     let visible_height = chunks[0].height.saturating_sub(2) as usize;
-                    
+
                     // Adjust scroll to keep selected item visible
                     self.adjust_scroll(visible_height);
 

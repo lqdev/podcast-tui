@@ -138,7 +138,10 @@ mod tests {
         assert_eq!(strip_html(""), "");
         assert_eq!(strip_html("plain text"), "plain text");
         assert_eq!(strip_html("<p>Hello</p>"), "Hello");
-        assert_eq!(strip_html("<div>Test <strong>bold</strong> text</div>"), "Test bold text");
+        assert_eq!(
+            strip_html("<div>Test <strong>bold</strong> text</div>"),
+            "Test bold text"
+        );
     }
 
     #[test]
@@ -146,7 +149,7 @@ mod tests {
         let html = r#"<div>In recognition of Hispanic Heritage Month, today's episode is dedicated to George Meléndez Wright, the first Hispanic person to occupy a professional role in the National Park Service.<br>
 <br>
 To submit a business for the Outsiders Gift Guide, please email <a href="mailto:assistant@npadpodcast.com">assistant@npadpodcast.com</a> by October 22nd :)<br>"#;
-        
+
         let result = strip_html(html);
         assert!(result.contains("In recognition of Hispanic Heritage Month"));
         assert!(!result.contains("<div>"));
@@ -171,7 +174,10 @@ To submit a business for the Outsiders Gift Guide, please email <a href="mailto:
     fn test_decode_html_entities_complex() {
         let text = "She said &ldquo;Hello&rdquo; &ndash; it&rsquo;s great!";
         let result = decode_html_entities(text);
-        assert_eq!(result, "She said \u{201C}Hello\u{201D} \u{2013} it\u{2019}s great!");
+        assert_eq!(
+            result,
+            "She said \u{201C}Hello\u{201D} \u{2013} it\u{2019}s great!"
+        );
     }
 
     #[test]
@@ -208,18 +214,18 @@ Book: George Melendez Wright: The Fight for Wildlife and Wilderness in the Natio
 Articles/Webpages: <a href="https://www.nps.gov/yose/learn/historyculture/wright.htm">National Park Service</a>, <a href="https://www.georgewrightsociety.org/gmw">George Wright Society</a></div>"#;
 
         let result = strip_html(html);
-        
+
         // Should contain the main content
         assert!(result.contains("In recognition of Hispanic Heritage Month"));
         assert!(result.contains("George Meléndez Wright"));
         assert!(result.contains("National Park Service"));
-        
+
         // Should not contain HTML tags
         assert!(!result.contains("<div>"));
         assert!(!result.contains("<br>"));
         assert!(!result.contains("<strong>"));
         assert!(!result.contains("<a href="));
-        
+
         // Should be reasonably formatted
         assert!(!result.contains("  ")); // No double spaces
     }

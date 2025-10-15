@@ -106,6 +106,8 @@ cargo build --release
 # Run podcast-tui.exe
 ```
 
+**Note:** Windows may show a SmartScreen warning ("Unknown Publisher"). This is expected until we acquire a code signing certificate. The app is safe - verify checksums and click "More info" → "Run anyway". See [Windows SmartScreen Warning Guide](docs/WINDOWS_SMARTSCREEN_WARNING.md) for details.
+
 ### Windows (ARM64)
 
 #### Prerequisites

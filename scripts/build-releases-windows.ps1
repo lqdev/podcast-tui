@@ -183,6 +183,22 @@ foreach ($target in $targets) {
             # Copy binary
             $binaryPath = "target\$($target.Triple)\release\podcast-tui.exe"
             if (Test-Path $binaryPath) {
+                # Sign binary if certificate is available (optional, won't fail if no cert)
+                $signScript = "scripts\sign-windows-binary.ps1"
+                if (Test-Path $signScript) {
+                    Write-Status "Checking for code signing certificate..."
+                    try {
+                        & $signScript -BinaryPath $binaryPath -SkipIfNoCert
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Status "✓ Binary signing completed"
+                        }
+                    } catch {
+                        Write-Warning-Custom "Code signing skipped: $_"
+                    }
+                } else {
+                    Write-Warning-Custom "Code signing script not found, skipping signing"
+                }
+                
                 Copy-Item $binaryPath $archiveDir
                 Write-Status "✓ Binary copied"
                 

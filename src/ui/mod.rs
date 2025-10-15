@@ -134,9 +134,13 @@ pub enum UIAction {
     /// Export subscriptions to OPML file
     ExportOpml,
     /// Trigger async OPML import with source path
-    TriggerOpmlImport { source: String },
+    TriggerOpmlImport {
+        source: String,
+    },
     /// Trigger async OPML export with output path
-    TriggerOpmlExport { path: Option<String> },
+    TriggerOpmlExport {
+        path: Option<String>,
+    },
 
     // Render request
     Render,

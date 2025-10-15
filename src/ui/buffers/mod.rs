@@ -219,11 +219,7 @@ impl BufferManager {
     pub fn buffer_completion_names(&self) -> Vec<String> {
         self.buffer_order
             .iter()
-            .filter_map(|id| {
-                self.buffers
-                    .get(id)
-                    .map(|buffer| buffer.name())
-            })
+            .filter_map(|id| self.buffers.get(id).map(|buffer| buffer.name()))
             .collect()
     }
 

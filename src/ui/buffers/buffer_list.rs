@@ -42,7 +42,11 @@ impl BufferListBuffer {
     }
 
     /// Update the buffer list with current buffers
-    pub fn update_buffer_list(&mut self, buffers: Vec<(BufferId, String)>, current_buffer: Option<&BufferId>) {
+    pub fn update_buffer_list(
+        &mut self,
+        buffers: Vec<(BufferId, String)>,
+        current_buffer: Option<&BufferId>,
+    ) {
         self.buffer_items = buffers
             .into_iter()
             .map(|(id, name)| {
@@ -151,12 +155,8 @@ impl UIComponent for BufferListBuffer {
                     UIAction::ShowMessage("No buffer selected".to_string())
                 }
             }
-            UIAction::Refresh => {
-                UIAction::ShowMessage("Buffer list refreshed".to_string())
-            }
-            UIAction::Quit => {
-                UIAction::CloseBuffer(self.id())
-            }
+            UIAction::Refresh => UIAction::ShowMessage("Buffer list refreshed".to_string()),
+            UIAction::Quit => UIAction::CloseBuffer(self.id()),
             _ => UIAction::None,
         }
     }

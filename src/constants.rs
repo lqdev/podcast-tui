@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn test_filesystem_constants() {
         use super::filesystem;
-        
+
         assert!(filesystem::MAX_FILENAME_LENGTH == 255); // Cross-platform standard
         assert!(filesystem::MAX_PATH_LENGTH >= 4096);
 

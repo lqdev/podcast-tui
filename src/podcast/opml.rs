@@ -121,7 +121,7 @@ impl OpmlParser {
     }
 
     /// Sanitize XML to handle common real-world issues
-    /// 
+    ///
     /// Many OPML files have unescaped ampersands in attribute values (e.g., title="Security & Privacy")
     /// This method fixes those issues to make the XML parseable.
     fn sanitize_xml(xml: &str) -> String {
@@ -201,10 +201,11 @@ impl OpmlParser {
             if outline.xml_url.is_some() || outline.url.is_some() {
                 // OPML 2.0 spec requires @text, but real-world files often use @title instead
                 // Use @text if present, otherwise fall back to @title, or use "Untitled" as last resort
-                let text = outline.text
+                let text = outline
+                    .text
                     .or_else(|| outline.title.clone())
                     .unwrap_or_else(|| "Untitled".to_string());
-                
+
                 result.push(OpmlOutline {
                     text,
                     title: outline.title,
@@ -352,9 +353,7 @@ pub struct OpmlOutline {
 impl OpmlOutline {
     /// Get the feed URL (prefer xmlUrl over url)
     pub fn feed_url(&self) -> Option<&str> {
-        self.xml_url
-            .as_deref()
-            .or_else(|| self.url.as_deref())
+        self.xml_url.as_deref().or_else(|| self.url.as_deref())
     }
 }
 
@@ -579,21 +578,19 @@ mod tests {
         use crate::podcast::Podcast;
         use crate::storage::PodcastId;
 
-        let podcasts = vec![
-            Podcast {
-                id: PodcastId::from_url("https://example.com/feed1.xml"),
-                title: "Test Podcast 1".to_string(),
-                url: "https://example.com/feed1.xml".to_string(),
-                description: Some("A test podcast".to_string()),
-                author: Some("Test Author".to_string()),
-                image_url: None,
-                language: Some("en".to_string()),
-                categories: vec![],
-                explicit: false,
-                last_updated: Utc::now(),
-                episodes: vec![],
-            },
-        ];
+        let podcasts = vec![Podcast {
+            id: PodcastId::from_url("https://example.com/feed1.xml"),
+            title: "Test Podcast 1".to_string(),
+            url: "https://example.com/feed1.xml".to_string(),
+            description: Some("A test podcast".to_string()),
+            author: Some("Test Author".to_string()),
+            image_url: None,
+            language: Some("en".to_string()),
+            categories: vec![],
+            explicit: false,
+            last_updated: Utc::now(),
+            episodes: vec![],
+        }];
 
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_path = temp_dir.path().join("export.opml");

@@ -5,11 +5,11 @@ mod test_opml_local_file {
     #[tokio::test]
     async fn test_parse_local_opml() {
         let path = "test.opml";
-        
+
         let parser = OpmlParser::new();
-        
+
         let result = parser.parse(path).await;
-        
+
         match &result {
             Ok(document) => {
                 println!("✓ Successfully parsed local OPML!");
@@ -21,14 +21,19 @@ mod test_opml_local_file {
                 }
                 println!("  Found {} feeds", document.outlines.len());
                 for (i, outline) in document.outlines.iter().take(3).enumerate() {
-                    println!("  {}. {} -> {}", i+1, outline.text, outline.feed_url().unwrap_or("no URL"));
+                    println!(
+                        "  {}. {} -> {}",
+                        i + 1,
+                        outline.text,
+                        outline.feed_url().unwrap_or("no URL")
+                    );
                 }
             }
             Err(e) => {
                 eprintln!("✗ Failed to parse OPML: {}", e);
             }
         }
-        
+
         assert!(result.is_ok(), "Should successfully parse local OPML file");
     }
 }

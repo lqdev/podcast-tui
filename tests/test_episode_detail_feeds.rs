@@ -1,9 +1,9 @@
 // Integration test for episode detail buffer with various episode formats
 
 use chrono::Utc;
-use podcast_tui::*;
 use podcast_tui::storage::PodcastId;
 use podcast_tui::ui::buffers::Buffer;
+use podcast_tui::*;
 
 #[tokio::test]
 async fn test_episode_detail_with_real_feeds() {
@@ -20,7 +20,9 @@ async fn test_episode_detail_with_real_feeds() {
 
     let mut results = Vec::new();
 
-    for (name, has_duration, has_season, has_episode_num, has_file_size, description) in test_scenarios.iter() {
+    for (name, has_duration, has_season, has_episode_num, has_file_size, description) in
+        test_scenarios.iter()
+    {
         println!("Testing: {}", name);
         println!("{}", "-".repeat(80));
 
@@ -35,19 +37,19 @@ async fn test_episode_detail_with_real_feeds() {
 
         // Set optional fields based on test scenario
         episode.description = description.clone();
-        
+
         if *has_duration {
             episode.duration = Some(3672); // 1 hour, 1 minute, 12 seconds
         }
-        
+
         if *has_season {
             episode.season = Some(3);
         }
-        
+
         if *has_episode_num {
             episode.episode_number = Some(42);
         }
-        
+
         if *has_file_size {
             episode.file_size = Some(125829120); // ~120 MB
         }
@@ -58,7 +60,10 @@ async fn test_episode_detail_with_real_feeds() {
         let mut detail_fields = Vec::new();
 
         detail_fields.push("Title: ✓".to_string());
-        detail_fields.push(format!("Published: {}", episode.published.format("%Y-%m-%d %H:%M UTC")));
+        detail_fields.push(format!(
+            "Published: {}",
+            episode.published.format("%Y-%m-%d %H:%M UTC")
+        ));
         detail_fields.push(format!("Status: {}", episode.status));
 
         if episode.duration.is_some() {
@@ -89,7 +94,10 @@ async fn test_episode_detail_with_real_feeds() {
         }
 
         if episode.episode_number.is_some() {
-            detail_fields.push(format!("Episode number: {}", episode.episode_number.unwrap()));
+            detail_fields.push(format!(
+                "Episode number: {}",
+                episode.episode_number.unwrap()
+            ));
         }
 
         if episode.transcript.is_some() {
@@ -97,12 +105,12 @@ async fn test_episode_detail_with_real_feeds() {
         }
 
         println!("   Available fields: {}", detail_fields.join(", "));
-        
+
         // Test that we can create an episode detail buffer
         let detail_buffer = ui::buffers::episode_detail::EpisodeDetailBuffer::new(episode.clone());
         assert_eq!(detail_buffer.name(), format!("Episode: {}", episode.title));
         assert!(detail_buffer.can_close());
-        
+
         println!("   ✅ Episode detail buffer created successfully");
 
         results.push((name, true, 1));
@@ -114,20 +122,28 @@ async fn test_episode_detail_with_real_feeds() {
     println!("{:<50} {:<15}", "Scenario", "Success");
     println!("{}", "=".repeat(65));
     for (name, success, _count) in &results {
-        let status = if *success { "✅ Success" } else { "❌ Failed" };
+        let status = if *success {
+            "✅ Success"
+        } else {
+            "❌ Failed"
+        };
         println!("{:<50} {:<15}", name, status);
     }
     println!();
 
     // All scenarios should work
     let successful = results.iter().filter(|(_, success, _)| *success).count();
-    println!("Successfully tested {}/{} scenarios", successful, test_scenarios.len());
+    println!(
+        "Successfully tested {}/{} scenarios",
+        successful,
+        test_scenarios.len()
+    );
 
     assert_eq!(
         successful,
         test_scenarios.len(),
         "All episode format scenarios should be successfully tested"
     );
-    
+
     println!("\n✅ Episode Detail Buffer validated with various podcast feed formats");
 }

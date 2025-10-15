@@ -28,7 +28,10 @@ use crate::{
     ui::{
         buffers::BufferManager,
         components::{minibuffer::Minibuffer, minibuffer::MinibufferContent, statusbar::StatusBar},
-        events::{AppEvent, UIEvent, UIEventHandler, BufferRefreshType, BufferRefreshData, DownloadEntry, AggregatedEpisode},
+        events::{
+            AggregatedEpisode, AppEvent, BufferRefreshData, BufferRefreshType, DownloadEntry,
+            UIEvent, UIEventHandler,
+        },
         keybindings::KeyHandler,
         themes::Theme,
         UIAction, UIComponent, UIError, UIResult,
@@ -103,7 +106,8 @@ impl UIApp {
 
         let minibuffer = Minibuffer::new();
         let key_handler = KeyHandler::new();
-        let event_handler = UIEventHandler::new(Duration::from_millis(ui_constants::UI_TICK_RATE_MS));
+        let event_handler =
+            UIEventHandler::new(Duration::from_millis(ui_constants::UI_TICK_RATE_MS));
 
         Ok(Self {
             config,
@@ -141,7 +145,8 @@ impl UIApp {
 
         let minibuffer = Minibuffer::new();
         let key_handler = KeyHandler::new();
-        let event_handler = UIEventHandler::new(Duration::from_millis(ui_constants::UI_TICK_RATE_MS));
+        let event_handler =
+            UIEventHandler::new(Duration::from_millis(ui_constants::UI_TICK_RATE_MS));
 
         // Create buffers with progress updates
         status_tx.send(crate::InitStatus::CreatingBuffers).ok();
@@ -636,7 +641,8 @@ impl UIApp {
             }
             UIAction::ExportOpml => {
                 // Show prompt for output path with default
-                let default_path = shellexpand::tilde(&self.config.storage.opml_export_directory).to_string();
+                let default_path =
+                    shellexpand::tilde(&self.config.storage.opml_export_directory).to_string();
                 self.minibuffer.set_content(MinibufferContent::Input {
                     prompt: format!("Export to (default: {}): ", default_path),
                     input: String::new(),
@@ -670,7 +676,9 @@ impl UIApp {
                             .get_episode_list_buffer_mut_by_id(&buffer_id)
                         {
                             let podcast_id = episode_buffer.podcast_id.clone();
-                            self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
+                            self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers {
+                                podcast_id,
+                            });
                             self.show_message("Refreshing episode list...".to_string());
                         }
                     } else if buffer_id == "podcast-list" {
@@ -761,7 +769,8 @@ impl UIApp {
                         }
                         UIAction::OpenEpisodeDetail { episode } => {
                             // Create episode detail buffer
-                            self.buffer_manager.create_episode_detail_buffer(episode.clone());
+                            self.buffer_manager
+                                .create_episode_detail_buffer(episode.clone());
 
                             // Get the buffer ID and switch to it
                             let episode_buffer_id = format!("episode-detail-{}", episode.id);
@@ -1110,7 +1119,8 @@ impl UIApp {
                     Ok(true)
                 } else {
                     // Prompt for output path with default
-                    let default_path = shellexpand::tilde(&self.config.storage.opml_export_directory).to_string();
+                    let default_path =
+                        shellexpand::tilde(&self.config.storage.opml_export_directory).to_string();
                     self.minibuffer.set_content(MinibufferContent::Input {
                         prompt: format!("Export to (default: {}): ", default_path),
                         input: String::new(),
@@ -1901,18 +1911,17 @@ impl UIApp {
 
         // Expand tilde and generate filename if needed
         let expanded_path = shellexpand::tilde(&output_path).to_string();
-        let final_path = if std::path::Path::new(&expanded_path).is_dir()
-            || !expanded_path.contains('.')
-        {
-            // It's a directory or doesn't have an extension, generate filename
-            use chrono::Local;
-            let timestamp = Local::now().format("%Y-%m-%d-%H%M%S");
-            let filename = format!("podcasts-export-{}.opml", timestamp);
-            std::path::PathBuf::from(expanded_path).join(filename)
-        } else {
-            // It's a full file path
-            std::path::PathBuf::from(expanded_path)
-        };
+        let final_path =
+            if std::path::Path::new(&expanded_path).is_dir() || !expanded_path.contains('.') {
+                // It's a directory or doesn't have an extension, generate filename
+                use chrono::Local;
+                let timestamp = Local::now().format("%Y-%m-%d-%H%M%S");
+                let filename = format!("podcasts-export-{}.opml", timestamp);
+                std::path::PathBuf::from(expanded_path).join(filename)
+            } else {
+                // It's a full file path
+                std::path::PathBuf::from(expanded_path)
+            };
 
         let final_path_str = final_path.to_string_lossy().to_string();
 
@@ -1988,13 +1997,15 @@ impl UIApp {
             BufferRefreshType::PodcastList => {
                 let subscription_manager = self.subscription_manager.clone();
                 let app_event_tx = self.app_event_tx.clone();
-                
+
                 tokio::spawn(async move {
                     match subscription_manager.storage.list_podcasts().await {
                         Ok(podcast_ids) => {
                             let mut podcasts = Vec::new();
                             for podcast_id in podcast_ids {
-                                if let Ok(podcast) = subscription_manager.storage.load_podcast(&podcast_id).await {
+                                if let Ok(podcast) =
+                                    subscription_manager.storage.load_podcast(&podcast_id).await
+                                {
                                     podcasts.push(podcast);
                                 }
                             }
@@ -2006,7 +2017,9 @@ impl UIApp {
                         Err(e) => {
                             let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
                                 buffer_type: BufferRefreshType::PodcastList,
-                                data: BufferRefreshData::Error { message: e.to_string() },
+                                data: BufferRefreshData::Error {
+                                    message: e.to_string(),
+                                },
                             });
                         }
                     }
@@ -2015,29 +2028,48 @@ impl UIApp {
             BufferRefreshType::Downloads => {
                 let download_manager = self.download_manager.clone();
                 let app_event_tx = self.app_event_tx.clone();
-                
+
                 tokio::spawn(async move {
                     // Load download data in background
                     let mut downloads = Vec::new();
-                    
+
                     // Get all podcasts and their episodes to build download list
                     if let Ok(podcast_ids) = download_manager.storage().list_podcasts().await {
                         for podcast_id in podcast_ids {
-                            if let Ok(podcast) = download_manager.storage().load_podcast(&podcast_id).await {
-                                if let Ok(episodes) = download_manager.storage().load_episodes(&podcast_id).await {
+                            if let Ok(podcast) =
+                                download_manager.storage().load_podcast(&podcast_id).await
+                            {
+                                if let Ok(episodes) =
+                                    download_manager.storage().load_episodes(&podcast_id).await
+                                {
                                     for episode in episodes {
-                                        if episode.is_downloaded() || matches!(episode.status, crate::podcast::EpisodeStatus::Downloading) {
+                                        if episode.is_downloaded()
+                                            || matches!(
+                                                episode.status,
+                                                crate::podcast::EpisodeStatus::Downloading
+                                            )
+                                        {
                                             let status = match episode.status {
-                                                crate::podcast::EpisodeStatus::Downloaded => crate::download::DownloadStatus::Completed,
-                                                crate::podcast::EpisodeStatus::Downloading => crate::download::DownloadStatus::InProgress,
-                                                crate::podcast::EpisodeStatus::DownloadFailed => crate::download::DownloadStatus::Failed("Download failed".to_string()),
+                                                crate::podcast::EpisodeStatus::Downloaded => {
+                                                    crate::download::DownloadStatus::Completed
+                                                }
+                                                crate::podcast::EpisodeStatus::Downloading => {
+                                                    crate::download::DownloadStatus::InProgress
+                                                }
+                                                crate::podcast::EpisodeStatus::DownloadFailed => {
+                                                    crate::download::DownloadStatus::Failed(
+                                                        "Download failed".to_string(),
+                                                    )
+                                                }
                                                 _ => continue,
                                             };
-                                            
-                                            let file_size = episode.local_path.as_ref()
+
+                                            let file_size = episode
+                                                .local_path
+                                                .as_ref()
                                                 .and_then(|path| std::fs::metadata(path).ok())
                                                 .map(|metadata| metadata.len());
-                                            
+
                                             downloads.push(DownloadEntry {
                                                 podcast_id: podcast_id.clone(),
                                                 episode_id: episode.id.clone(),
@@ -2053,7 +2085,7 @@ impl UIApp {
                             }
                         }
                     }
-                    
+
                     let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
                         buffer_type: BufferRefreshType::Downloads,
                         data: BufferRefreshData::Downloads { downloads },
@@ -2064,18 +2096,29 @@ impl UIApp {
                 let subscription_manager = self.subscription_manager.clone();
                 let app_event_tx = self.app_event_tx.clone();
                 let episode_limit = self.config.ui.whats_new_episode_limit;
-                
+
                 tokio::spawn(async move {
                     // Load What's New episodes data in background
                     let mut all_episodes = Vec::new();
-                    
+
                     if let Ok(podcast_ids) = subscription_manager.storage.list_podcasts().await {
                         for podcast_id in podcast_ids {
-                            if let Ok(podcast) = subscription_manager.storage.load_podcast(&podcast_id).await {
-                                if let Ok(episodes) = subscription_manager.storage.load_episodes(&podcast_id).await {
+                            if let Ok(podcast) =
+                                subscription_manager.storage.load_podcast(&podcast_id).await
+                            {
+                                if let Ok(episodes) = subscription_manager
+                                    .storage
+                                    .load_episodes(&podcast_id)
+                                    .await
+                                {
                                     for episode in episodes {
                                         // Only show episodes that aren't downloaded or downloading
-                                        if !episode.is_downloaded() && !matches!(episode.status, crate::podcast::EpisodeStatus::Downloading) {
+                                        if !episode.is_downloaded()
+                                            && !matches!(
+                                                episode.status,
+                                                crate::podcast::EpisodeStatus::Downloading
+                                            )
+                                        {
                                             all_episodes.push(AggregatedEpisode {
                                                 podcast_id: podcast_id.clone(),
                                                 podcast_title: podcast.title.clone(),
@@ -2087,35 +2130,48 @@ impl UIApp {
                             }
                         }
                     }
-                    
+
                     // Sort by publication date (newest first)
                     all_episodes.sort_by(|a, b| b.episode.published.cmp(&a.episode.published));
-                    
+
                     // Apply episode limit
                     all_episodes.truncate(episode_limit);
-                    
+
                     let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
                         buffer_type: BufferRefreshType::WhatsNew,
-                        data: BufferRefreshData::WhatsNew { episodes: all_episodes },
+                        data: BufferRefreshData::WhatsNew {
+                            episodes: all_episodes,
+                        },
                     });
                 });
             }
             BufferRefreshType::EpisodeBuffers { podcast_id } => {
                 let subscription_manager = self.subscription_manager.clone();
                 let app_event_tx = self.app_event_tx.clone();
-                
+
                 tokio::spawn(async move {
-                    match subscription_manager.storage.load_episodes(&podcast_id).await {
+                    match subscription_manager
+                        .storage
+                        .load_episodes(&podcast_id)
+                        .await
+                    {
                         Ok(episodes) => {
                             let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
-                                buffer_type: BufferRefreshType::EpisodeBuffers { podcast_id: podcast_id.clone() },
-                                data: BufferRefreshData::Episodes { podcast_id, episodes },
+                                buffer_type: BufferRefreshType::EpisodeBuffers {
+                                    podcast_id: podcast_id.clone(),
+                                },
+                                data: BufferRefreshData::Episodes {
+                                    podcast_id,
+                                    episodes,
+                                },
                             });
                         }
                         Err(e) => {
                             let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
                                 buffer_type: BufferRefreshType::EpisodeBuffers { podcast_id },
-                                data: BufferRefreshData::Error { message: e.to_string() },
+                                data: BufferRefreshData::Error {
+                                    message: e.to_string(),
+                                },
                             });
                         }
                     }
@@ -2125,12 +2181,14 @@ impl UIApp {
                 // For all episode buffers, we'll just trigger individual refreshes
                 // This is simpler and avoids complex coordination
                 let app_event_tx = self.app_event_tx.clone();
-                
+
                 tokio::spawn(async move {
                     // Signal that refresh is complete (no data to send)
                     let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
                         buffer_type: BufferRefreshType::AllEpisodeBuffers,
-                        data: BufferRefreshData::Error { message: "Use individual episode buffer refresh".to_string() },
+                        data: BufferRefreshData::Error {
+                            message: "Use individual episode buffer refresh".to_string(),
+                        },
                     });
                 });
             }
@@ -2138,7 +2196,11 @@ impl UIApp {
     }
 
     /// Handle buffer data refresh by updating buffers with pre-loaded data
-    fn handle_buffer_data_refresh(&mut self, buffer_type: BufferRefreshType, data: BufferRefreshData) {
+    fn handle_buffer_data_refresh(
+        &mut self,
+        buffer_type: BufferRefreshType,
+        data: BufferRefreshData,
+    ) {
         match (buffer_type, data) {
             (BufferRefreshType::PodcastList, BufferRefreshData::PodcastList { podcasts }) => {
                 if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
@@ -2155,7 +2217,10 @@ impl UIApp {
                     whats_new_buffer.set_episodes(episodes);
                 }
             }
-            (BufferRefreshType::EpisodeBuffers { podcast_id }, BufferRefreshData::Episodes { episodes, .. }) => {
+            (
+                BufferRefreshType::EpisodeBuffers { podcast_id },
+                BufferRefreshData::Episodes { episodes, .. },
+            ) => {
                 let buffer_ids = self.buffer_manager.get_buffer_ids();
                 for buffer_id in buffer_ids {
                     if buffer_id.starts_with("episodes-") {
@@ -2181,7 +2246,11 @@ impl UIApp {
     }
 
     /// Handle minibuffer input submission with context
-    fn handle_minibuffer_input_with_context(&mut self, input: String, prompt_context: Option<String>) {
+    fn handle_minibuffer_input_with_context(
+        &mut self,
+        input: String,
+        prompt_context: Option<String>,
+    ) {
         let input = input.trim();
 
         if input.is_empty() {
@@ -2189,7 +2258,8 @@ impl UIApp {
             if let Some(prompt) = &prompt_context {
                 if prompt.starts_with("Export to") {
                     // Empty input means use default export path
-                    let default_path = shellexpand::tilde(&self.config.storage.opml_export_directory).to_string();
+                    let default_path =
+                        shellexpand::tilde(&self.config.storage.opml_export_directory).to_string();
                     self.trigger_async_opml_export(default_path);
                     return;
                 }

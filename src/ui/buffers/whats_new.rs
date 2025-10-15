@@ -142,11 +142,14 @@ impl WhatsNewBuffer {
     /// Set episodes data directly (for background refresh)
     pub fn set_episodes(&mut self, episodes: Vec<crate::ui::events::AggregatedEpisode>) {
         // Convert from events::AggregatedEpisode to local AggregatedEpisode format
-        self.episodes = episodes.into_iter().map(|agg_ep| AggregatedEpisode {
-            podcast_id: agg_ep.podcast_id,
-            podcast_title: agg_ep.podcast_title,
-            episode: agg_ep.episode,
-        }).collect();
+        self.episodes = episodes
+            .into_iter()
+            .map(|agg_ep| AggregatedEpisode {
+                podcast_id: agg_ep.podcast_id,
+                podcast_title: agg_ep.podcast_title,
+                episode: agg_ep.episode,
+            })
+            .collect();
 
         // Set initial selection
         if !self.episodes.is_empty() && self.selected_index.is_none() {
@@ -155,7 +158,11 @@ impl WhatsNewBuffer {
         // Reset selection if it's out of bounds
         if let Some(selected) = self.selected_index {
             if selected >= self.episodes.len() {
-                self.selected_index = if self.episodes.is_empty() { None } else { Some(self.episodes.len() - 1) };
+                self.selected_index = if self.episodes.is_empty() {
+                    None
+                } else {
+                    Some(self.episodes.len() - 1)
+                };
             }
         }
 
@@ -275,7 +282,7 @@ impl UIComponent for WhatsNewBuffer {
             UIAction::DownloadEpisode => {
                 if let Some(agg_episode) = self.selected_episode() {
                     let episode = &agg_episode.episode;
-                    
+
                     if episode.is_downloaded() {
                         UIAction::ShowMessage("Episode already downloaded".to_string())
                     } else if matches!(episode.status, EpisodeStatus::Downloading) {
@@ -439,7 +446,10 @@ mod tests {
     #[test]
     fn test_truncate_string() {
         assert_eq!(truncate_string("short", 10), "short");
-        assert_eq!(truncate_string("this is a very long string", 10), "this is...");
+        assert_eq!(
+            truncate_string("this is a very long string", 10),
+            "this is..."
+        );
         assert_eq!(truncate_string("exactly10!", 10), "exactly10!");
     }
 
@@ -447,9 +457,9 @@ mod tests {
     fn test_select_item_opens_episode_detail() {
         use crate::podcast::Episode;
         use crate::storage::PodcastId;
-        
+
         let mut buffer = WhatsNewBuffer::new(100);
-        
+
         // Add a mock episode
         let podcast_id = PodcastId::new();
         let episode = Episode::new(
@@ -458,33 +468,35 @@ mod tests {
             "https://example.com/audio.mp3".to_string(),
             chrono::Utc::now(),
         );
-        
+
         buffer.episodes = vec![AggregatedEpisode {
             podcast_id: podcast_id.clone(),
             podcast_title: "Test Podcast".to_string(),
             episode: episode.clone(),
         }];
         buffer.selected_index = Some(0);
-        
+
         // Test SelectItem action
         let action = buffer.handle_action(UIAction::SelectItem);
-        
+
         // Should return OpenEpisodeDetail action
         match action {
-            UIAction::OpenEpisodeDetail { episode: returned_episode } => {
+            UIAction::OpenEpisodeDetail {
+                episode: returned_episode,
+            } => {
                 assert_eq!(returned_episode.title, "Test Episode");
             }
             _ => panic!("Expected OpenEpisodeDetail action, got {:?}", action),
         }
     }
-    
+
     #[test]
     fn test_select_item_with_no_selection() {
         let mut buffer = WhatsNewBuffer::new(100);
-        
+
         // No episodes, no selection
         let action = buffer.handle_action(UIAction::SelectItem);
-        
+
         // Should return ShowMessage action
         match action {
             UIAction::ShowMessage(msg) => {

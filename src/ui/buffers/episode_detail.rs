@@ -36,7 +36,7 @@ impl EpisodeDetailBuffer {
     pub fn new(episode: Episode) -> Self {
         let episode_title = episode.title.clone();
         let id = format!("episode-detail-{}", episode.id);
-        
+
         Self {
             id,
             episode_title,
@@ -64,7 +64,11 @@ impl EpisodeDetailBuffer {
         lines.push(Line::from(""));
 
         // Published date
-        let published_str = self.episode.published.format("%Y-%m-%d %H:%M UTC").to_string();
+        let published_str = self
+            .episode
+            .published
+            .format("%Y-%m-%d %H:%M UTC")
+            .to_string();
         lines.push(Line::from(vec![
             Span::styled("Published: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(published_str),
@@ -131,9 +135,10 @@ impl EpisodeDetailBuffer {
         }
 
         lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            Span::styled("Description:", Style::default().add_modifier(Modifier::BOLD)),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            "Description:",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]));
         lines.push(Line::from("─".repeat(60)));
 
         // Description
@@ -154,11 +159,12 @@ impl EpisodeDetailBuffer {
         if let Some(ref transcript) = self.episode.transcript {
             lines.push(Line::from(""));
             lines.push(Line::from("─".repeat(60)));
-            lines.push(Line::from(vec![
-                Span::styled("Transcript:", Style::default().add_modifier(Modifier::BOLD)),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                "Transcript:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )]));
             lines.push(Line::from("─".repeat(60)));
-            
+
             for line in transcript.lines() {
                 if line.trim().is_empty() {
                     lines.push(Line::from(""));
@@ -278,7 +284,7 @@ impl UIComponent for EpisodeDetailBuffer {
 
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
-        
+
         // Generate content and calculate scroll limits
         let content = self.generate_content();
         let max_lines = content.len();
@@ -304,7 +310,7 @@ impl UIComponent for EpisodeDetailBuffer {
             .scroll((scroll_offset as u16, 0));
 
         frame.render_widget(paragraph, area);
-        
+
         // Update scroll offset after rendering
         self.scroll_offset = scroll_offset;
     }
@@ -352,7 +358,7 @@ mod tests {
             Utc::now(),
         );
         episode.description = Some("Line 1\nLine 2\nLine 3\nLine 4\nLine 5".to_string());
-        
+
         let mut buffer = EpisodeDetailBuffer::new(episode);
 
         // Test scroll down

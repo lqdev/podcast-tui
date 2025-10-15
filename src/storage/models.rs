@@ -19,11 +19,11 @@ impl PodcastId {
     pub fn from_url(url: &str) -> Self {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         url.hash(&mut hasher);
         let hash = hasher.finish();
-        
+
         // Create a deterministic UUID from the hash
         // This ensures the same URL always generates the same ID
         let uuid = Uuid::from_u64_pair(hash, hash);
@@ -35,9 +35,7 @@ impl PodcastId {
         // This is a workaround - we return the Display formatted string
         // For a proper implementation, we'd store the string separately
         // or use a different ID type
-        unsafe {
-            std::mem::transmute(Box::leak(Box::new(self.0.to_string())).as_str())
-        }
+        unsafe { std::mem::transmute(Box::leak(Box::new(self.0.to_string())).as_str()) }
     }
 }
 
@@ -71,11 +69,11 @@ impl EpisodeId {
     pub fn from_guid(guid: &str) -> Self {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         guid.hash(&mut hasher);
         let hash = hasher.finish();
-        
+
         // Create a deterministic UUID from the hash
         let uuid = Uuid::from_u64_pair(hash, hash);
         Self(uuid)

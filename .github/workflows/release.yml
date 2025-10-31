@@ -43,6 +43,47 @@ jobs:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
       
+      - name: Update version in Cargo.toml to match tag
+        run: |
+          # Extract version from tag (remove 'v' prefix)
+          # Use inputs.tag for workflow_dispatch, github.ref_name for tag push
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG_VERSION="${{ inputs.tag }}"
+          else
+            TAG_VERSION="${{ github.ref_name }}"
+          fi
+          
+          if [[ "$TAG_VERSION" == v* ]]; then
+            VERSION="${TAG_VERSION:1}"
+          else
+            VERSION="$TAG_VERSION"
+          fi
+          echo "Tag: $TAG_VERSION -> Version: $VERSION"
+          
+          # Verify Cargo.toml exists and has version line
+          if ! grep -q '^version = ' Cargo.toml; then
+            echo "ERROR: Could not find version line in Cargo.toml"
+            exit 1
+          fi
+          
+          # Store original version for comparison
+          ORIGINAL_VERSION=$(grep '^version = ' Cargo.toml | head -1)
+          echo "Original: $ORIGINAL_VERSION"
+          
+          # Update Cargo.toml version
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          
+          # Verify the update was successful
+          UPDATED_VERSION=$(grep '^version = ' Cargo.toml | head -1)
+          echo "Updated:  $UPDATED_VERSION"
+          
+          if ! echo "$UPDATED_VERSION" | grep -q "\"$VERSION\""; then
+            echo "ERROR: Version update failed. Expected version = \"$VERSION\""
+            exit 1
+          fi
+          
+          echo "✓ Version successfully updated to $VERSION"
+      
       - name: Install build dependencies
         run: |
           chmod +x scripts/install-build-deps.sh
@@ -90,6 +131,50 @@ jobs:
         with:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Update version in Cargo.toml to match tag
+        shell: pwsh
+        run: |
+          # Extract version from tag (remove 'v' prefix)
+          # Use inputs.tag for workflow_dispatch, github.ref_name for tag push
+          $tagVersion = if ("${{ inputs.tag }}" -ne "") { "${{ inputs.tag }}" } else { "${{ github.ref_name }}" }
+          
+          if ($tagVersion.StartsWith('v')) {
+            $version = $tagVersion.Substring(1)
+          } else {
+            $version = $tagVersion
+          }
+          Write-Host "Tag: $tagVersion -> Version: $version"
+          
+          # Verify Cargo.toml exists and has version line
+          $versionLine = Get-Content Cargo.toml | Select-String -Pattern '^version\s*='
+          if (-not $versionLine) {
+            Write-Error "ERROR: Could not find version line in Cargo.toml"
+            exit 1
+          }
+          
+          # Store original version for comparison
+          $originalVersion = $versionLine.Line
+          Write-Host "Original: $originalVersion"
+          
+          # Update Cargo.toml version - use same pattern as bash for consistency
+          $content = Get-Content Cargo.toml
+          $newContent = $content -replace '^version = ".*"', ('version = "' + $version + '"')
+          $newContent | Set-Content Cargo.toml
+          
+          # Verify the update was successful
+          $updatedLine = Get-Content Cargo.toml | Select-String -Pattern '^version = '
+          $updatedVersion = $updatedLine.Line
+          Write-Host "Updated:  $updatedVersion"
+          
+          # Precise check: version must be in quotes (not just substring match)
+          $expectedPattern = '"' + [regex]::Escape($version) + '"'
+          if ($updatedVersion -notmatch $expectedPattern) {
+            Write-Error "ERROR: Version update failed. Expected version = `"$version`" but got: $updatedVersion"
+            exit 1
+          }
+          
+          Write-Host "✓ Version successfully updated to $version" -ForegroundColor Green
       
       - name: Install build dependencies
         shell: pwsh

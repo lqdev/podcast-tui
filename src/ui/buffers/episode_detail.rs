@@ -286,7 +286,10 @@ impl UIComponent for EpisodeDetailBuffer {
             UIAction::DownloadEpisode => {
                 if self.episode.is_downloaded() {
                     UIAction::ShowMessage("Episode already downloaded".to_string())
-                } else if matches!(self.episode.status, crate::podcast::EpisodeStatus::Downloading) {
+                } else if matches!(
+                    self.episode.status,
+                    crate::podcast::EpisodeStatus::Downloading
+                ) {
                     UIAction::ShowMessage("Episode is already downloading".to_string())
                 } else if self.episode.audio_url.is_empty()
                     && !self
@@ -466,7 +469,7 @@ mod tests {
             "https://example.com/audio.mp3".to_string(),
             Utc::now(),
         );
-        
+
         // Create a temporary file with unique name to avoid race conditions
         let temp_path = std::env::temp_dir().join(format!(
             "test_episode_download_{}.mp3",
@@ -485,10 +488,10 @@ mod tests {
 
         // Test attempting to download already downloaded episode
         let action = buffer.handle_action(UIAction::DownloadEpisode);
-        
+
         // Clean up the temporary file
         let _ = std::fs::remove_file(&temp_path);
-        
+
         match action {
             UIAction::ShowMessage(msg) => {
                 assert_eq!(msg, "Episode already downloaded");

@@ -389,7 +389,10 @@ fn render_splash_screen_initial() -> Result<()> {
     // Version
     println!();
     execute!(stdout, SetForegroundColor(Color::Cyan))?;
-    println!("                                 v1.0.0-mvp");
+    println!(
+        "                                 v{}",
+        env!("CARGO_PKG_VERSION")
+    );
 
     // Initial status message area (line 29) - centered to match update_splash_status
     println!();
@@ -426,7 +429,7 @@ fn update_splash_status(status: &str) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let matches = Command::new("podcast-tui")
-        .version("1.0.0-mvp")
+        .version(env!("CARGO_PKG_VERSION"))
         .about("A cross-platform terminal user interface for podcast management")
         .arg(
             Arg::new("config")

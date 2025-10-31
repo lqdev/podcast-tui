@@ -214,7 +214,7 @@ sudo pacman -S base-devel rust openssl
 
 1. Use Up/Down arrow keys to navigate episodes
 2. Press `Enter` on an episode to view details
-3. Press `Shift+D` to download the selected episode
+3. Press `Shift+D` to download the episode (works in both episode list and episode detail views)
 4. Press `Tab` or `Ctrl+b` to switch between buffers (podcast list, episode list, downloads)
 
 ### 4. Essential Keybindings

@@ -426,4 +426,116 @@ mod tests {
         assert_eq!(action, UIAction::Render);
         assert_eq!(buffer.scroll_offset, 0);
     }
+
+    #[test]
+    fn test_download_episode_action() {
+        let episode = Episode::new(
+            PodcastId::new(),
+            "Test Episode".to_string(),
+            "https://example.com/audio.mp3".to_string(),
+            Utc::now(),
+        );
+        let podcast_id = episode.podcast_id.clone();
+        let episode_id = episode.id.clone();
+        let mut buffer = EpisodeDetailBuffer::new(episode);
+
+        // Test triggering download
+        let action = buffer.handle_action(UIAction::DownloadEpisode);
+        match action {
+            UIAction::TriggerDownload {
+                podcast_id: pid,
+                episode_id: eid,
+                episode_title,
+            } => {
+                assert_eq!(pid, podcast_id);
+                assert_eq!(eid, episode_id);
+                assert_eq!(episode_title, "Test Episode");
+            }
+            _ => panic!("Expected TriggerDownload action"),
+        }
+    }
+
+    #[test]
+    fn test_download_already_downloaded_episode() {
+        use std::fs::File;
+        use std::io::Write;
+
+        let mut episode = Episode::new(
+            PodcastId::new(),
+            "Test Episode".to_string(),
+            "https://example.com/audio.mp3".to_string(),
+            Utc::now(),
+        );
+        
+        // Create a temporary file for the test
+        let temp_path = std::env::temp_dir().join("test_episode_download.mp3");
+        {
+            let mut file = File::create(&temp_path).unwrap();
+            file.write_all(b"test data").unwrap();
+        }
+
+        // Set episode as downloaded with the temporary file
+        episode.status = crate::podcast::EpisodeStatus::Downloaded;
+        episode.local_path = Some(temp_path.clone());
+
+        let mut buffer = EpisodeDetailBuffer::new(episode);
+
+        // Test attempting to download already downloaded episode
+        let action = buffer.handle_action(UIAction::DownloadEpisode);
+        
+        // Clean up the temporary file
+        let _ = std::fs::remove_file(&temp_path);
+        
+        match action {
+            UIAction::ShowMessage(msg) => {
+                assert_eq!(msg, "Episode already downloaded");
+            }
+            _ => panic!("Expected ShowMessage action, got {:?}", action),
+        }
+    }
+
+    #[test]
+    fn test_download_episode_no_audio_url() {
+        let mut episode = Episode::new(
+            PodcastId::new(),
+            "Test Episode".to_string(),
+            "".to_string(), // Empty audio URL
+            Utc::now(),
+        );
+        episode.guid = None; // No GUID either
+
+        let mut buffer = EpisodeDetailBuffer::new(episode);
+
+        // Test attempting to download episode without audio URL
+        let action = buffer.handle_action(UIAction::DownloadEpisode);
+        match action {
+            UIAction::ShowMessage(msg) => {
+                assert!(msg.contains("No audio URL available"));
+            }
+            _ => panic!("Expected ShowMessage action"),
+        }
+    }
+
+    #[test]
+    fn test_download_episode_already_downloading() {
+        let mut episode = Episode::new(
+            PodcastId::new(),
+            "Test Episode".to_string(),
+            "https://example.com/audio.mp3".to_string(),
+            Utc::now(),
+        );
+        // Set episode as currently downloading
+        episode.status = crate::podcast::EpisodeStatus::Downloading;
+
+        let mut buffer = EpisodeDetailBuffer::new(episode);
+
+        // Test attempting to download episode that's already downloading
+        let action = buffer.handle_action(UIAction::DownloadEpisode);
+        match action {
+            UIAction::ShowMessage(msg) => {
+                assert_eq!(msg, "Episode is already downloading");
+            }
+            _ => panic!("Expected ShowMessage action"),
+        }
+    }
 }

@@ -60,12 +60,29 @@ jobs:
           fi
           echo "Tag: $TAG_VERSION -> Version: $VERSION"
           
+          # Verify Cargo.toml exists and has version line
+          if ! grep -q '^version = ' Cargo.toml; then
+            echo "ERROR: Could not find version line in Cargo.toml"
+            exit 1
+          fi
+          
+          # Store original version for comparison
+          ORIGINAL_VERSION=$(grep '^version = ' Cargo.toml | head -1)
+          echo "Original: $ORIGINAL_VERSION"
+          
           # Update Cargo.toml version
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
           
-          # Verify the update
-          echo "Updated Cargo.toml version:"
-          grep '^version' Cargo.toml
+          # Verify the update was successful
+          UPDATED_VERSION=$(grep '^version = ' Cargo.toml | head -1)
+          echo "Updated:  $UPDATED_VERSION"
+          
+          if ! echo "$UPDATED_VERSION" | grep -q "\"$VERSION\""; then
+            echo "ERROR: Version update failed. Expected version = \"$VERSION\""
+            exit 1
+          fi
+          
+          echo "✓ Version successfully updated to $VERSION"
       
       - name: Install build dependencies
         run: |
@@ -129,12 +146,30 @@ jobs:
           }
           Write-Host "Tag: $tagVersion -> Version: $version"
           
+          # Verify Cargo.toml exists and has version line
+          $cargoContent = Get-Content Cargo.toml -Raw
+          if ($cargoContent -notmatch '^version = ') {
+            Write-Error "ERROR: Could not find version line in Cargo.toml"
+            exit 1
+          }
+          
+          # Store original version for comparison
+          $originalVersion = (Get-Content Cargo.toml | Select-String '^version = ').Line
+          Write-Host "Original: $originalVersion"
+          
           # Update Cargo.toml version
           (Get-Content Cargo.toml) -replace '^version = ".*"', "version = `"$version`"" | Set-Content Cargo.toml
           
-          # Verify the update
-          Write-Host "Updated Cargo.toml version:"
-          Get-Content Cargo.toml | Select-String '^version'
+          # Verify the update was successful
+          $updatedVersion = (Get-Content Cargo.toml | Select-String '^version = ').Line
+          Write-Host "Updated:  $updatedVersion"
+          
+          if ($updatedVersion -notmatch "`"$version`"") {
+            Write-Error "ERROR: Version update failed. Expected version = `"$version`""
+            exit 1
+          }
+          
+          Write-Host "✓ Version successfully updated to $version" -ForegroundColor Green
       
       - name: Install build dependencies
         shell: pwsh

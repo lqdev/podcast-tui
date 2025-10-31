@@ -157,18 +157,19 @@ jobs:
           $originalVersion = $versionLine.Line
           Write-Host "Original: $originalVersion"
           
-          # Update Cargo.toml version using proper regex
+          # Update Cargo.toml version - use same pattern as bash for consistency
           $content = Get-Content Cargo.toml
-          $newContent = $content -replace '^version\s*=\s*"[^"]*"', ('version = "' + $version + '"')
+          $newContent = $content -replace '^version = ".*"', ('version = "' + $version + '"')
           $newContent | Set-Content Cargo.toml
           
           # Verify the update was successful
-          $updatedLine = Get-Content Cargo.toml | Select-String -Pattern '^version\s*='
+          $updatedLine = Get-Content Cargo.toml | Select-String -Pattern '^version = '
           $updatedVersion = $updatedLine.Line
           Write-Host "Updated:  $updatedVersion"
           
-          # Check if version string is present in updated line
-          if (-not $updatedVersion.Contains($version)) {
+          # Precise check: version must be in quotes (not just substring match)
+          $expectedPattern = '"' + [regex]::Escape($version) + '"'
+          if ($updatedVersion -notmatch $expectedPattern) {
             Write-Error "ERROR: Version update failed. Expected version = `"$version`" but got: $updatedVersion"
             exit 1
           }

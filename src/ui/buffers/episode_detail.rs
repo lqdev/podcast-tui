@@ -467,8 +467,11 @@ mod tests {
             Utc::now(),
         );
         
-        // Create a temporary file for the test
-        let temp_path = std::env::temp_dir().join("test_episode_download.mp3");
+        // Create a temporary file with unique name to avoid race conditions
+        let temp_path = std::env::temp_dir().join(format!(
+            "test_episode_download_{}.mp3",
+            uuid::Uuid::new_v4()
+        ));
         {
             let mut file = File::create(&temp_path).unwrap();
             file.write_all(b"test data").unwrap();

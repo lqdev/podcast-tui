@@ -1,6 +1,6 @@
 [package]
 name = "podcast-tui"
-version = "1.0.0-mvp"
+version = "1.2.0-mvp"
 edition = "2021"
 authors = ["Your Name <your.email@example.com>"]
 description = "A cross-platform terminal user interface for podcast management"

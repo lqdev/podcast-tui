@@ -147,25 +147,29 @@ jobs:
           Write-Host "Tag: $tagVersion -> Version: $version"
           
           # Verify Cargo.toml exists and has version line
-          $cargoContent = Get-Content Cargo.toml -Raw
-          if ($cargoContent -notmatch '^version = ') {
+          $versionLine = Get-Content Cargo.toml | Select-String -Pattern '^version\s*='
+          if (-not $versionLine) {
             Write-Error "ERROR: Could not find version line in Cargo.toml"
             exit 1
           }
           
           # Store original version for comparison
-          $originalVersion = (Get-Content Cargo.toml | Select-String '^version = ').Line
+          $originalVersion = $versionLine.Line
           Write-Host "Original: $originalVersion"
           
-          # Update Cargo.toml version
-          (Get-Content Cargo.toml) -replace '^version = ".*"', "version = `"$version`"" | Set-Content Cargo.toml
+          # Update Cargo.toml version using proper regex
+          $content = Get-Content Cargo.toml
+          $newContent = $content -replace '^version\s*=\s*"[^"]*"', ('version = "' + $version + '"')
+          $newContent | Set-Content Cargo.toml
           
           # Verify the update was successful
-          $updatedVersion = (Get-Content Cargo.toml | Select-String '^version = ').Line
+          $updatedLine = Get-Content Cargo.toml | Select-String -Pattern '^version\s*='
+          $updatedVersion = $updatedLine.Line
           Write-Host "Updated:  $updatedVersion"
           
-          if ($updatedVersion -notmatch "`"$version`"") {
-            Write-Error "ERROR: Version update failed. Expected version = `"$version`""
+          # Check if version string is present in updated line
+          if (-not $updatedVersion.Contains($version)) {
+            Write-Error "ERROR: Version update failed. Expected version = `"$version`" but got: $updatedVersion"
             exit 1
           }
           

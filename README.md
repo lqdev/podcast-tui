@@ -172,7 +172,7 @@ See [BUILD_SYSTEM.md](docs/BUILD_SYSTEM.md) for detailed build documentation and
 
 ### Episode Management  
 - `Enter` - Play selected episode (when playback implemented)
-- `Shift+D` - Download episode
+- `Shift+D` - Download episode (works in both episode list and episode detail buffers)
 - `Shift+X` - Delete downloaded file for selected episode
 - `Ctrl+x` - Delete ALL downloaded episodes and clean up
 

@@ -14,6 +14,7 @@ use ratatui::{
 
 use crate::{
     podcast::Episode,
+    storage::PodcastId,
     ui::{
         buffers::{Buffer, BufferId},
         themes::Theme,
@@ -26,6 +27,7 @@ pub struct EpisodeDetailBuffer {
     id: String,
     episode_title: String,
     episode: Episode,
+    podcast_id: PodcastId,
     scroll_offset: usize,
     focused: bool,
     theme: Theme,
@@ -36,10 +38,12 @@ impl EpisodeDetailBuffer {
     pub fn new(episode: Episode) -> Self {
         let episode_title = episode.title.clone();
         let id = format!("episode-detail-{}", episode.id);
+        let podcast_id = episode.podcast_id.clone();
 
         Self {
             id,
             episode_title,
+            podcast_id,
             episode,
             scroll_offset: 0,
             focused: false,
@@ -235,6 +239,7 @@ impl Buffer for EpisodeDetailBuffer {
             "  Page Up   Page up".to_string(),
             "  Home, <   Scroll to top".to_string(),
             "  End, >    Scroll to bottom".to_string(),
+            "  D         Download episode".to_string(),
             "  q, C-k    Close buffer".to_string(),
             "  C-h       Show help".to_string(),
         ]
@@ -277,6 +282,30 @@ impl UIComponent for EpisodeDetailBuffer {
                 let max_lines = content.len();
                 self.scroll_to_bottom(max_lines, 20); // Use reasonable visible height
                 UIAction::Render
+            }
+            UIAction::DownloadEpisode => {
+                if self.episode.is_downloaded() {
+                    UIAction::ShowMessage("Episode already downloaded".to_string())
+                } else if matches!(self.episode.status, crate::podcast::EpisodeStatus::Downloading) {
+                    UIAction::ShowMessage("Episode is already downloading".to_string())
+                } else if self.episode.audio_url.is_empty()
+                    && !self
+                        .episode
+                        .guid
+                        .as_ref()
+                        .map_or(false, |g| g.starts_with("http"))
+                {
+                    UIAction::ShowMessage(
+                        "Cannot download: No audio URL available for this episode".to_string(),
+                    )
+                } else {
+                    // Return action to trigger async download
+                    UIAction::TriggerDownload {
+                        podcast_id: self.podcast_id.clone(),
+                        episode_id: self.episode.id.clone(),
+                        episode_title: self.episode.title.clone(),
+                    }
+                }
             }
             _ => UIAction::None,
         }

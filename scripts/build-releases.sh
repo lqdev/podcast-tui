@@ -109,6 +109,20 @@ build_target() {
             cp LICENSE "$archive_dir/" 2>/dev/null || true
             cp CHANGELOG.md "$archive_dir/" 2>/dev/null || true
             
+            # Copy icon assets and installation scripts
+            if [[ "$target_triple" == *"linux"* ]]; then
+                # Copy Linux-specific files
+                mkdir -p "$archive_dir/assets"
+                cp -r assets/icons "$archive_dir/assets/" 2>/dev/null || true
+                cp -r assets/linux "$archive_dir/assets/" 2>/dev/null || true
+                cp scripts/install-icon-linux.sh "$archive_dir/" 2>/dev/null || true
+            elif [[ "$target_triple" == *"windows"* ]]; then
+                # Windows icon is embedded in the executable via build.rs
+                # But we can still include the icon files for reference
+                mkdir -p "$archive_dir/assets"
+                cp -r assets/icons "$archive_dir/assets/" 2>/dev/null || true
+            fi
+            
             # Create archive
             cd "$RELEASE_DIR"
             if [[ "$target_triple" == *"windows"* ]]; then

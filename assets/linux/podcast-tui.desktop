@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Podcast TUI
+GenericName=Podcast Manager
+Comment=A cross-platform terminal user interface for podcast management
+Icon=podcast-tui
+Exec=podcast-tui
+Terminal=true
+Categories=AudioVideo;Audio;Player;
+Keywords=podcast;audio;rss;terminal;tui;
+StartupNotify=false

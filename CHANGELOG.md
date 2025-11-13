@@ -5,7 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - UI Thread Blocking Fix + Sprint 3 Complete
+## [Unreleased] - Application Icon + Sprint 3 Complete
+
+### Added
+
+**Application Icon - November 2025**
+- **Custom Application Icon**: Added icon for easy identification in system UI
+  - Created SVG icon combining cassette tape and RSS feed symbols
+  - Generated PNG versions in multiple sizes (16x16, 32x32, 48x48, 64x64, 128x128, 256x256)
+  - Created Windows ICO file with multi-resolution support
+  - Implemented Windows icon embedding via `build.rs` using `winres` crate
+  - Icon automatically appears in Windows taskbar, Task Manager, and file explorer
+  - Created Linux desktop entry file for application launcher integration
+  - Added `install-icon-linux.sh` script for Linux icon installation
+  - Icons installed to `~/.local/share/icons/hicolor/` following XDG standards
+  - Desktop entry installed to `~/.local/share/applications/`
+  - Added `regenerate-icons.sh` utility script for rebuilding icons from SVG
+  - Updated build scripts to include icon assets in release packages
+  - Comprehensive documentation in `assets/README.md`
+  - Cross-platform support: Windows (embedded) and Linux (system icons)
 
 ### Fixed
 

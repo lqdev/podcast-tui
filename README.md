@@ -109,6 +109,9 @@ git clone https://github.com/yourusername/podcast-tui.git
 cd podcast-tui
 cargo build --release
 ./target/release/podcast-tui
+
+# Optional: Install icon and desktop entry on Linux
+./scripts/install-icon-linux.sh
 ```
 
 #### Building Cross-Platform Releases
@@ -139,6 +142,16 @@ See [BUILD_SYSTEM.md](docs/BUILD_SYSTEM.md) for detailed build documentation and
 3. Clone the repository and open in VS Code
 4. Click "Reopen in Container" when prompted
 5. Run `cargo run` to start the application
+
+### Application Icon
+
+Podcast TUI features a custom icon combining a cassette tape and RSS feed symbol, representing the audio content and subscription management capabilities.
+
+**Linux:** After installing from a release package, run the included `install-icon-linux.sh` script to add the application icon to your system's application menu and file manager.
+
+**Windows:** The icon is automatically embedded in the executable and will appear in the taskbar, Task Manager, and file explorer.
+
+See [assets/README.md](assets/README.md) for more details about the icon design and installation.
 
 ### First Run
 **Note:** Audio playback is not yet implemented. Current features include subscription management, episode browsing, and downloading.

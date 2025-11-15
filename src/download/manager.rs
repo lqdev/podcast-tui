@@ -52,7 +52,7 @@ impl<S: Storage> DownloadManager<S> {
             .timeout(std::time::Duration::from_secs(60)) // Longer timeout for downloads
             .connect_timeout(std::time::Duration::from_secs(10))
             .redirect(reqwest::redirect::Policy::limited(10)) // Handle redirects
-            .user_agent("podcast-tui/1.0.0-mvp (like FeedReader)")
+            .user_agent("Mozilla/5.0 (compatible; podcast-tui/1.0; +https://github.com/podcast-tui) AppleWebKit/537.36 (KHTML, like Gecko)")
             .build()?;
 
         Ok(Self {
@@ -480,6 +480,32 @@ impl<S: Storage> DownloadManager<S> {
     /// Simple file download implementation
     async fn download_file(&self, url: &str, path: &Path) -> Result<(), DownloadError> {
         let response = self.client.get(url).send().await?;
+        
+        // Check if the response is successful, otherwise error_for_status will return an error
+        let response = response.error_for_status()?;
+        
+        // Get content type to verify it's actually audio
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|ct| ct.to_str().ok())
+            .unwrap_or("unknown");
+        
+        // Reject downloads that are not audio files
+        // This catches cases where servers return HTML error pages with 200 OK status
+        let is_audio = content_type.starts_with("audio/") 
+            || content_type == "application/octet-stream"
+            || content_type.starts_with("video/") // Some podcasts use video MIME types
+            || content_type == "binary/octet-stream"
+            || content_type == "unknown"; // Allow unknown content type as fallback
+        
+        if !is_audio && content_type.contains("html") {
+            return Err(DownloadError::InvalidPath(format!(
+                "Server returned HTML instead of audio file (Content-Type: {}). The audio URL may be invalid or the file may have been removed.",
+                content_type
+            )));
+        }
+        
         let mut file = fs::File::create(path).await?;
         let mut stream = response.bytes_stream();
 
@@ -804,6 +830,10 @@ impl<S: Storage> DownloadManager<S> {
     /// Download artwork and return MIME type and data
     async fn download_artwork(&self, url: &str) -> Result<(String, Vec<u8>), DownloadError> {
         let response = self.client.get(url).send().await?;
+        
+        // Check if the response is successful
+        let response = response.error_for_status()?;
+        
         let content_type = response
             .headers()
             .get("content-type")

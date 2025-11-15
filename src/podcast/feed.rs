@@ -311,6 +311,11 @@ impl FeedParser {
                 if let Some(url) = &media_content.url {
                     let url_string = url.to_string();
 
+                    // Skip embed/player URLs (these return HTML, not audio)
+                    if url_string.contains("/embed") || url_string.contains("/player") {
+                        continue;
+                    }
+
                     // Check if it has an audio MIME type
                     if let Some(content_type) = &media_content.content_type {
                         let content_type_str = content_type.to_string();

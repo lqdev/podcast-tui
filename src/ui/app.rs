@@ -2218,8 +2218,10 @@ impl UIApp {
                     whats_new_buffer.set_episodes(episodes);
                     
                     // Show message only if we're currently viewing the What's New buffer
-                    if self.buffer_manager.active_buffer_id() == Some(&"whats-new".to_string()) {
-                        self.show_message(format!("What's New updated with {} episode(s)", episode_count));
+                    if let Some(active_id) = self.buffer_manager.active_buffer_id() {
+                        if active_id == "whats-new" {
+                            self.show_message(format!("What's New updated with {} episode(s)", episode_count));
+                        }
                     }
                 }
             }

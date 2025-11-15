@@ -100,13 +100,26 @@ impl EpisodeListBuffer {
         let mut sorted_episodes = episodes;
         sorted_episodes.sort_by(|a, b| b.published.cmp(&a.published));
 
+        // Preserve the current cursor position when updating episodes
+        let previous_selected_index = self.selected_index;
+        
         self.episodes = sorted_episodes;
+        
+        // Restore selection if there are episodes
         self.selected_index = if self.episodes.is_empty() {
             None
+        } else if let Some(prev_index) = previous_selected_index {
+            // Keep the same index, but ensure it's within bounds
+            Some(prev_index.min(self.episodes.len().saturating_sub(1)))
         } else {
+            // No previous selection, default to first item
             Some(0)
         };
-        self.scroll_offset = 0;
+        
+        // Preserve scroll offset if valid, otherwise reset
+        if self.scroll_offset >= self.episodes.len() {
+            self.scroll_offset = 0;
+        }
     }
 
     /// Get selected episode
@@ -536,5 +549,139 @@ mod tests {
             }
             _ => panic!("Expected OpenEpisodeDetail action"),
         }
+    }
+
+    #[test]
+    fn test_cursor_position_preserved_after_set_episodes() {
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        
+        // Create initial episodes
+        let episodes = vec![
+            Episode::new(
+                PodcastId::new(),
+                "Episode 1".to_string(),
+                "url1".to_string(),
+                chrono::Utc::now(),
+            ),
+            Episode::new(
+                PodcastId::new(),
+                "Episode 2".to_string(),
+                "url2".to_string(),
+                chrono::Utc::now(),
+            ),
+            Episode::new(
+                PodcastId::new(),
+                "Episode 3".to_string(),
+                "url3".to_string(),
+                chrono::Utc::now(),
+            ),
+        ];
+        
+        // Set initial episodes
+        buffer.set_episodes(episodes.clone());
+        
+        // Move cursor to third episode (index 2)
+        buffer.selected_index = Some(2);
+        buffer.scroll_offset = 1;
+        
+        // Simulate updating episodes (like after a download)
+        buffer.set_episodes(episodes.clone());
+        
+        // Cursor should still be at index 2
+        assert_eq!(buffer.selected_index, Some(2), "Cursor position should be preserved");
+        
+        // Scroll offset should be preserved
+        assert_eq!(buffer.scroll_offset, 1, "Scroll offset should be preserved");
+    }
+
+    #[test]
+    fn test_cursor_position_adjusted_when_episodes_decrease() {
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        
+        // Create initial episodes
+        let episodes = vec![
+            Episode::new(
+                PodcastId::new(),
+                "Episode 1".to_string(),
+                "url1".to_string(),
+                chrono::Utc::now(),
+            ),
+            Episode::new(
+                PodcastId::new(),
+                "Episode 2".to_string(),
+                "url2".to_string(),
+                chrono::Utc::now(),
+            ),
+            Episode::new(
+                PodcastId::new(),
+                "Episode 3".to_string(),
+                "url3".to_string(),
+                chrono::Utc::now(),
+            ),
+        ];
+        
+        // Set initial episodes and move cursor to last episode
+        buffer.set_episodes(episodes);
+        buffer.selected_index = Some(2);
+        
+        // Update with fewer episodes
+        let fewer_episodes = vec![
+            Episode::new(
+                PodcastId::new(),
+                "Episode 1".to_string(),
+                "url1".to_string(),
+                chrono::Utc::now(),
+            ),
+        ];
+        
+        buffer.set_episodes(fewer_episodes);
+        
+        // Cursor should be adjusted to last valid index
+        assert_eq!(buffer.selected_index, Some(0), "Cursor should be adjusted to last valid index");
+    }
+
+    #[test]
+    fn test_scroll_offset_reset_when_out_of_bounds() {
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        
+        // Create initial episodes
+        let episodes = vec![
+            Episode::new(
+                PodcastId::new(),
+                "Episode 1".to_string(),
+                "url1".to_string(),
+                chrono::Utc::now(),
+            ),
+            Episode::new(
+                PodcastId::new(),
+                "Episode 2".to_string(),
+                "url2".to_string(),
+                chrono::Utc::now(),
+            ),
+            Episode::new(
+                PodcastId::new(),
+                "Episode 3".to_string(),
+                "url3".to_string(),
+                chrono::Utc::now(),
+            ),
+        ];
+        
+        buffer.set_episodes(episodes);
+        buffer.scroll_offset = 2;
+        
+        // Update with single episode
+        let single_episode = vec![
+            Episode::new(
+                PodcastId::new(),
+                "Episode 1".to_string(),
+                "url1".to_string(),
+                chrono::Utc::now(),
+            ),
+        ];
+        
+        buffer.set_episodes(single_episode);
+        
+        // Scroll offset should be reset to 0
+        assert_eq!(buffer.scroll_offset, 0, "Scroll offset should be reset when out of bounds");
     }
 }

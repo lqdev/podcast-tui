@@ -27,6 +27,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+**Omny.fm Podcast Downloads - November 2025**
+- **Corrupted Download Files**: Fixed episodes from Omny.fm hosted podcasts not downloading correctly
+  - **Root Cause**: Servers were returning HTTP 200 OK with HTML error pages instead of audio files
+  - Added HTTP status validation in `download_file()` method using `error_for_status()`
+  - **Added Content-Type validation** to reject HTML responses with clear error messages
+  - Validates `Content-Type` header before downloading (accepts audio/*, video/*, octet-stream)
+  - Rejects downloads when Content-Type contains "html" even with 200 OK status
+  - Added HTTP status validation in `download_artwork()` method
+  - Standardized User-Agent string to match feed parser for consistent server behavior
+  - Fixes corruption issues with Desert Oracle, Better Offline, and other Omny.fm podcasts
+  - Ensures podcast cover art downloads correctly
+  - No impact on existing functionality - all 97 unit tests pass
+  - Provides clear error: "Server returned HTML instead of audio file"
+
 **UI Thread Blocking - October 10, 2025**
 - **Responsive UI During Background Operations**: Fixed UI thread blocking during podcast refresh and downloads
   - Moved all buffer refresh operations to background tasks using `tokio::spawn`

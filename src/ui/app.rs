@@ -845,11 +845,11 @@ impl UIApp {
                 self.trigger_background_refresh(BufferRefreshType::WhatsNew);
                 if total_new_episodes > 0 {
                     self.show_message(format!(
-                        "Refresh completed. Found {} new episode(s) total",
+                        "Podcast refresh completed. Found {} new episode(s). Updating buffers...",
                         total_new_episodes
                     ));
                 } else {
-                    self.show_message("Refresh completed. No new episodes found".to_string());
+                    self.show_message("Podcast refresh completed. No new episodes found".to_string());
                 }
             }
             AppEvent::BufferDataRefreshed { buffer_type, data } => {
@@ -2214,7 +2214,15 @@ impl UIApp {
             }
             (BufferRefreshType::WhatsNew, BufferRefreshData::WhatsNew { episodes }) => {
                 if let Some(whats_new_buffer) = self.buffer_manager.get_whats_new_buffer_mut() {
+                    let episode_count = episodes.len();
                     whats_new_buffer.set_episodes(episodes);
+                    
+                    // Show message only if we're currently viewing the What's New buffer
+                    if let Some(active_id) = self.buffer_manager.active_buffer_id() {
+                        if active_id == "whats-new" {
+                            self.show_message(format!("What's New updated with {} episode(s)", episode_count));
+                        }
+                    }
                 }
             }
             (

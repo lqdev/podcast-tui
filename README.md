@@ -52,6 +52,7 @@ The application follows a modular architecture with clear separation of concerns
 - ✅ **OPML Import/Export** - Non-destructive import and export of subscriptions  
 - ✅ **Episode Management** - Browse and manage episodes
 - ✅ **Download System** - Parallel episode downloads with progress tracking and bulk cleanup
+- ✅ **Device Sync** - Sync downloads to MP3 players with metadata-based comparison
 - ✅ **Keyboard Navigation** - Intuitive keybindings for efficient navigation
 - ✅ **Command Auto-completion** - Intelligent command completion in minibuffer
 - ✅ **Buffer Management** - Multiple buffers for different views
@@ -224,7 +225,11 @@ Configuration is stored in JSON format at:
   "downloads": {
     "directory": "~/Downloads/Podcasts",
     "concurrent": 3,
-    "cleanup_after_days": 30
+    "cleanup_after_days": 30,
+    "sync_device_path": "/mnt/mp3player/Podcasts",
+    "sync_delete_orphans": true,
+    "sync_preserve_structure": true,
+    "sync_dry_run": false
   },
   "audio": {
     "volume": 0.8,
@@ -240,6 +245,30 @@ Configuration is stored in JSON format at:
     "show_progress_bar": true
   }
 }
+```
+
+### Device Sync Configuration
+
+The device sync feature allows you to sync downloaded episodes to external MP3 players or USB devices:
+
+- `sync_device_path`: Default path to your device (can be overridden at runtime)
+- `sync_delete_orphans`: Remove files on device that aren't on PC (default: true)
+- `sync_preserve_structure`: Keep podcast folder structure on device (default: true)  
+- `sync_dry_run`: Preview changes without applying them (default: false)
+
+**Usage:**
+```bash
+# Sync to device (prompts for path or uses config default)
+:sync
+
+# Sync to specific path
+:sync /mnt/usb/Music/Podcasts
+
+# Preview changes without applying
+:sync-dry-run /mnt/usb/Music/Podcasts
+
+# View sync history
+:buffer sync
 ```
 
 See [configuration documentation](docs/CONFIGURATION.md) for all options.

@@ -9,6 +9,7 @@ pub mod episode_detail;
 pub mod episode_list;
 pub mod help;
 pub mod podcast_list;
+pub mod sync;
 pub mod whats_new;
 
 use ratatui::layout::Rect;
@@ -289,6 +290,16 @@ impl BufferManager {
         let _ = self.add_buffer(Box::new(whats_new_buffer));
     }
 
+    /// Create Sync buffer
+    pub fn create_sync_buffer(
+        &mut self,
+        download_manager: Arc<DownloadManager<JsonStorage>>,
+    ) {
+        let mut sync_buffer = crate::ui::buffers::sync::SyncBuffer::new();
+        sync_buffer.set_download_manager(download_manager);
+        let _ = self.add_buffer(Box::new(sync_buffer));
+    }
+
     /// Get mutable reference to podcast list buffer
     pub fn get_podcast_list_buffer_mut(
         &mut self,
@@ -354,6 +365,18 @@ impl BufferManager {
             // This is safe because we know whats-new buffer is always WhatsNewBuffer
             let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
             unsafe { (raw_ptr as *mut crate::ui::buffers::whats_new::WhatsNewBuffer).as_mut() }
+        })
+    }
+
+    /// Get mutable reference to Sync buffer
+    pub fn get_sync_buffer_mut(
+        &mut self,
+    ) -> Option<&mut crate::ui::buffers::sync::SyncBuffer> {
+        let buffer_id = "sync".to_string();
+        self.get_buffer(&buffer_id).and_then(|buffer| {
+            // This is safe because we know sync buffer is always SyncBuffer
+            let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
+            unsafe { (raw_ptr as *mut crate::ui::buffers::sync::SyncBuffer).as_mut() }
         })
     }
 

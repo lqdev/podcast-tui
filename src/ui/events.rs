@@ -245,6 +245,26 @@ pub enum AppEvent {
 
     /// OPML export failed
     OpmlExportFailed { path: String, error: String },
+
+    // Device sync events
+    /// Device sync started
+    DeviceSyncStarted {
+        device_path: std::path::PathBuf,
+        dry_run: bool,
+    },
+
+    /// Device sync completed successfully
+    DeviceSyncCompleted {
+        device_path: std::path::PathBuf,
+        report: crate::download::SyncReport,
+        dry_run: bool,
+    },
+
+    /// Device sync failed
+    DeviceSyncFailed {
+        device_path: std::path::PathBuf,
+        error: String,
+    },
 }
 
 /// Types of buffer refresh operations

@@ -1000,6 +1000,40 @@ impl UIApp {
             AppEvent::OpmlExportFailed { path, error } => {
                 self.show_error(format!("OPML export to {} failed: {}", path, error));
             }
+            AppEvent::DeviceSyncStarted { device_path, dry_run } => {
+                let mode = if dry_run { " (dry run)" } else { "" };
+                self.show_message(format!("Starting device sync to {}{}...", device_path.display(), mode));
+            }
+            AppEvent::DeviceSyncCompleted { device_path, report, dry_run } => {
+                // Update sync buffer with results
+                if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
+                    sync_buffer.add_sync_result(device_path.clone(), report.clone(), dry_run);
+                }
+                
+                let mode = if dry_run { " (dry run)" } else { "" };
+                let summary = if report.is_success() {
+                    format!(
+                        "Sync completed successfully{}: {} copied, {} deleted, {} skipped",
+                        mode,
+                        report.files_copied.len(),
+                        report.files_deleted.len(),
+                        report.files_skipped.len()
+                    )
+                } else {
+                    format!(
+                        "Sync completed{} with {} errors: {} copied, {} deleted, {} skipped",
+                        mode,
+                        report.errors.len(),
+                        report.files_copied.len(),
+                        report.files_deleted.len(),
+                        report.files_skipped.len()
+                    )
+                };
+                self.show_message(summary);
+            }
+            AppEvent::DeviceSyncFailed { device_path, error } => {
+                self.show_error(format!("Device sync to {} failed: {}", device_path.display(), error));
+            }
         }
         Ok(())
     }

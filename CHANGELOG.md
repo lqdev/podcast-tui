@@ -5,9 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - Application Icon + Sprint 3 Complete
+## [Unreleased] - Device Sync + Application Icon
 
 ### Added
+
+**Device Sync for MP3 Players - November 2025**
+- **Metadata-Based Device Sync**: Sync downloaded episodes to external MP3 players or USB devices
+  - Compare files using metadata only (filename + file size) for fast, reliable sync
+  - Runtime device path override - specify sync target when initiating sync
+  - Preserves podcast folder structure on device for easy navigation
+  - Dry-run mode for safe preview of sync changes before execution
+  - Orphan file deletion - removes episodes on device that are no longer on PC
+  - Atomic operations with comprehensive error handling and reporting
+  - New Sync buffer with visual history of last 10 sync operations
+  - Shows sync status, file counts, timestamps, and success/failure indicators
+  - Commands: `sync <path>` for full sync, `sync-dry-run <path>` for preview
+  - Buffer aliases: `sync`, `device-sync` for quick navigation
+  - Configuration options in `config.json`:
+    - `sync_device_path`: Optional default device path
+    - `sync_delete_orphans`: Auto-delete orphaned files (default: true)
+    - `sync_preserve_structure`: Keep folder hierarchy (default: true)
+    - `sync_dry_run`: Default mode for safety (default: false)
+  - 7 comprehensive unit tests covering all sync scenarios
+  - Built for MP3 player compatibility with existing ID3 metadata features
 
 **Application Icon - November 2025**
 - **Custom Application Icon**: Added icon for easy identification in system UI

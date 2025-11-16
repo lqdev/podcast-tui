@@ -153,6 +153,7 @@ impl UIApp {
         buffer_manager.create_help_buffer();
         buffer_manager.create_podcast_list_buffer(subscription_manager.clone());
         buffer_manager.create_downloads_buffer(download_manager.clone(), storage.clone());
+        buffer_manager.create_sync_buffer(download_manager.clone());
         buffer_manager.create_whats_new_buffer(
             subscription_manager.clone(),
             download_manager.clone(),
@@ -1000,6 +1001,40 @@ impl UIApp {
             AppEvent::OpmlExportFailed { path, error } => {
                 self.show_error(format!("OPML export to {} failed: {}", path, error));
             }
+            AppEvent::DeviceSyncStarted { device_path, dry_run } => {
+                let mode = if dry_run { " (dry run)" } else { "" };
+                self.show_message(format!("Starting device sync to {}{}...", device_path.display(), mode));
+            }
+            AppEvent::DeviceSyncCompleted { device_path, report, dry_run } => {
+                // Update sync buffer with results
+                if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
+                    sync_buffer.add_sync_result(device_path.clone(), report.clone(), dry_run);
+                }
+                
+                let mode = if dry_run { " (dry run)" } else { "" };
+                let summary = if report.is_success() {
+                    format!(
+                        "Sync completed successfully{}: {} copied, {} deleted, {} skipped",
+                        mode,
+                        report.files_copied.len(),
+                        report.files_deleted.len(),
+                        report.files_skipped.len()
+                    )
+                } else {
+                    format!(
+                        "Sync completed{} with {} errors: {} copied, {} deleted, {} skipped",
+                        mode,
+                        report.errors.len(),
+                        report.files_copied.len(),
+                        report.files_deleted.len(),
+                        report.files_skipped.len()
+                    )
+                };
+                self.show_message(summary);
+            }
+            AppEvent::DeviceSyncFailed { device_path, error } => {
+                self.show_error(format!("Device sync to {} failed: {}", device_path.display(), error));
+            }
         }
         Ok(())
     }
@@ -1128,6 +1163,42 @@ impl UIApp {
                     Ok(true)
                 }
             }
+            "sync" | "sync-device" => {
+                if parts.len() > 1 {
+                    let device_path = parts[1..].join(" ");
+                    self.trigger_async_device_sync(device_path, false, false);
+                    Ok(true)
+                } else {
+                    // Prompt for device path with default from config
+                    let default_path = self.config.downloads.sync_device_path
+                        .as_ref()
+                        .map(|p| shellexpand::tilde(p).to_string())
+                        .unwrap_or_else(|| "/mnt/mp3player".to_string());
+                    self.minibuffer.set_content(MinibufferContent::Input {
+                        prompt: format!("Sync to device path (default: {}): ", default_path),
+                        input: String::new(),
+                    });
+                    Ok(true)
+                }
+            }
+            "sync-dry-run" | "sync-preview" => {
+                if parts.len() > 1 {
+                    let device_path = parts[1..].join(" ");
+                    self.trigger_async_device_sync(device_path, false, true);
+                    Ok(true)
+                } else {
+                    // Prompt for device path
+                    let default_path = self.config.downloads.sync_device_path
+                        .as_ref()
+                        .map(|p| shellexpand::tilde(p).to_string())
+                        .unwrap_or_else(|| "/mnt/mp3player".to_string());
+                    self.minibuffer.set_content(MinibufferContent::Input {
+                        prompt: format!("Dry run sync to (default: {}): ", default_path),
+                        input: String::new(),
+                    });
+                    Ok(true)
+                }
+            }
             _ => {
                 self.show_error(format!("Unknown command: {}", parts[0]));
                 Ok(true)
@@ -1202,6 +1273,7 @@ impl UIApp {
             "help" => "*Help*".to_string(),
             "download" | "dl" => "downloads".to_string(),
             "new" | "whats-new" | "latest" => "whats-new".to_string(),
+            "sync" | "device-sync" => "sync".to_string(),
             _ => buffer_name.clone(),
         };
 
@@ -1896,6 +1968,48 @@ impl UIApp {
                 Err(e) => {
                     let _ = app_event_tx.send(AppEvent::OpmlImportFailed {
                         source: source_clone,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    /// Trigger async device sync
+    fn trigger_async_device_sync(&mut self, device_path_str: String, delete_orphans: bool, dry_run: bool) {
+        let download_manager = self.download_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        
+        // Expand tilde and convert to PathBuf
+        let expanded_path = shellexpand::tilde(&device_path_str).to_string();
+        let device_path = std::path::PathBuf::from(expanded_path);
+        let device_path_clone = device_path.clone();
+        
+        // Use config defaults if not specified
+        let delete_orphans = if delete_orphans {
+            true
+        } else {
+            self.config.downloads.sync_delete_orphans
+        };
+
+        // Send start event
+        let _ = app_event_tx.send(AppEvent::DeviceSyncStarted {
+            device_path: device_path.clone(),
+            dry_run,
+        });
+
+        tokio::spawn(async move {
+            match download_manager.sync_to_device(device_path.clone(), delete_orphans, dry_run).await {
+                Ok(report) => {
+                    let _ = app_event_tx.send(AppEvent::DeviceSyncCompleted {
+                        device_path,
+                        report,
+                        dry_run,
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::DeviceSyncFailed {
+                        device_path: device_path_clone,
                         error: e.to_string(),
                     });
                 }

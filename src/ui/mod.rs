@@ -142,6 +142,16 @@ pub enum UIAction {
         path: Option<String>,
     },
 
+    // Device sync actions
+    /// Initiate device sync
+    SyncToDevice,
+    /// Trigger async device sync with parameters
+    TriggerDeviceSync {
+        device_path: std::path::PathBuf,
+        delete_orphans: bool,
+        dry_run: bool,
+    },
+
     // Render request
     Render,
 

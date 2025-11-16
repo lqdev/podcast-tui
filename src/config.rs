@@ -115,6 +115,16 @@ pub struct DownloadConfig {
     pub include_dates: bool, // Add dates to filenames (default: true)
     #[serde(default = "default_max_filename_length")]
     pub max_filename_length: usize, // Limit for compatibility (default: 150)
+
+    // Device sync options (with defaults for backward compatibility)
+    #[serde(default)]
+    pub sync_device_path: Option<String>, // Path to sync device (can be overridden at runtime)
+    #[serde(default = "default_sync_delete_orphans")]
+    pub sync_delete_orphans: bool, // Delete files on device not present on PC (default: true)
+    #[serde(default = "default_sync_preserve_structure")]
+    pub sync_preserve_structure: bool, // Preserve podcast folder structure (default: true)
+    #[serde(default = "default_sync_dry_run")]
+    pub sync_dry_run: bool, // Default to dry-run mode for safety (default: false)
 }
 
 // Default functions for serde
@@ -142,6 +152,15 @@ fn default_include_dates() -> bool {
 fn default_max_filename_length() -> usize {
     150
 }
+fn default_sync_delete_orphans() -> bool {
+    true
+}
+fn default_sync_preserve_structure() -> bool {
+    true
+}
+fn default_sync_dry_run() -> bool {
+    false
+}
 
 impl Default for DownloadConfig {
     fn default() -> Self {
@@ -161,6 +180,12 @@ impl Default for DownloadConfig {
             include_episode_numbers: true,
             include_dates: true,
             max_filename_length: 150,
+
+            // Device sync defaults
+            sync_device_path: None,
+            sync_delete_orphans: true,
+            sync_preserve_structure: true,
+            sync_dry_run: false,
         }
     }
 }

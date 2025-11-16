@@ -20,6 +20,58 @@ pub enum DownloadError {
     Storage(String),
     #[error("Invalid file path: {0}")]
     InvalidPath(String),
+    #[error("Sync error: {0}")]
+    Sync(String),
+}
+
+/// Device sync error types
+#[derive(Debug, Error)]
+pub enum SyncError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Device path not found or not accessible: {0}")]
+    DevicePathInvalid(String),
+    #[error("Failed to copy file: {0}")]
+    CopyFailed(String),
+    #[error("Failed to delete file: {0}")]
+    DeleteFailed(String),
+}
+
+/// Report of sync operations performed
+#[derive(Debug, Clone)]
+pub struct SyncReport {
+    pub files_copied: Vec<PathBuf>,
+    pub files_deleted: Vec<PathBuf>,
+    pub files_skipped: Vec<PathBuf>,
+    pub errors: Vec<(PathBuf, String)>,
+}
+
+impl SyncReport {
+    /// Create a new empty sync report
+    pub fn new() -> Self {
+        Self {
+            files_copied: Vec::new(),
+            files_deleted: Vec::new(),
+            files_skipped: Vec::new(),
+            errors: Vec::new(),
+        }
+    }
+
+    /// Check if sync was successful (no errors)
+    pub fn is_success(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    /// Get total number of operations performed
+    pub fn total_operations(&self) -> usize {
+        self.files_copied.len() + self.files_deleted.len() + self.files_skipped.len()
+    }
+}
+
+impl Default for SyncReport {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -865,6 +917,252 @@ impl<S: Storage> DownloadManager<S> {
 
         Ok((final_mime_type, final_data))
     }
+
+    /// Sync downloaded episodes to a device using metadata comparison
+    ///
+    /// # Arguments
+    /// * `device_path` - Path to the device/directory to sync to
+    /// * `delete_orphans` - Whether to delete files on device not present on PC
+    /// * `dry_run` - If true, only report what would be done without making changes
+    ///
+    /// # Returns
+    /// A `SyncReport` detailing all operations performed or that would be performed
+    pub async fn sync_to_device(
+        &self,
+        device_path: PathBuf,
+        delete_orphans: bool,
+        dry_run: bool,
+    ) -> Result<SyncReport, SyncError> {
+        let mut report = SyncReport::new();
+
+        // Validate device path exists and is accessible
+        if !device_path.exists() {
+            return Err(SyncError::DevicePathInvalid(format!(
+                "Path does not exist: {}",
+                device_path.display()
+            )));
+        }
+
+        if !device_path.is_dir() {
+            return Err(SyncError::DevicePathInvalid(format!(
+                "Path is not a directory: {}",
+                device_path.display()
+            )));
+        }
+
+        // Test write access by trying to create and remove a temporary file
+        let test_file = device_path.join(".podcast-tui-sync-test");
+        if let Err(e) = fs::write(&test_file, b"test").await {
+            return Err(SyncError::DevicePathInvalid(format!(
+                "Path is not writable: {} ({})",
+                device_path.display(),
+                e
+            )));
+        }
+        let _ = fs::remove_file(&test_file).await;
+
+        // Step 1: Build a map of all downloaded episodes on PC
+        let mut pc_files: std::collections::HashMap<PathBuf, (PathBuf, u64)> =
+            std::collections::HashMap::new();
+
+        // Scan downloads directory
+        self.scan_directory(&self.downloads_dir, &mut pc_files)
+            .await?;
+
+        // Step 2: Build a map of all files on the device
+        let mut device_files: std::collections::HashMap<PathBuf, (PathBuf, u64)> =
+            std::collections::HashMap::new();
+
+        self.scan_directory(&device_path, &mut device_files)
+            .await?;
+
+        // Step 3: Determine what needs to be copied (new or changed files)
+        for (relative_path, (source_path, source_size)) in &pc_files {
+            if let Some((device_file_path, device_size)) = device_files.get(relative_path) {
+                // File exists on device - check if size matches
+                if source_size == device_size {
+                    // File is identical (by metadata), skip
+                    report.files_skipped.push(relative_path.clone());
+                } else {
+                    // File size differs, needs update
+                    if !dry_run {
+                        match self
+                            .copy_file_to_device(source_path, device_file_path)
+                            .await
+                        {
+                            Ok(_) => report.files_copied.push(relative_path.clone()),
+                            Err(e) => report
+                                .errors
+                                .push((relative_path.clone(), format!("Copy failed: {}", e))),
+                        }
+                    } else {
+                        report.files_copied.push(relative_path.clone());
+                    }
+                }
+            } else {
+                // File doesn't exist on device, needs to be copied
+                let target_path = device_path.join(relative_path);
+                
+                // Create parent directories if needed
+                if let Some(parent) = target_path.parent() {
+                    if !dry_run {
+                        if let Err(e) = fs::create_dir_all(parent).await {
+                            report.errors.push((
+                                relative_path.clone(),
+                                format!("Failed to create directory: {}", e),
+                            ));
+                            continue;
+                        }
+                    }
+                }
+
+                if !dry_run {
+                    match self.copy_file_to_device(source_path, &target_path).await {
+                        Ok(_) => report.files_copied.push(relative_path.clone()),
+                        Err(e) => report
+                            .errors
+                            .push((relative_path.clone(), format!("Copy failed: {}", e))),
+                    }
+                } else {
+                    report.files_copied.push(relative_path.clone());
+                }
+            }
+        }
+
+        // Step 4: Delete orphan files on device (files not present on PC)
+        if delete_orphans {
+            for (relative_path, (device_file_path, _)) in &device_files {
+                if !pc_files.contains_key(relative_path) {
+                    // File exists on device but not on PC, delete it
+                    if !dry_run {
+                        match fs::remove_file(device_file_path).await {
+                            Ok(_) => report.files_deleted.push(relative_path.clone()),
+                            Err(e) => report.errors.push((
+                                relative_path.clone(),
+                                format!("Delete failed: {}", e),
+                            )),
+                        }
+                    } else {
+                        report.files_deleted.push(relative_path.clone());
+                    }
+                }
+            }
+
+            // Clean up empty directories on device (only if not dry run)
+            if !dry_run {
+                let _ = self.cleanup_empty_directories_in(&device_path).await;
+            }
+        }
+
+        Ok(report)
+    }
+
+    /// Recursively scan a directory and build a map of relative paths to (absolute path, file size)
+    /// 
+    /// # Arguments
+    /// * `root_path` - The original root path for computing relative paths
+    /// * `current_path` - The current directory being scanned (for recursion)
+    /// * `files` - The map to populate with file information
+    fn scan_directory_impl<'a>(
+        &'a self,
+        root_path: &'a Path,
+        current_path: &'a Path,
+        files: &'a mut std::collections::HashMap<PathBuf, (PathBuf, u64)>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SyncError>> + 'a + Send>> {
+        Box::pin(async move {
+            let mut entries = fs::read_dir(current_path).await?;
+
+            while let Some(entry) = entries.next_entry().await? {
+                let path = entry.path();
+                let metadata = entry.metadata().await?;
+
+                if metadata.is_file() {
+                    // Only include audio files
+                    if let Some(ext) = path.extension() {
+                        let ext_str = ext.to_string_lossy().to_lowercase();
+                        if matches!(
+                            ext_str.as_str(),
+                            "mp3" | "m4a" | "aac" | "ogg" | "wav" | "flac"
+                        ) {
+                            // Calculate relative path from root
+                            let relative_path = path
+                                .strip_prefix(root_path)
+                                .map_err(|e| {
+                                    SyncError::Io(std::io::Error::new(
+                                        std::io::ErrorKind::Other,
+                                        format!("Failed to compute relative path: {}", e),
+                                    ))
+                                })?
+                                .to_path_buf();
+
+                            files.insert(relative_path, (path.clone(), metadata.len()));
+                        }
+                    }
+                } else if metadata.is_dir() {
+                    // Recursively scan subdirectories
+                    self.scan_directory_impl(root_path, &path, files).await?;
+                }
+            }
+
+            Ok(())
+        })
+    }
+
+    /// Wrapper for scan_directory_impl that uses the same path for root and current
+    fn scan_directory<'a>(
+        &'a self,
+        base_path: &'a Path,
+        files: &'a mut std::collections::HashMap<PathBuf, (PathBuf, u64)>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SyncError>> + 'a + Send>> {
+        Box::pin(async move {
+            self.scan_directory_impl(base_path, base_path, files).await
+        })
+    }
+
+    /// Copy a file from source to destination with error handling
+    async fn copy_file_to_device(
+        &self,
+        source_path: &Path,
+        dest_path: &Path,
+    ) -> Result<(), SyncError> {
+        // Use tokio's fs::copy which is more efficient
+        fs::copy(source_path, dest_path)
+            .await
+            .map_err(|e| SyncError::CopyFailed(format!("{}: {}", dest_path.display(), e)))?;
+        Ok(())
+    }
+
+    /// Clean up empty directories within a given path
+    fn cleanup_empty_directories_in<'a>(
+        &'a self,
+        base_path: &'a Path,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SyncError>> + 'a + Send>> {
+        Box::pin(async move {
+            let mut entries = fs::read_dir(base_path).await?;
+            let mut subdirs = Vec::new();
+
+            while let Some(entry) = entries.next_entry().await? {
+                if entry.file_type().await?.is_dir() {
+                    subdirs.push(entry.path());
+                }
+            }
+
+            // Recursively clean subdirectories first
+            for subdir in subdirs {
+                let _ = self.cleanup_empty_directories_in(&subdir).await;
+
+                // After cleaning subdirectory, check if it's now empty
+                if let Ok(mut sub_entries) = fs::read_dir(&subdir).await {
+                    if sub_entries.next_entry().await?.is_none() {
+                        // Directory is empty, remove it
+                        let _ = fs::remove_dir(&subdir).await;
+                    }
+                }
+            }
+
+            Ok(())
+        })
+    }
 }
 
 #[cfg(test)]
@@ -897,5 +1195,215 @@ mod tests {
         assert!(filename.ends_with(".mp3"));
         // Should include date in YYYY-MM-DD format
         assert!(filename.contains(&Utc::now().format("%Y-%m-%d").to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_sync_report_creation() {
+        let report = SyncReport::new();
+        assert_eq!(report.files_copied.len(), 0);
+        assert_eq!(report.files_deleted.len(), 0);
+        assert_eq!(report.files_skipped.len(), 0);
+        assert_eq!(report.errors.len(), 0);
+        assert!(report.is_success());
+        assert_eq!(report.total_operations(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_sync_to_device_invalid_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+
+        let invalid_path = PathBuf::from("/nonexistent/path");
+        let result = manager.sync_to_device(invalid_path, true, false).await;
+        
+        assert!(result.is_err());
+        match result {
+            Err(SyncError::DevicePathInvalid(_)) => {
+                // Expected error
+            }
+            _ => panic!("Expected DevicePathInvalid error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sync_to_device_dry_run() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        // Create a test audio file in downloads
+        let podcast_dir = downloads_dir.join("Test Podcast");
+        fs::create_dir_all(&podcast_dir).await.unwrap();
+        let test_file = podcast_dir.join("episode1.mp3");
+        fs::write(&test_file, b"test audio content").await.unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+
+        // Create device directory
+        let device_path = temp_dir.path().join("device");
+        fs::create_dir_all(&device_path).await.unwrap();
+
+        // Run sync in dry-run mode
+        let report = manager.sync_to_device(device_path.clone(), false, true).await.unwrap();
+
+        // Verify dry-run results
+        assert_eq!(report.files_copied.len(), 1);
+        assert_eq!(report.files_deleted.len(), 0);
+        assert_eq!(report.errors.len(), 0);
+        assert!(report.is_success());
+
+        // Verify no files were actually copied
+        let device_podcast_dir = device_path.join("Test Podcast");
+        assert!(!device_podcast_dir.exists());
+    }
+
+    #[tokio::test]
+    async fn test_sync_to_device_copy_new_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        // Create test audio files in downloads
+        let podcast_dir = downloads_dir.join("Test Podcast");
+        fs::create_dir_all(&podcast_dir).await.unwrap();
+        let test_file1 = podcast_dir.join("episode1.mp3");
+        let test_file2 = podcast_dir.join("episode2.mp3");
+        fs::write(&test_file1, b"test audio content 1").await.unwrap();
+        fs::write(&test_file2, b"test audio content 2").await.unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+
+        // Create device directory
+        let device_path = temp_dir.path().join("device");
+        fs::create_dir_all(&device_path).await.unwrap();
+
+        // Run sync
+        let report = manager.sync_to_device(device_path.clone(), false, false).await.unwrap();
+
+        // Verify sync results
+        assert_eq!(report.files_copied.len(), 2);
+        assert_eq!(report.files_deleted.len(), 0);
+        assert_eq!(report.errors.len(), 0);
+        assert!(report.is_success());
+
+        // Verify files were actually copied
+        let device_podcast_dir = device_path.join("Test Podcast");
+        assert!(device_podcast_dir.exists());
+        assert!(device_podcast_dir.join("episode1.mp3").exists());
+        assert!(device_podcast_dir.join("episode2.mp3").exists());
+    }
+
+    #[tokio::test]
+    async fn test_sync_to_device_skip_identical_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        // Create test audio file in downloads
+        let podcast_dir = downloads_dir.join("Test Podcast");
+        fs::create_dir_all(&podcast_dir).await.unwrap();
+        let test_file = podcast_dir.join("episode1.mp3");
+        let content = b"test audio content";
+        fs::write(&test_file, content).await.unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+
+        // Create device directory with same file
+        let device_path = temp_dir.path().join("device");
+        let device_podcast_dir = device_path.join("Test Podcast");
+        fs::create_dir_all(&device_podcast_dir).await.unwrap();
+        let device_file = device_podcast_dir.join("episode1.mp3");
+        fs::write(&device_file, content).await.unwrap();
+
+        // Run sync
+        let report = manager.sync_to_device(device_path.clone(), false, false).await.unwrap();
+
+        // Verify file was skipped
+        assert_eq!(report.files_copied.len(), 0);
+        assert_eq!(report.files_skipped.len(), 1);
+        assert_eq!(report.files_deleted.len(), 0);
+        assert_eq!(report.errors.len(), 0);
+        assert!(report.is_success());
+    }
+
+    #[tokio::test]
+    async fn test_sync_to_device_delete_orphans() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        // Create test audio file in downloads
+        let podcast_dir = downloads_dir.join("Test Podcast");
+        fs::create_dir_all(&podcast_dir).await.unwrap();
+        let test_file = podcast_dir.join("episode1.mp3");
+        fs::write(&test_file, b"test audio content").await.unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+
+        // Create device directory with extra file not on PC
+        let device_path = temp_dir.path().join("device");
+        let device_podcast_dir = device_path.join("Test Podcast");
+        fs::create_dir_all(&device_podcast_dir).await.unwrap();
+        let orphan_file = device_podcast_dir.join("old_episode.mp3");
+        fs::write(&orphan_file, b"old content").await.unwrap();
+
+        // Run sync with delete_orphans=true
+        let report = manager.sync_to_device(device_path.clone(), true, false).await.unwrap();
+
+        // Verify orphan was deleted
+        assert_eq!(report.files_copied.len(), 1); // episode1.mp3 copied
+        assert_eq!(report.files_deleted.len(), 1); // old_episode.mp3 deleted
+        assert_eq!(report.errors.len(), 0);
+        assert!(report.is_success());
+        assert!(!orphan_file.exists());
+    }
+
+    #[tokio::test]
+    async fn test_sync_to_device_update_changed_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        // Create test audio file in downloads
+        let podcast_dir = downloads_dir.join("Test Podcast");
+        fs::create_dir_all(&podcast_dir).await.unwrap();
+        let test_file = podcast_dir.join("episode1.mp3");
+        let new_content = b"updated audio content with more data";
+        fs::write(&test_file, new_content).await.unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+
+        // Create device directory with old version of file (different size)
+        let device_path = temp_dir.path().join("device");
+        let device_podcast_dir = device_path.join("Test Podcast");
+        fs::create_dir_all(&device_podcast_dir).await.unwrap();
+        let device_file = device_podcast_dir.join("episode1.mp3");
+        fs::write(&device_file, b"old content").await.unwrap();
+
+        // Run sync
+        let report = manager.sync_to_device(device_path.clone(), false, false).await.unwrap();
+
+        // Verify file was updated
+        assert_eq!(report.files_copied.len(), 1);
+        assert_eq!(report.files_skipped.len(), 0);
+        assert_eq!(report.errors.len(), 0);
+        assert!(report.is_success());
+
+        // Verify content was updated
+        let device_content = fs::read(&device_file).await.unwrap();
+        assert_eq!(device_content, new_content);
     }
 }

@@ -312,32 +312,16 @@ impl UIApp {
             let _ = self.buffer_manager.switch_to_buffer(&buffer_id.clone());
         }
 
-        // Load initial podcast data
-        if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
-            if let Err(e) = podcast_buffer.load_podcasts().await {
-                self.show_error(format!("Failed to load podcasts: {}", e));
-            }
-        }
-
-        // Load initial downloads data
-        if let Some(downloads_buffer) = self.buffer_manager.get_downloads_buffer_mut() {
-            if let Err(e) = downloads_buffer.refresh_downloads().await {
-                self.show_error(format!("Failed to load downloads: {}", e));
-            }
-        }
-
-        // Load initial What's New data
-        if let Some(whats_new_buffer) = self.buffer_manager.get_whats_new_buffer_mut() {
-            if let Err(e) = whats_new_buffer.load_episodes().await {
-                self.show_error(format!("Failed to load What's New episodes: {}", e));
-            }
-        }
-
         // Update status bar
         self.update_status_bar();
 
         // Show welcome message
         self.show_message("Welcome to Podcast TUI! Press F1 or ? for help.".to_string());
+
+        // Trigger background loading of buffer data (non-blocking)
+        self.trigger_background_refresh(crate::ui::events::BufferRefreshType::PodcastList);
+        self.trigger_background_refresh(crate::ui::events::BufferRefreshType::Downloads);
+        self.trigger_background_refresh(crate::ui::events::BufferRefreshType::WhatsNew);
 
         Ok(())
     }

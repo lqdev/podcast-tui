@@ -165,22 +165,8 @@ impl UIApp {
             let _ = buffer_manager.switch_to_buffer(&buffer_id.clone());
         }
 
-        // Load data with progress updates
-        status_tx.send(crate::InitStatus::LoadingPodcasts).ok();
-        if let Some(podcast_buffer) = buffer_manager.get_podcast_list_buffer_mut() {
-            let _ = podcast_buffer.load_podcasts().await;
-        }
-
-        status_tx.send(crate::InitStatus::LoadingDownloads).ok();
-        if let Some(downloads_buffer) = buffer_manager.get_downloads_buffer_mut() {
-            let _ = downloads_buffer.refresh_downloads().await;
-        }
-
-        status_tx.send(crate::InitStatus::LoadingWhatsNew).ok();
-        if let Some(whats_new_buffer) = buffer_manager.get_whats_new_buffer_mut() {
-            let _ = whats_new_buffer.load_episodes().await;
-        }
-
+        // Skip loading data during initialization - it will be loaded asynchronously in the background
+        // after the UI is displayed to provide instant startup
         status_tx.send(crate::InitStatus::Complete).ok();
 
         Ok(Self {
@@ -231,6 +217,11 @@ impl UIApp {
             // Buffers already loaded, just update status and show welcome
             self.update_status_bar();
             self.show_message("Welcome to Podcast TUI! Press F1 or ? for help.".to_string());
+            
+            // Trigger background loading of buffer data (non-blocking)
+            self.trigger_background_refresh(crate::ui::events::BufferRefreshType::PodcastList);
+            self.trigger_background_refresh(crate::ui::events::BufferRefreshType::Downloads);
+            self.trigger_background_refresh(crate::ui::events::BufferRefreshType::WhatsNew);
         }
 
         // Main event loop

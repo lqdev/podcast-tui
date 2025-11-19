@@ -89,31 +89,6 @@ impl SyncBuffer {
         }
     }
 
-    /// Get summary of last sync
-    fn get_last_sync_summary(&self) -> String {
-        if let Some(ref entry) = self.last_sync {
-            let status = if entry.report.is_success() {
-                "✅ Success"
-            } else {
-                "❌ Failed"
-            };
-
-            let mode = if entry.dry_run { " (Dry Run)" } else { "" };
-
-            format!(
-                "{}{} - {} copied, {} deleted, {} skipped, {} errors",
-                status,
-                mode,
-                entry.report.files_copied.len(),
-                entry.report.files_deleted.len(),
-                entry.report.files_skipped.len(),
-                entry.report.errors.len()
-            )
-        } else {
-            "No sync performed yet".to_string()
-        }
-    }
-
     /// Move selection up
     fn select_previous(&mut self) {
         if self.selected_index > 0 {

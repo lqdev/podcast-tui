@@ -224,6 +224,9 @@ impl UIApp {
             self.trigger_background_refresh(crate::ui::events::BufferRefreshType::WhatsNew);
         }
 
+        // Perform initial render to display UI immediately (before event loop)
+        terminal.draw(|f| self.render(f)).map_err(|e| UIError::Render(e.to_string()))?;
+
         // Main event loop
         let result = loop {
             // Wait for events or timeout

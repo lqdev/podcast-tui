@@ -389,6 +389,14 @@ See [full roadmap](docs/ROADMAP.md) for detailed planning.
 - Windows x64 builds require MSVC Build Tools
 - The `ring` dependency (used by reqwest) has specific compiler requirements
 
+**Windows SmartScreen Warning:**
+- ⚠️ Windows may show "Unknown Publisher" warnings for downloaded binaries
+- This is expected until we acquire a code signing certificate
+- **The app is safe!** Always verify SHA256 checksums provided with releases
+- Click "More info" → "Run anyway" to bypass the warning
+- See [Windows SmartScreen Warning Guide](docs/WINDOWS_SMARTSCREEN_WARNING.md) for details
+- Infrastructure for code signing is in place (see [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md) for maintainers)
+
 **Current Limitations:**
 - Download concurrency configurable (default 2-3)
 - RSS feed parsing works with most standard feeds

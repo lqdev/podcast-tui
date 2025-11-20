@@ -221,19 +221,39 @@ $targetBinaryPathNoExt = "target\$target\release\podcast-tui"
 $binaryPath = "target\release\podcast-tui.exe"
 $binaryPathNoExt = "target\release\podcast-tui"
 
+$sourceBinary = $null
 if (Test-Path $targetBinaryPath) {
-    Copy-Item $targetBinaryPath $archiveDir
+    $sourceBinary = $targetBinaryPath
 } elseif (Test-Path $targetBinaryPathNoExt) {
-    Copy-Item $targetBinaryPathNoExt (Join-Path $archiveDir "podcast-tui.exe")
+    $sourceBinary = $targetBinaryPathNoExt
 } elseif (Test-Path $binaryPath) {
-    Copy-Item $binaryPath $archiveDir
+    $sourceBinary = $binaryPath
 } elseif (Test-Path $binaryPathNoExt) {
-    Copy-Item $binaryPathNoExt (Join-Path $archiveDir "podcast-tui.exe")
+    $sourceBinary = $binaryPathNoExt
 } else {
     Write-Error-Custom "Could not find podcast-tui binary in target directories"
     Write-Error-Custom "Checked: $targetBinaryPath, $targetBinaryPathNoExt, $binaryPath, $binaryPathNoExt"
     exit 1
 }
+
+# Sign binary if certificate is available (optional, won't fail if no cert)
+$signScript = "scripts\sign-windows-binary.ps1"
+if (Test-Path $signScript) {
+    Write-Status "Checking for code signing certificate..."
+    try {
+        & $signScript -BinaryPath $sourceBinary -SkipIfNoCert
+        if ($LASTEXITCODE -eq 0) {
+            Write-Status "✓ Binary signing completed"
+        }
+    } catch {
+        Write-Warning-Custom "Code signing skipped: $_"
+    }
+} else {
+    Write-Warning-Custom "Code signing script not found, skipping signing"
+}
+
+# Copy signed binary to archive directory
+Copy-Item $sourceBinary (Join-Path $archiveDir "podcast-tui.exe")
 
 # Copy documentation files if they exist
 if (Test-Path "README.md") {

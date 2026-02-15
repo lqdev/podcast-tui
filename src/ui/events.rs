@@ -265,6 +265,15 @@ pub enum AppEvent {
         device_path: std::path::PathBuf,
         error: String,
     },
+
+    /// Download cleanup completed (age-based cleanup)
+    DownloadCleanupCompleted {
+        deleted_count: usize,
+        duration_label: String,
+    },
+
+    /// Download cleanup failed
+    DownloadCleanupFailed { error: String },
 }
 
 /// Types of buffer refresh operations

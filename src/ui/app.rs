@@ -1013,6 +1013,29 @@ impl UIApp {
             AppEvent::DeviceSyncFailed { device_path, error } => {
                 self.show_error(format!("Device sync to {} failed: {}", device_path.display(), error));
             }
+            AppEvent::DownloadCleanupCompleted {
+                deleted_count,
+                duration_label,
+            } => {
+                self.trigger_background_refresh(BufferRefreshType::AllEpisodeBuffers);
+                self.trigger_background_refresh(BufferRefreshType::Downloads);
+                if deleted_count > 0 {
+                    self.show_message(format!(
+                        "Cleaned up {} episode(s) older than {}",
+                        deleted_count, duration_label
+                    ));
+                } else {
+                    self.show_message(format!(
+                        "No downloaded episodes older than {}",
+                        duration_label
+                    ));
+                }
+            }
+            AppEvent::DownloadCleanupFailed { error } => {
+                self.trigger_background_refresh(BufferRefreshType::AllEpisodeBuffers);
+                self.trigger_background_refresh(BufferRefreshType::Downloads);
+                self.show_error(format!("Download cleanup failed: {}", error));
+            }
         }
         Ok(())
     }

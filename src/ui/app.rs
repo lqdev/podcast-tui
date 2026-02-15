@@ -1361,6 +1361,11 @@ impl UIApp {
             // OPML commands
             "import-opml".to_string(),
             "export-opml".to_string(),
+            // Sync commands
+            "sync".to_string(),
+            "sync-device".to_string(),
+            "sync-dry-run".to_string(),
+            "sync-preview".to_string(),
         ]
     }
 

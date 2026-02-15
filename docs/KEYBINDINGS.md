@@ -94,6 +94,10 @@ This document outlines the keybinding system for the Podcast TUI application.
 #### Download Commands
 - `delete-all-downloads` / `clean-downloads` - Delete ALL downloaded episodes
 
+#### Sync Commands
+- `sync [path]` / `sync-device [path]` - Sync downloaded episodes to external device
+- `sync-dry-run [path]` / `sync-preview [path]` - Preview sync changes without applying them
+
 ### Auto-Completion Features
 
 The command prompt supports intelligent auto-completion:

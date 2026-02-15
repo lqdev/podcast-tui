@@ -246,6 +246,8 @@ sudo pacman -S base-devel rust openssl
 - `Shift+D` - Download episode
 - `Shift+X` - Delete downloaded file
 - `Ctrl+x` - Delete ALL downloads
+- `:clean-older-than <dur>` - Delete downloads older than duration (e.g., `7d`, `2w`)
+- `:cleanup <dur>` - Alias for clean-older-than
 
 **Help:**
 - `F1` or `?` or `h` - Show help

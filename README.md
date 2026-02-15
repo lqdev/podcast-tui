@@ -189,6 +189,8 @@ See [assets/README.md](assets/README.md) for more details about the icon design 
 - `Shift+D` - Download episode (works in both episode list and episode detail buffers)
 - `Shift+X` - Delete downloaded file for selected episode
 - `Ctrl+x` - Delete ALL downloaded episodes and clean up
+- `:clean-older-than <duration>` - Delete downloads older than duration (e.g., `7d`, `2w`, `1m`)
+- `:cleanup <duration>` - Alias for clean-older-than
 
 ### Buffer Management
 - `F2` - Switch to podcast list

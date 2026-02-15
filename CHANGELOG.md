@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Help Buffer**: Added DOWNLOAD CLEANUP section with command reference
 - **Documentation**: Updated `docs/KEYBINDINGS.md` with cleanup command reference
 
+### Fixed
+- **Minibuffer prompt race condition**: Commands invoked via `:` command prompt (e.g., `:clean-older-than`, `:delete-all-downloads`) had their confirmation prompts immediately wiped by an unconditional `minibuffer.clear()` — prompts now persist correctly
+- **AllEpisodeBuffers refresh error**: `trigger_background_refresh(AllEpisodeBuffers)` was a stub that always sent an error ("Buffer refresh failed: Use individual episode buffer refresh") — now properly iterates open episode buffers and refreshes each one individually
+
 **Device Sync for MP3 Players - November 2025**
 - **Metadata-Based Device Sync**: Sync downloaded episodes to external MP3 players or USB devices
   - Compare files using metadata only (filename + file size) for fast, reliable sync

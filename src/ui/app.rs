@@ -2389,19 +2389,25 @@ impl UIApp {
                 });
             }
             BufferRefreshType::AllEpisodeBuffers => {
-                // For all episode buffers, we'll just trigger individual refreshes
-                // This is simpler and avoids complex coordination
-                let app_event_tx = self.app_event_tx.clone();
-
-                tokio::spawn(async move {
-                    // Signal that refresh is complete (no data to send)
-                    let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
-                        buffer_type: BufferRefreshType::AllEpisodeBuffers,
-                        data: BufferRefreshData::Error {
-                            message: "Use individual episode buffer refresh".to_string(),
-                        },
+                // Collect podcast IDs from all open episode buffers, then
+                // trigger an individual refresh for each one.
+                let buffer_ids = self.buffer_manager.get_buffer_ids();
+                let mut podcast_ids: Vec<crate::storage::PodcastId> = Vec::new();
+                for buffer_id in &buffer_ids {
+                    if buffer_id.starts_with("episodes-") {
+                        if let Some(episode_buffer) = self
+                            .buffer_manager
+                            .get_episode_list_buffer_mut_by_id(buffer_id)
+                        {
+                            podcast_ids.push(episode_buffer.podcast_id.clone());
+                        }
+                    }
+                }
+                for podcast_id in podcast_ids {
+                    self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers {
+                        podcast_id,
                     });
-                });
+                }
             }
         }
     }

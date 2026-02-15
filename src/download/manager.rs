@@ -458,6 +458,75 @@ impl<S: Storage> DownloadManager<S> {
         Ok(deleted_count)
     }
 
+    /// Delete downloaded episodes whose files are older than `max_age_days` days.
+    ///
+    /// Convenience wrapper that converts days to hours and delegates to
+    /// `cleanup_old_downloads_hours`. Uses file modification time to determine age.
+    /// Returns the number of episodes cleaned up.
+    pub async fn cleanup_old_downloads(&self, max_age_days: u32) -> Result<usize, DownloadError> {
+        self.cleanup_old_downloads_hours((max_age_days as u64) * 24)
+            .await
+    }
+
+    /// Delete downloaded episodes whose files are older than `max_age_hours` hours.
+    ///
+    /// Uses file modification time to determine age. Episodes whose files are
+    /// older than the cutoff are deleted and their status is reset to `New`.
+    /// Returns the number of episodes cleaned up.
+    pub async fn cleanup_old_downloads_hours(
+        &self,
+        max_age_hours: u64,
+    ) -> Result<usize, DownloadError> {
+        let cutoff = std::time::SystemTime::now()
+            - std::time::Duration::from_secs(max_age_hours * 3600);
+        let mut deleted_count: usize = 0;
+
+        let podcast_ids = self
+            .storage
+            .list_podcasts()
+            .await
+            .map_err(|e| DownloadError::Storage(e.to_string()))?;
+
+        for podcast_id in &podcast_ids {
+            let episodes = self
+                .storage
+                .load_episodes(podcast_id)
+                .await
+                .map_err(|e| DownloadError::Storage(e.to_string()))?;
+
+            for mut episode in episodes {
+                if !matches!(episode.status, EpisodeStatus::Downloaded) {
+                    continue;
+                }
+                if let Some(ref local_path) = episode.local_path {
+                    if local_path.exists() {
+                        if let Ok(metadata) = fs::metadata(local_path).await {
+                            if let Ok(modified) = metadata.modified() {
+                                if modified < cutoff {
+                                    // File is old enough — delete it
+                                    if let Err(_e) = fs::remove_file(local_path).await {
+                                        // Skip files we can't delete
+                                        continue;
+                                    }
+                                    episode.status = EpisodeStatus::New;
+                                    episode.local_path = None;
+                                    let _ =
+                                        self.storage.save_episode(podcast_id, &episode).await;
+                                    deleted_count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Clean up any empty directories left behind
+        self.cleanup_empty_directories().await?;
+
+        Ok(deleted_count)
+    }
+
     /// Clean up empty podcast directories in the downloads folder
     async fn cleanup_empty_directories(&self) -> Result<(), DownloadError> {
         if !self.downloads_dir.exists() {

@@ -2610,7 +2610,12 @@ impl UIApp {
             }
         }
 
-        self.minibuffer.clear();
+        // Only clear the minibuffer if execute_command_direct didn't set up a new prompt.
+        // Commands like clean-older-than and delete-all-downloads set the minibuffer to
+        // a confirmation prompt, which would be wiped out by an unconditional clear().
+        if !self.minibuffer.is_input_mode() {
+            self.minibuffer.clear();
+        }
     }
 
     /// Handle key events when minibuffer is in input mode

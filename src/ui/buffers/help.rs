@@ -127,6 +127,8 @@ impl HelpBuffer {
             "        Config: sync_device_path, sync_delete_orphans in config.json".to_string(),
             "".to_string(),
             "DOWNLOAD CLEANUP:".to_string(),
+            "  :delete-all-downloads    Delete ALL downloaded episodes".to_string(),
+            "  :clean-downloads         Alias for delete-all-downloads".to_string(),
             "  :clean-older-than <dur>  Delete downloads older than duration".to_string(),
             "  :cleanup <dur>           Alias for clean-older-than".to_string(),
             "                           Formats: 12h, 7d, 2w, 1m".to_string(),

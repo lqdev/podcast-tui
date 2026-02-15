@@ -91,10 +91,8 @@ This document outlines the keybinding system for the Podcast TUI application.
 - `import-opml [path/url]` - Import subscriptions from OPML file or URL
 - `export-opml [path]` - Export subscriptions to OPML file
 
-#### Download Commands
-- `delete-all-downloads` / `clean-downloads` - Delete ALL downloaded episodes
-
-#### Cleanup Commands
+#### Download & Cleanup Commands
+- `delete-all-downloads` / `clean-downloads` - Delete ALL downloaded episodes (with confirmation)
 - `clean-older-than <duration>` / `cleanup <duration>` - Delete downloads older than duration
   - Duration formats: `12h` (hours), `7d` (days), `2w` (weeks), `1m` (months)
   - Default unit is days if no suffix (e.g., `30` = 30 days)

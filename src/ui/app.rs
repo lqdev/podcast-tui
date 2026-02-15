@@ -83,6 +83,9 @@ pub struct UIApp {
     /// Whether we're pending bulk deletion confirmation
     pending_bulk_deletion: bool,
 
+    /// Pending cleanup duration in hours (set when user confirms age-based cleanup)
+    pending_cleanup_hours: Option<u64>,
+
     /// Last render time for performance tracking
     last_render: Instant,
 
@@ -126,6 +129,7 @@ impl UIApp {
             frame_count: 0,
             pending_deletion: None,
             pending_bulk_deletion: false,
+            pending_cleanup_hours: None,
         })
     }
 
@@ -186,6 +190,7 @@ impl UIApp {
             frame_count: 0,
             pending_deletion: None,
             pending_bulk_deletion: false,
+            pending_cleanup_hours: None,
         })
     }
 
@@ -294,6 +299,24 @@ impl UIApp {
         // Clean up any stuck downloads on startup
         if let Err(e) = self.download_manager.cleanup_stuck_downloads().await {
             self.show_error(format!("Failed to cleanup stuck downloads: {}", e));
+        }
+
+        // Auto-cleanup old downloads on startup if configured
+        if let Some(days) = self.config.downloads.cleanup_after_days {
+            if days > 0 {
+                match self.download_manager.cleanup_old_downloads(days).await {
+                    Ok(0) => {} // Nothing to clean, stay silent
+                    Ok(count) => {
+                        self.show_message(format!(
+                            "Auto-cleanup: deleted {} episode(s) older than {} days",
+                            count, days
+                        ));
+                    }
+                    Err(e) => {
+                        self.show_error(format!("Auto-cleanup failed: {}", e));
+                    }
+                }
+            }
         }
 
         // Create initial buffers
@@ -1013,6 +1036,29 @@ impl UIApp {
             AppEvent::DeviceSyncFailed { device_path, error } => {
                 self.show_error(format!("Device sync to {} failed: {}", device_path.display(), error));
             }
+            AppEvent::DownloadCleanupCompleted {
+                deleted_count,
+                duration_label,
+            } => {
+                self.trigger_background_refresh(BufferRefreshType::AllEpisodeBuffers);
+                self.trigger_background_refresh(BufferRefreshType::Downloads);
+                if deleted_count > 0 {
+                    self.show_message(format!(
+                        "Cleaned up {} episode(s) older than {}",
+                        deleted_count, duration_label
+                    ));
+                } else {
+                    self.show_message(format!(
+                        "No downloaded episodes older than {}",
+                        duration_label
+                    ));
+                }
+            }
+            AppEvent::DownloadCleanupFailed { error } => {
+                self.trigger_background_refresh(BufferRefreshType::AllEpisodeBuffers);
+                self.trigger_background_refresh(BufferRefreshType::Downloads);
+                self.show_error(format!("Download cleanup failed: {}", error));
+            }
         }
         Ok(())
     }
@@ -1166,6 +1212,38 @@ impl UIApp {
                     let default_path = self.get_default_sync_path();
                     self.minibuffer.set_content(MinibufferContent::Input {
                         prompt: format!("Dry run sync to (default: {}): ", default_path),
+                        input: String::new(),
+                    });
+                    Ok(true)
+                }
+            }
+            "clean-older-than" | "cleanup" => {
+                if parts.len() > 1 {
+                    let duration_str = parts[1];
+                    if let Some(total_hours) =
+                        crate::utils::time::parse_cleanup_duration(duration_str)
+                    {
+                        let label = crate::utils::time::format_cleanup_duration(total_hours);
+                        self.minibuffer.set_content(MinibufferContent::Input {
+                            prompt: format!(
+                                "Delete downloaded episodes older than {}? (y/n) ",
+                                label
+                            ),
+                            input: String::new(),
+                        });
+                        self.pending_cleanup_hours = Some(total_hours);
+                    } else {
+                        self.show_error(format!(
+                            "Invalid duration: '{}'. Use e.g., 7d, 2w, 1m, 12h",
+                            duration_str
+                        ));
+                    }
+                    Ok(true)
+                } else {
+                    // Prompt for duration
+                    self.minibuffer.set_content(MinibufferContent::Input {
+                        prompt: "Delete downloads older than (e.g., 7d, 2w, 1m, 12h): "
+                            .to_string(),
                         input: String::new(),
                     });
                     Ok(true)
@@ -1338,6 +1416,9 @@ impl UIApp {
             "sync-device".to_string(),
             "sync-dry-run".to_string(),
             "sync-preview".to_string(),
+            // Cleanup commands
+            "clean-older-than".to_string(),
+            "cleanup".to_string(),
         ]
     }
 
@@ -1790,6 +1871,37 @@ impl UIApp {
                     let _ = app_event_tx.send(AppEvent::EpisodeDownloadDeletionFailed {
                         podcast_id: podcast_id_clone,
                         episode_id: episode_id_clone,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    /// Trigger async cleanup of old downloads
+    fn trigger_async_cleanup_downloads(&mut self, max_age_hours: u64, duration_label: String) {
+        let download_manager = self.download_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let label = duration_label.clone();
+
+        self.show_message(format!(
+            "Cleaning up downloads older than {}...",
+            duration_label
+        ));
+
+        tokio::spawn(async move {
+            match download_manager
+                .cleanup_old_downloads_hours(max_age_hours)
+                .await
+            {
+                Ok(deleted_count) => {
+                    let _ = app_event_tx.send(AppEvent::DownloadCleanupCompleted {
+                        deleted_count,
+                        duration_label: label,
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::DownloadCleanupFailed {
                         error: e.to_string(),
                     });
                 }
@@ -2277,19 +2389,25 @@ impl UIApp {
                 });
             }
             BufferRefreshType::AllEpisodeBuffers => {
-                // For all episode buffers, we'll just trigger individual refreshes
-                // This is simpler and avoids complex coordination
-                let app_event_tx = self.app_event_tx.clone();
-
-                tokio::spawn(async move {
-                    // Signal that refresh is complete (no data to send)
-                    let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
-                        buffer_type: BufferRefreshType::AllEpisodeBuffers,
-                        data: BufferRefreshData::Error {
-                            message: "Use individual episode buffer refresh".to_string(),
-                        },
+                // Collect podcast IDs from all open episode buffers, then
+                // trigger an individual refresh for each one.
+                let buffer_ids = self.buffer_manager.get_buffer_ids();
+                let mut podcast_ids: Vec<crate::storage::PodcastId> = Vec::new();
+                for buffer_id in &buffer_ids {
+                    if buffer_id.starts_with("episodes-") {
+                        if let Some(episode_buffer) = self
+                            .buffer_manager
+                            .get_episode_list_buffer_mut_by_id(buffer_id)
+                        {
+                            podcast_ids.push(episode_buffer.podcast_id.clone());
+                        }
+                    }
+                }
+                for podcast_id in podcast_ids {
+                    self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers {
+                        podcast_id,
                     });
-                });
+                }
             }
         }
     }
@@ -2402,6 +2520,39 @@ impl UIApp {
                 // This is a device sync dry run
                 self.trigger_async_device_sync(input.to_string(), false, true);
                 return;
+            } else if prompt.starts_with("Delete downloaded episodes older than") {
+                // This is a cleanup confirmation (y/n)
+                if input.to_lowercase() == "y" || input.to_lowercase() == "yes" {
+                    if let Some(hours) = self.pending_cleanup_hours.take() {
+                        let label = crate::utils::time::format_cleanup_duration(hours);
+                        self.trigger_async_cleanup_downloads(hours, label);
+                    }
+                } else {
+                    self.pending_cleanup_hours = None;
+                    self.show_message("Download cleanup cancelled".to_string());
+                }
+                return;
+            } else if prompt.starts_with("Delete downloads older than") {
+                // This is a duration input prompt (no argument was provided)
+                if let Some(total_hours) =
+                    crate::utils::time::parse_cleanup_duration(input)
+                {
+                    let label = crate::utils::time::format_cleanup_duration(total_hours);
+                    self.minibuffer.set_content(MinibufferContent::Input {
+                        prompt: format!(
+                            "Delete downloaded episodes older than {}? (y/n) ",
+                            label
+                        ),
+                        input: String::new(),
+                    });
+                    self.pending_cleanup_hours = Some(total_hours);
+                } else {
+                    self.show_error(format!(
+                        "Invalid duration: '{}'. Use e.g., 7d, 2w, 1m, 12h",
+                        input
+                    ));
+                }
+                return;
             }
         }
 
@@ -2465,7 +2616,12 @@ impl UIApp {
             }
         }
 
-        self.minibuffer.clear();
+        // Only clear the minibuffer if execute_command_direct didn't set up a new prompt.
+        // Commands like clean-older-than and delete-all-downloads set the minibuffer to
+        // a confirmation prompt, which would be wiped out by an unconditional clear().
+        if !self.minibuffer.is_input_mode() {
+            self.minibuffer.clear();
+        }
     }
 
     /// Handle key events when minibuffer is in input mode
@@ -2495,6 +2651,7 @@ impl UIApp {
                 self.minibuffer.clear();
                 self.pending_deletion = None;
                 self.pending_bulk_deletion = false;
+                self.pending_cleanup_hours = None;
                 Ok(true)
             }
             // Backspace

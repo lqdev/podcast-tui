@@ -458,6 +458,114 @@ impl<S: Storage> DownloadManager<S> {
         Ok(deleted_count)
     }
 
+    /// Delete downloaded episodes whose files are older than `max_age_days` days.
+    ///
+    /// Convenience wrapper that converts days to hours and delegates to
+    /// `cleanup_old_downloads_hours`. Uses file modification time to determine age.
+    /// Returns the number of episodes cleaned up.
+    pub async fn cleanup_old_downloads(&self, max_age_days: u32) -> Result<usize, DownloadError> {
+        self.cleanup_old_downloads_hours((max_age_days as u64) * 24)
+            .await
+    }
+
+    /// Delete downloaded episodes whose files are older than `max_age_hours` hours.
+    ///
+    /// Uses file modification time to determine age. Episodes whose files are
+    /// older than the cutoff are deleted and their status is reset to `New`.
+    /// Returns the number of episodes cleaned up.
+    pub async fn cleanup_old_downloads_hours(
+        &self,
+        max_age_hours: u64,
+    ) -> Result<usize, DownloadError> {
+        if max_age_hours == 0 {
+            return Err(DownloadError::Storage(
+                "max_age_hours must be greater than 0".to_string(),
+            ));
+        }
+
+        let seconds = max_age_hours.checked_mul(3600).ok_or_else(|| {
+            DownloadError::Storage("max_age_hours is too large".to_string())
+        })?;
+
+        let duration = std::time::Duration::from_secs(seconds);
+        let cutoff = std::time::SystemTime::now().checked_sub(duration).ok_or_else(|| {
+            DownloadError::Storage(
+                "max_age_hours is too large relative to system time".to_string(),
+            )
+        })?;
+
+        let mut deleted_count: usize = 0;
+        let mut failed_count: usize = 0;
+
+        let podcast_ids = self
+            .storage
+            .list_podcasts()
+            .await
+            .map_err(|e| DownloadError::Storage(e.to_string()))?;
+
+        for podcast_id in &podcast_ids {
+            let episodes = self
+                .storage
+                .load_episodes(podcast_id)
+                .await
+                .map_err(|e| DownloadError::Storage(e.to_string()))?;
+
+            for mut episode in episodes {
+                if !matches!(episode.status, EpisodeStatus::Downloaded) {
+                    continue;
+                }
+                if let Some(ref local_path) = episode.local_path {
+                    if local_path.exists() {
+                        if let Ok(metadata) = fs::metadata(local_path).await {
+                            if let Ok(modified) = metadata.modified() {
+                                if modified < cutoff {
+                                    // File is old enough — delete it
+                                    match fs::remove_file(local_path).await {
+                                        Ok(_) => {
+                                            episode.status = EpisodeStatus::New;
+                                            episode.local_path = None;
+                                            if let Err(_) =
+                                                self.storage.save_episode(podcast_id, &episode).await
+                                            {
+                                                failed_count += 1;
+                                            }
+                                            deleted_count += 1;
+                                        }
+                                        Err(_) => {
+                                            failed_count += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // File doesn't exist, but episode thinks it's downloaded
+                        // Clean up the stale status
+                        episode.status = EpisodeStatus::New;
+                        episode.local_path = None;
+                        if let Err(_) =
+                            self.storage.save_episode(podcast_id, &episode).await
+                        {
+                            failed_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Clean up any empty directories left behind
+        self.cleanup_empty_directories().await?;
+
+        if failed_count > 0 {
+            return Err(DownloadError::Storage(format!(
+                "Cleaned up {} files, but {} operations failed",
+                deleted_count, failed_count
+            )));
+        }
+
+        Ok(deleted_count)
+    }
+
     /// Clean up empty podcast directories in the downloads folder
     async fn cleanup_empty_directories(&self) -> Result<(), DownloadError> {
         if !self.downloads_dir.exists() {

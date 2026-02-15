@@ -104,21 +104,21 @@ pub fn parse_cleanup_duration(input: &str) -> Option<u64> {
 
 /// Format a duration in hours back to human-readable form for display.
 pub fn format_cleanup_duration(total_hours: u64) -> String {
-    if total_hours % (24 * 30) == 0 && total_hours / (24 * 30) > 0 {
+    if total_hours.is_multiple_of(24 * 30) && total_hours / (24 * 30) > 0 {
         let months = total_hours / (24 * 30);
         if months == 1 {
             "1 month".to_string()
         } else {
             format!("{} months", months)
         }
-    } else if total_hours % (24 * 7) == 0 && total_hours / (24 * 7) > 0 {
+    } else if total_hours.is_multiple_of(24 * 7) && total_hours / (24 * 7) > 0 {
         let weeks = total_hours / (24 * 7);
         if weeks == 1 {
             "1 week".to_string()
         } else {
             format!("{} weeks", weeks)
         }
-    } else if total_hours % 24 == 0 && total_hours / 24 > 0 {
+    } else if total_hours.is_multiple_of(24) && total_hours / 24 > 0 {
         let days = total_hours / 24;
         if days == 1 {
             "1 day".to_string()

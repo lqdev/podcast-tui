@@ -1,6 +1,7 @@
-// Integration test for sync commands
+// Integration tests for sync commands
 //
-// This test verifies that sync commands work correctly through the UI layer
+// These tests verify that sync operations (copy and dry-run) work correctly
+// at the DownloadManager level, which is the async handler invoked by UI commands.
 
 use podcast_tui::config::Config;
 use podcast_tui::download::DownloadManager;
@@ -10,7 +11,7 @@ use tempfile::TempDir;
 use tokio::fs;
 
 #[tokio::test]
-async fn test_sync_command_with_path() {
+async fn test_sync_to_device_copies_files() {
     // Create temporary directories
     let temp_dir = TempDir::new().unwrap();
     let data_dir = temp_dir.path().join("data");

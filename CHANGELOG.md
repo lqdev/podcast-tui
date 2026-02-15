@@ -5,9 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - Device Sync + Application Icon
+## [Unreleased] - Device Sync + Application Icon + Download Cleanup
 
 ### Added
+
+**Download Cleanup — Auto-Cleanup on Startup and Manual Command - February 2026**
+- **Auto-cleanup on Startup**: Automatically delete downloaded episodes older than the configured `cleanup_after_days` threshold when the app launches
+  - Wires up the previously-dead `cleanup_after_days` config field (default: 30 days)
+  - Silent when nothing to clean; shows count when episodes are removed
+  - Disabled when `cleanup_after_days` is `null` or `0` in config
+- **Manual `:clean-older-than <duration>` Command**: Delete downloads older than a specified duration
+  - Supports flexible duration syntax: `12h` (hours), `7d` (days), `2w` (weeks), `1m` (months)
+  - Bare numbers default to days (e.g., `30` = 30 days)
+  - Confirmation prompt before deletion to prevent accidental data loss
+  - Alias `:cleanup` for convenience
+  - Tab-completion support for both command names
+- **Duration Parser**: New `parse_cleanup_duration()` and `format_cleanup_duration()` utility functions
+  - Case-insensitive, validates range (>= 1h, <= 365d)
+  - Singular/plural formatted output (e.g., "1 week", "2 months")
+  - 11 comprehensive unit tests
+- **Download Manager**: New `cleanup_old_downloads()` and `cleanup_old_downloads_hours()` methods
+  - Uses file modification time to determine download age (no schema migration needed)
+  - Follows the same pattern as `delete_all_downloads()` for consistency
+  - Cleans up empty directories after deletion
+- **Help Buffer**: Added DOWNLOAD CLEANUP section with command reference
+- **Documentation**: Updated `docs/KEYBINDINGS.md` with cleanup command reference
 
 **Device Sync for MP3 Players - November 2025**
 - **Metadata-Based Device Sync**: Sync downloaded episodes to external MP3 players or USB devices

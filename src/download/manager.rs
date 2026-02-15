@@ -477,9 +477,25 @@ impl<S: Storage> DownloadManager<S> {
         &self,
         max_age_hours: u64,
     ) -> Result<usize, DownloadError> {
-        let cutoff = std::time::SystemTime::now()
-            - std::time::Duration::from_secs(max_age_hours * 3600);
+        if max_age_hours == 0 {
+            return Err(DownloadError::Storage(
+                "max_age_hours must be greater than 0".to_string(),
+            ));
+        }
+
+        let seconds = max_age_hours.checked_mul(3600).ok_or_else(|| {
+            DownloadError::Storage("max_age_hours is too large".to_string())
+        })?;
+
+        let duration = std::time::Duration::from_secs(seconds);
+        let cutoff = std::time::SystemTime::now().checked_sub(duration).ok_or_else(|| {
+            DownloadError::Storage(
+                "max_age_hours is too large relative to system time".to_string(),
+            )
+        })?;
+
         let mut deleted_count: usize = 0;
+        let mut failed_count: usize = 0;
 
         let podcast_ids = self
             .storage
@@ -504,17 +520,33 @@ impl<S: Storage> DownloadManager<S> {
                             if let Ok(modified) = metadata.modified() {
                                 if modified < cutoff {
                                     // File is old enough — delete it
-                                    if let Err(_e) = fs::remove_file(local_path).await {
-                                        // Skip files we can't delete
-                                        continue;
+                                    match fs::remove_file(local_path).await {
+                                        Ok(_) => {
+                                            episode.status = EpisodeStatus::New;
+                                            episode.local_path = None;
+                                            if let Err(_) =
+                                                self.storage.save_episode(podcast_id, &episode).await
+                                            {
+                                                failed_count += 1;
+                                            }
+                                            deleted_count += 1;
+                                        }
+                                        Err(_) => {
+                                            failed_count += 1;
+                                        }
                                     }
-                                    episode.status = EpisodeStatus::New;
-                                    episode.local_path = None;
-                                    let _ =
-                                        self.storage.save_episode(podcast_id, &episode).await;
-                                    deleted_count += 1;
                                 }
                             }
+                        }
+                    } else {
+                        // File doesn't exist, but episode thinks it's downloaded
+                        // Clean up the stale status
+                        episode.status = EpisodeStatus::New;
+                        episode.local_path = None;
+                        if let Err(_) =
+                            self.storage.save_episode(podcast_id, &episode).await
+                        {
+                            failed_count += 1;
                         }
                     }
                 }
@@ -523,6 +555,13 @@ impl<S: Storage> DownloadManager<S> {
 
         // Clean up any empty directories left behind
         self.cleanup_empty_directories().await?;
+
+        if failed_count > 0 {
+            return Err(DownloadError::Storage(format!(
+                "Cleaned up {} files, but {} operations failed",
+                deleted_count, failed_count
+            )));
+        }
 
         Ok(deleted_count)
     }

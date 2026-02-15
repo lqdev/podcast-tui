@@ -92,7 +92,7 @@ pub fn parse_cleanup_duration(input: &str) -> Option<u64> {
         return None;
     }
 
-    let total_hours = value * multiplier_hours;
+    let total_hours = value.checked_mul(multiplier_hours)?;
 
     // Validate: must be >= 1h and <= 365 days (8760 hours)
     if total_hours > 8760 {

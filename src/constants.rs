@@ -61,6 +61,9 @@ pub mod downloads {
 
     /// Delay between retry attempts (exponential backoff base)
     pub const RETRY_DELAY_MS: u64 = 1000;
+
+    /// Default device path used when no sync_device_path is configured
+    pub const DEFAULT_SYNC_DEVICE_PATH: &str = "/mnt/mp3player";
 }
 
 /// UI configuration constants

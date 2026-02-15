@@ -1148,10 +1148,7 @@ impl UIApp {
                     Ok(true)
                 } else {
                     // Prompt for device path with default from config
-                    let default_path = self.config.downloads.sync_device_path
-                        .as_ref()
-                        .map(|p| shellexpand::tilde(p).to_string())
-                        .unwrap_or_else(|| "/mnt/mp3player".to_string());
+                    let default_path = self.get_default_sync_path();
                     self.minibuffer.set_content(MinibufferContent::Input {
                         prompt: format!("Sync to device path (default: {}): ", default_path),
                         input: String::new(),
@@ -1166,10 +1163,7 @@ impl UIApp {
                     Ok(true)
                 } else {
                     // Prompt for device path
-                    let default_path = self.config.downloads.sync_device_path
-                        .as_ref()
-                        .map(|p| shellexpand::tilde(p).to_string())
-                        .unwrap_or_else(|| "/mnt/mp3player".to_string());
+                    let default_path = self.get_default_sync_path();
                     self.minibuffer.set_content(MinibufferContent::Input {
                         prompt: format!("Dry run sync to (default: {}): ", default_path),
                         input: String::new(),
@@ -1339,6 +1333,11 @@ impl UIApp {
             // OPML commands
             "import-opml".to_string(),
             "export-opml".to_string(),
+            // Sync commands
+            "sync".to_string(),
+            "sync-device".to_string(),
+            "sync-dry-run".to_string(),
+            "sync-preview".to_string(),
         ]
     }
 
@@ -1953,6 +1952,14 @@ impl UIApp {
         });
     }
 
+    /// Get the default sync device path from config, falling back to the constant default
+    fn get_default_sync_path(&self) -> String {
+        self.config.downloads.sync_device_path
+            .as_ref()
+            .map(|p| shellexpand::tilde(p).to_string())
+            .unwrap_or_else(|| crate::constants::downloads::DEFAULT_SYNC_DEVICE_PATH.to_string())
+    }
+
     /// Trigger async device sync
     fn trigger_async_device_sync(&mut self, device_path_str: String, delete_orphans: bool, dry_run: bool) {
         let download_manager = self.download_manager.clone();
@@ -2362,6 +2369,16 @@ impl UIApp {
                         shellexpand::tilde(&self.config.storage.opml_export_directory).to_string();
                     self.trigger_async_opml_export(default_path);
                     return;
+                } else if prompt.starts_with("Sync to device path") {
+                    // Empty input means use default sync path
+                    let default_path = self.get_default_sync_path();
+                    self.trigger_async_device_sync(default_path, false, false);
+                    return;
+                } else if prompt.starts_with("Dry run sync to") {
+                    // Empty input means use default sync path for dry run
+                    let default_path = self.get_default_sync_path();
+                    self.trigger_async_device_sync(default_path, false, true);
+                    return;
                 }
             }
             return;
@@ -2376,6 +2393,14 @@ impl UIApp {
             } else if prompt.starts_with("Export to") {
                 // This is an OPML export
                 self.trigger_async_opml_export(input.to_string());
+                return;
+            } else if prompt.starts_with("Sync to device path") {
+                // This is a device sync
+                self.trigger_async_device_sync(input.to_string(), false, false);
+                return;
+            } else if prompt.starts_with("Dry run sync to") {
+                // This is a device sync dry run
+                self.trigger_async_device_sync(input.to_string(), false, true);
                 return;
             }
         }

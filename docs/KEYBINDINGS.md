@@ -94,6 +94,13 @@ This document outlines the keybinding system for the Podcast TUI application.
 #### Download Commands
 - `delete-all-downloads` / `clean-downloads` - Delete ALL downloaded episodes
 
+#### Cleanup Commands
+- `clean-older-than <duration>` / `cleanup <duration>` - Delete downloads older than duration
+  - Duration formats: `12h` (hours), `7d` (days), `2w` (weeks), `1m` (months)
+  - Default unit is days if no suffix (e.g., `30` = 30 days)
+  - Prompts for confirmation before deleting
+  - Auto-cleanup also runs on startup when `cleanup_after_days` is set in config (default: 30)
+
 #### Sync Commands
 - `sync [path]` / `sync-device [path]` - Sync downloaded episodes to external device
 - `sync-dry-run [path]` / `sync-preview [path]` - Preview sync changes without applying them

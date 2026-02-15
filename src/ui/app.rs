@@ -301,6 +301,24 @@ impl UIApp {
             self.show_error(format!("Failed to cleanup stuck downloads: {}", e));
         }
 
+        // Auto-cleanup old downloads on startup if configured
+        if let Some(days) = self.config.downloads.cleanup_after_days {
+            if days > 0 {
+                match self.download_manager.cleanup_old_downloads(days).await {
+                    Ok(0) => {} // Nothing to clean, stay silent
+                    Ok(count) => {
+                        self.show_message(format!(
+                            "Auto-cleanup: deleted {} episode(s) older than {} days",
+                            count, days
+                        ));
+                    }
+                    Err(e) => {
+                        self.show_error(format!("Auto-cleanup failed: {}", e));
+                    }
+                }
+            }
+        }
+
         // Create initial buffers
         self.buffer_manager.create_help_buffer();
         self.buffer_manager

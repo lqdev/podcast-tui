@@ -229,6 +229,16 @@ impl BufferManager {
         self.buffer_order.clone()
     }
 
+    /// Find a buffer ID by its display name
+    pub fn find_buffer_id_by_name(&self, name: &str) -> Option<BufferId> {
+        self.buffer_order.iter().find_map(|id| {
+            self.buffers
+                .get(id)
+                .filter(|buffer| buffer.name() == name)
+                .map(|_| id.clone())
+        })
+    }
+
     /// Get current buffer name (alias for active buffer name)
     pub fn current_buffer_name(&self) -> Option<String> {
         self.active_buffer

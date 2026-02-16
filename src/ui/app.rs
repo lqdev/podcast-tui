@@ -395,29 +395,12 @@ impl UIApp {
                 Ok(false)
             }
             UIAction::ShowHelp => {
-                // Try to find existing help buffer by name
-                let help_buffer_id = self
-                    .buffer_manager
-                    .buffer_names()
-                    .into_iter()
-                    .find(|(_, name)| name == "*Help*")
-                    .map(|(id, _)| id);
-
-                if let Some(id) = help_buffer_id {
-                    let _ = self.buffer_manager.switch_to_buffer(&id);
-                } else {
-                    // Help buffer was closed or doesn't exist, create a new one
+                // Try to find existing help buffer by name, or create a new one
+                if self.buffer_manager.find_buffer_id_by_name("*Help*").is_none() {
                     self.buffer_manager.create_help_buffer();
-                    // Find the newly created buffer and switch to it
-                    if let Some(id) = self
-                        .buffer_manager
-                        .buffer_names()
-                        .into_iter()
-                        .find(|(_, name)| name == "*Help*")
-                        .map(|(id, _)| id)
-                    {
-                        let _ = self.buffer_manager.switch_to_buffer(&id);
-                    }
+                }
+                if let Some(id) = self.buffer_manager.find_buffer_id_by_name("*Help*") {
+                    let _ = self.buffer_manager.switch_to_buffer(&id);
                 }
                 self.update_status_bar();
                 Ok(true)
@@ -426,10 +409,7 @@ impl UIApp {
                 // Try to find buffer by name first, then fall back to ID
                 let buffer_id = self
                     .buffer_manager
-                    .buffer_names()
-                    .into_iter()
-                    .find(|(_, bname)| bname == &name)
-                    .map(|(id, _)| id)
+                    .find_buffer_id_by_name(&name)
                     .unwrap_or(name);
                 let _ = self.buffer_manager.switch_to_buffer(&buffer_id);
                 self.update_status_bar();

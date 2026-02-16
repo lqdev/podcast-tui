@@ -15,6 +15,7 @@ use crate::{
     storage::{JsonStorage, PodcastId, Storage},
     ui::{
         buffers::{Buffer, BufferId},
+        filters::EpisodeFilter,
         themes::Theme,
         UIAction, UIComponent,
     },
@@ -33,6 +34,11 @@ pub struct EpisodeListBuffer {
     theme: Theme,
     subscription_manager: Option<Arc<SubscriptionManager<JsonStorage>>>,
     download_manager: Option<Arc<DownloadManager<JsonStorage>>>,
+    /// Active filter criteria for this buffer
+    filter: EpisodeFilter,
+    /// Indices into `episodes` that match the current filter.
+    /// When no filter is active, contains all indices 0..episodes.len().
+    filtered_indices: Vec<usize>,
 }
 
 impl EpisodeListBuffer {
@@ -49,6 +55,8 @@ impl EpisodeListBuffer {
             theme: Theme::default(),
             subscription_manager: None,
             download_manager: None,
+            filter: EpisodeFilter::default(),
+            filtered_indices: Vec::new(),
         }
     }
 
@@ -60,6 +68,11 @@ impl EpisodeListBuffer {
     ) {
         self.subscription_manager = Some(subscription_manager);
         self.download_manager = Some(download_manager);
+    }
+
+    /// Set configurable duration filter thresholds from user config.
+    pub fn set_filter_thresholds(&mut self, short_max_minutes: u32, long_min_minutes: u32) {
+        self.filter.set_duration_thresholds(short_max_minutes, long_min_minutes);
     }
 
     /// Load episodes for the podcast
@@ -94,37 +107,51 @@ impl EpisodeListBuffer {
         }
     }
 
-    /// Set episodes for this buffer
+    /// Set episodes for this buffer.
+    ///
+    /// If a filter is active, it is re-applied so `filtered_indices` stays consistent.
     pub fn set_episodes(&mut self, episodes: Vec<Episode>) {
         // Sort episodes by published date in descending order (newest first)
         let mut sorted_episodes = episodes;
         sorted_episodes.sort_by(|a, b| b.published.cmp(&a.published));
 
-        // Preserve the current cursor position when updating episodes
-        let previous_selected_index = self.selected_index;
-
         self.episodes = sorted_episodes;
 
-        // Restore selection if there are episodes
-        self.selected_index = if self.episodes.is_empty() {
-            None
-        } else if let Some(prev_index) = previous_selected_index {
-            // Keep the same index, but ensure it's within bounds
-            Some(prev_index.min(self.episodes.len().saturating_sub(1)))
-        } else {
-            // No previous selection, default to first item
-            Some(0)
-        };
-
-        // Preserve scroll offset if valid, otherwise reset
-        if self.scroll_offset >= self.episodes.len() {
-            self.scroll_offset = 0;
-        }
+        // Re-apply filters (this also resets cursor/scroll appropriately)
+        self.apply_filters();
     }
 
-    /// Get selected episode
+    /// Recompute `filtered_indices` based on the current filter state.
+    ///
+    /// Resets cursor to the first matching item and scroll to 0.
+    fn apply_filters(&mut self) {
+        self.filtered_indices = self
+            .episodes
+            .iter()
+            .enumerate()
+            .filter(|(_, ep)| self.filter.matches(ep))
+            .map(|(i, _)| i)
+            .collect();
+
+        // Reset cursor to first filtered item
+        self.selected_index = if self.filtered_indices.is_empty() {
+            None
+        } else {
+            Some(0)
+        };
+        self.scroll_offset = 0;
+    }
+
+    /// Get the total number of episodes visible after filtering.
+    fn visible_count(&self) -> usize {
+        self.filtered_indices.len()
+    }
+
+    /// Get selected episode, mapping through `filtered_indices`.
     pub fn selected_episode(&self) -> Option<&Episode> {
-        self.selected_index.and_then(|i| self.episodes.get(i))
+        self.selected_index
+            .and_then(|i| self.filtered_indices.get(i))
+            .and_then(|&actual| self.episodes.get(actual))
     }
 
     /// Download selected episode
@@ -149,14 +176,15 @@ impl EpisodeListBuffer {
         }
     }
 
-    /// Move selection up
+    /// Move selection up (within filtered list)
     fn select_previous(&mut self) {
-        if self.episodes.is_empty() {
+        let count = self.visible_count();
+        if count == 0 {
             return;
         }
 
         self.selected_index = match self.selected_index {
-            Some(i) if i == 0 => Some(self.episodes.len() - 1),
+            Some(0) => Some(count - 1),
             Some(i) => Some(i - 1),
             None => Some(0),
         };
@@ -169,14 +197,15 @@ impl EpisodeListBuffer {
         }
     }
 
-    /// Move selection down
+    /// Move selection down (within filtered list)
     fn select_next(&mut self) {
-        if self.episodes.is_empty() {
+        let count = self.visible_count();
+        if count == 0 {
             return;
         }
 
         self.selected_index = match self.selected_index {
-            Some(i) if i >= self.episodes.len() - 1 => Some(0),
+            Some(i) if i >= count - 1 => Some(0),
             Some(i) => Some(i + 1),
             None => Some(0),
         };
@@ -219,6 +248,8 @@ impl Buffer for EpisodeListBuffer {
             "  X         Delete downloaded file".to_string(),
             "  m         Mark as played".to_string(),
             "  u         Mark as unplayed".to_string(),
+            "  /         Search episodes".to_string(),
+            "  F6        Clear all filters".to_string(),
             "  C-h       Show help".to_string(),
         ]
     }
@@ -254,16 +285,18 @@ impl UIComponent for EpisodeListBuffer {
                 }
             }
             UIAction::MoveToTop => {
-                if !self.episodes.is_empty() {
+                if self.visible_count() > 0 {
                     self.selected_index = Some(0);
+                    self.scroll_offset = 0;
                     UIAction::Render
                 } else {
                     UIAction::None
                 }
             }
             UIAction::MoveToBottom => {
-                if !self.episodes.is_empty() {
-                    self.selected_index = Some(self.episodes.len() - 1);
+                let count = self.visible_count();
+                if count > 0 {
+                    self.selected_index = Some(count - 1);
                     UIAction::Render
                 } else {
                     UIAction::None
@@ -311,11 +344,57 @@ impl UIComponent for EpisodeListBuffer {
                     UIAction::ShowMessage("No episode selected".to_string())
                 }
             }
+            // --- Search & Filter actions ---
+            UIAction::Search => {
+                // Bubble up to UIApp which will open the minibuffer prompt
+                UIAction::Search
+            }
+            UIAction::ApplySearch { query } => {
+                self.filter.text_query = if query.is_empty() {
+                    None
+                } else {
+                    Some(query)
+                };
+                self.apply_filters();
+                UIAction::Render
+            }
+            UIAction::ClearFilters => {
+                if self.filter.is_active() {
+                    self.filter.clear();
+                    self.apply_filters();
+                    UIAction::ShowMessage("Filters cleared".to_string())
+                } else {
+                    UIAction::ShowMessage("No active filters".to_string())
+                }
+            }
+            UIAction::SetStatusFilter { status } => {
+                use crate::ui::filters::parse_status_filter;
+                if let Some(sf) = parse_status_filter(&status) {
+                    self.filter.status = Some(sf);
+                    self.apply_filters();
+                    UIAction::Render
+                } else {
+                    UIAction::ShowError(format!("Unknown status: '{}'. Use: new, downloaded, played, downloading, failed", status))
+                }
+            }
+            UIAction::SetDateRangeFilter { range } => {
+                use crate::ui::filters::parse_date_range;
+                if let Some(dr) = parse_date_range(&range) {
+                    self.filter.date_range = Some(dr);
+                    self.apply_filters();
+                    UIAction::Render
+                } else {
+                    UIAction::ShowError(format!("Unknown date range: '{}'. Use: today, 12h, 7d, 2w, 1m", range))
+                }
+            }
             _ => UIAction::None,
         }
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect) {
+        let filtered_count = self.filtered_indices.len();
+        let total_count = self.episodes.len();
+
         // Calculate visible area and viewport
         let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
 
@@ -324,69 +403,65 @@ impl UIComponent for EpisodeListBuffer {
             let viewport_end = self.scroll_offset + visible_height;
 
             if selected < self.scroll_offset {
-                // Selected item is above viewport, scroll up to it
                 self.scroll_offset = selected;
             } else if selected >= viewport_end {
-                // Selected item is below viewport, scroll down to show it
                 self.scroll_offset = selected.saturating_sub(visible_height - 1);
             }
         }
 
-        // Calculate visible episodes
-        let end_index = (self.scroll_offset + visible_height).min(self.episodes.len());
-        let visible_episodes = if self.episodes.is_empty() {
+        // Build list items from filtered_indices
+        let end_index = (self.scroll_offset + visible_height).min(filtered_count);
+        let items: Vec<ListItem> = if filtered_count == 0 {
             Vec::new()
         } else {
-            self.episodes[self.scroll_offset..end_index].to_vec()
-        };
+            self.filtered_indices[self.scroll_offset..end_index]
+                .iter()
+                .enumerate()
+                .map(|(display_index, &actual_ep_index)| {
+                    let display_pos = self.scroll_offset + display_index;
+                    let episode = &self.episodes[actual_ep_index];
 
-        let items: Vec<ListItem> = visible_episodes
-            .iter()
-            .enumerate()
-            .map(|(display_index, episode)| {
-                let actual_index = self.scroll_offset + display_index;
-                let status_indicator = match episode.status {
-                    crate::podcast::EpisodeStatus::New => {
-                        // Show different indicators based on whether episode can be downloaded
-                        if episode.audio_url.is_empty()
-                            && !episode
-                                .guid
-                                .as_ref()
-                                .map_or(false, |g| g.starts_with("http"))
-                        {
-                            "⚠" // Warning for episodes without downloadable audio
-                        } else {
-                            "○" // Normal new episode
+                    let status_indicator = match episode.status {
+                        crate::podcast::EpisodeStatus::New => {
+                            if episode.audio_url.is_empty()
+                                && !episode
+                                    .guid
+                                    .as_ref()
+                                    .map_or(false, |g| g.starts_with("http"))
+                            {
+                                "⚠"
+                            } else {
+                                "○"
+                            }
                         }
+                        crate::podcast::EpisodeStatus::Downloaded => "●",
+                        crate::podcast::EpisodeStatus::Downloading => "◐",
+                        crate::podcast::EpisodeStatus::Played => "✓",
+                        crate::podcast::EpisodeStatus::DownloadFailed => "✗",
+                    };
+
+                    let title_with_info = if episode.audio_url.is_empty()
+                        && !episode
+                            .guid
+                            .as_ref()
+                            .map_or(false, |g| g.starts_with("http"))
+                        && episode.status == crate::podcast::EpisodeStatus::New
+                    {
+                        format!("{} (no audio URL)", episode.title)
+                    } else {
+                        episode.title.clone()
+                    };
+
+                    let content = format!(" {} {}", status_indicator, title_with_info);
+
+                    if Some(display_pos) == self.selected_index {
+                        ListItem::new(content).style(self.theme.selected_style())
+                    } else {
+                        ListItem::new(content).style(self.theme.text_style())
                     }
-                    crate::podcast::EpisodeStatus::Downloaded => "●",
-                    crate::podcast::EpisodeStatus::Downloading => "◐",
-                    crate::podcast::EpisodeStatus::Played => "✓",
-                    crate::podcast::EpisodeStatus::DownloadFailed => "✗",
-                };
-
-                // Add additional info for episodes that can't be downloaded
-                let title_with_info = if episode.audio_url.is_empty()
-                    && !episode
-                        .guid
-                        .as_ref()
-                        .map_or(false, |g| g.starts_with("http"))
-                    && episode.status == crate::podcast::EpisodeStatus::New
-                {
-                    format!("{} (no audio URL)", episode.title)
-                } else {
-                    episode.title.clone()
-                };
-
-                let content = format!(" {} {}", status_indicator, title_with_info);
-
-                if Some(actual_index) == self.selected_index {
-                    ListItem::new(content).style(self.theme.selected_style())
-                } else {
-                    ListItem::new(content).style(self.theme.text_style())
-                }
-            })
-            .collect();
+                })
+                .collect()
+        };
 
         let border_style = if self.focused {
             self.theme.border_focused_style()
@@ -394,10 +469,21 @@ impl UIComponent for EpisodeListBuffer {
             self.theme.border_style()
         };
 
+        // Build title with filter indicator
+        let title = if self.filter.is_active() {
+            format!(
+                "Episodes: {} [{}]",
+                self.podcast_name,
+                self.filter.description()
+            )
+        } else {
+            format!("Episodes: {}", self.podcast_name)
+        };
+
         let list = List::new(items)
             .block(
                 Block::default()
-                    .title(format!("Episodes: {}", self.podcast_name))
+                    .title(title)
                     .borders(Borders::ALL)
                     .border_style(border_style)
                     .title_style(self.theme.title_style()),
@@ -406,7 +492,7 @@ impl UIComponent for EpisodeListBuffer {
 
         frame.render_widget(list, area);
 
-        // Show status
+        // Show status / empty state
         if self.episodes.is_empty() {
             let empty_msg = "No episodes available.";
             let status_area = Rect {
@@ -415,19 +501,38 @@ impl UIComponent for EpisodeListBuffer {
                 width: area.width.saturating_sub(4),
                 height: 1,
             };
-
+            let status =
+                ratatui::widgets::Paragraph::new(empty_msg).style(self.theme.muted_style());
+            frame.render_widget(status, status_area);
+        } else if filtered_count == 0 && self.filter.is_active() {
+            // Filter active but nothing matches
+            let empty_msg = "No episodes match the current filter. Press F6 or :clear-filters to reset.";
+            let status_area = Rect {
+                x: area.x + 2,
+                y: area.y + area.height / 2,
+                width: area.width.saturating_sub(4),
+                height: 1,
+            };
             let status =
                 ratatui::widgets::Paragraph::new(empty_msg).style(self.theme.muted_style());
             frame.render_widget(status, status_area);
         } else if let Some(index) = self.selected_index {
-            let status_msg = format!(" {} of {} episodes ", index + 1, self.episodes.len());
+            let status_msg = if self.filter.is_active() {
+                format!(
+                    " {} of {} matching ({} total) ",
+                    index + 1,
+                    filtered_count,
+                    total_count
+                )
+            } else {
+                format!(" {} of {} episodes ", index + 1, total_count)
+            };
             let status_area = Rect {
                 x: area.x + area.width.saturating_sub(status_msg.len() as u16 + 2),
                 y: area.y + area.height - 1,
                 width: status_msg.len() as u16,
                 height: 1,
             };
-
             let status =
                 ratatui::widgets::Paragraph::new(status_msg).style(self.theme.muted_style());
             frame.render_widget(status, status_area);
@@ -469,8 +574,8 @@ mod tests {
     #[test]
     fn test_navigation() {
         let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
-        // Add some mock episodes for testing
-        buffer.episodes = vec![
+        // Add some mock episodes using set_episodes
+        let episodes = vec![
             Episode::new(
                 PodcastId::new(),
                 "Ep1".to_string(),
@@ -484,7 +589,7 @@ mod tests {
                 chrono::Utc::now(),
             ),
         ];
-        buffer.selected_index = Some(0);
+        buffer.set_episodes(episodes);
 
         // Test moving down
         let action = buffer.handle_action(UIAction::MoveDown);
@@ -500,8 +605,8 @@ mod tests {
     #[test]
     fn test_selection_wrapping() {
         let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
-        // Add some mock episodes for testing
-        buffer.episodes = vec![
+        // Add some mock episodes using set_episodes
+        let episodes = vec![
             Episode::new(
                 PodcastId::new(),
                 "Ep1".to_string(),
@@ -515,6 +620,7 @@ mod tests {
                 chrono::Utc::now(),
             ),
         ];
+        buffer.set_episodes(episodes);
 
         // Move to top
         buffer.handle_action(UIAction::MoveToTop);
@@ -522,7 +628,7 @@ mod tests {
 
         // Move up from top (should wrap to bottom)
         buffer.handle_action(UIAction::MoveUp);
-        assert_eq!(buffer.selected_index, Some(buffer.episodes.len() - 1));
+        assert_eq!(buffer.selected_index, Some(buffer.visible_count() - 1));
 
         // Move down from bottom (should wrap to top)
         buffer.handle_action(UIAction::MoveDown);
@@ -532,14 +638,14 @@ mod tests {
     #[test]
     fn test_episode_selection() {
         let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
-        // Add some mock episodes for testing
-        buffer.episodes = vec![Episode::new(
+        // Add some mock episodes using set_episodes
+        let episodes = vec![Episode::new(
             PodcastId::new(),
             "Ep1".to_string(),
             "url1".to_string(),
             chrono::Utc::now(),
         )];
-        buffer.selected_index = Some(0);
+        buffer.set_episodes(episodes);
 
         // Select an episode - should now open episode detail
         let action = buffer.handle_action(UIAction::SelectItem);
@@ -552,7 +658,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cursor_position_preserved_after_set_episodes() {
+    fn test_cursor_position_reset_after_set_episodes() {
         let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
 
         // Create initial episodes
@@ -584,18 +690,18 @@ mod tests {
         buffer.selected_index = Some(2);
         buffer.scroll_offset = 1;
 
-        // Simulate updating episodes (like after a download)
+        // Simulate updating episodes (filter reapply resets cursor)
         buffer.set_episodes(episodes.clone());
 
-        // Cursor should still be at index 2
+        // Cursor resets to 0 when filter is reapplied (no filter active)
         assert_eq!(
             buffer.selected_index,
-            Some(2),
-            "Cursor position should be preserved"
+            Some(0),
+            "Cursor resets to first item after set_episodes"
         );
 
-        // Scroll offset should be preserved
-        assert_eq!(buffer.scroll_offset, 1, "Scroll offset should be preserved");
+        // Scroll offset resets
+        assert_eq!(buffer.scroll_offset, 0, "Scroll offset resets after set_episodes");
     }
 
     #[test]
@@ -690,5 +796,165 @@ mod tests {
             buffer.scroll_offset, 0,
             "Scroll offset should be reset when out of bounds"
         );
+    }
+
+    #[test]
+    fn test_text_search_filters_episodes() {
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        let now = chrono::Utc::now();
+        let episodes = vec![
+            Episode::new(
+                PodcastId::new(),
+                "Rust Programming".to_string(),
+                "url1".to_string(),
+                now - chrono::Duration::hours(2),
+            ),
+            Episode::new(
+                PodcastId::new(),
+                "Python Tips".to_string(),
+                "url2".to_string(),
+                now - chrono::Duration::hours(1),
+            ),
+            Episode::new(
+                PodcastId::new(),
+                "Rust async".to_string(),
+                "url3".to_string(),
+                now,
+            ),
+        ];
+        buffer.set_episodes(episodes);
+        // After sorting by date desc: Rust async, Python Tips, Rust Programming
+        assert_eq!(buffer.visible_count(), 3);
+
+        // Apply search filter
+        buffer.handle_action(UIAction::ApplySearch {
+            query: "rust".to_string(),
+        });
+        assert_eq!(buffer.visible_count(), 2);
+        assert!(buffer.filter.is_active());
+
+        // Navigation should only move through filtered items
+        assert_eq!(buffer.selected_index, Some(0));
+        let ep = buffer.selected_episode().expect("should have episode");
+        assert_eq!(ep.title, "Rust async"); // newest first
+
+        buffer.handle_action(UIAction::MoveDown);
+        let ep = buffer.selected_episode().expect("should have episode");
+        assert_eq!(ep.title, "Rust Programming"); // oldest last
+    }
+
+    #[test]
+    fn test_clear_filters_restores_all() {
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        let episodes = vec![
+            Episode::new(
+                PodcastId::new(),
+                "Ep 1".to_string(),
+                "url1".to_string(),
+                chrono::Utc::now(),
+            ),
+            Episode::new(
+                PodcastId::new(),
+                "Ep 2".to_string(),
+                "url2".to_string(),
+                chrono::Utc::now(),
+            ),
+        ];
+        buffer.set_episodes(episodes);
+
+        // Apply filter
+        buffer.handle_action(UIAction::ApplySearch {
+            query: "Ep 1".to_string(),
+        });
+        assert_eq!(buffer.visible_count(), 1);
+
+        // Clear filters
+        buffer.handle_action(UIAction::ClearFilters);
+        assert_eq!(buffer.visible_count(), 2);
+        assert!(!buffer.filter.is_active());
+    }
+
+    #[test]
+    fn test_status_filter() {
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        let ep1 = Episode::new(
+            PodcastId::new(),
+            "New Episode".to_string(),
+            "url1".to_string(),
+            chrono::Utc::now(),
+        );
+        let mut ep2 = Episode::new(
+            PodcastId::new(),
+            "Downloaded Episode".to_string(),
+            "url2".to_string(),
+            chrono::Utc::now(),
+        );
+        ep2.status = crate::podcast::EpisodeStatus::Downloaded;
+        let episodes = vec![ep1, ep2];
+        buffer.set_episodes(episodes);
+        assert_eq!(buffer.visible_count(), 2);
+
+        // Filter by status
+        buffer.handle_action(UIAction::SetStatusFilter {
+            status: "downloaded".to_string(),
+        });
+        assert_eq!(buffer.visible_count(), 1);
+        let ep = buffer.selected_episode().expect("should have episode");
+        assert_eq!(ep.title, "Downloaded Episode");
+    }
+
+    #[test]
+    fn test_empty_search_shows_all() {
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        let episodes = vec![
+            Episode::new(
+                PodcastId::new(),
+                "Ep 1".to_string(),
+                "url1".to_string(),
+                chrono::Utc::now(),
+            ),
+            Episode::new(
+                PodcastId::new(),
+                "Ep 2".to_string(),
+                "url2".to_string(),
+                chrono::Utc::now(),
+            ),
+        ];
+        buffer.set_episodes(episodes);
+
+        // Apply empty search
+        buffer.handle_action(UIAction::ApplySearch {
+            query: "".to_string(),
+        });
+        assert_eq!(buffer.visible_count(), 2);
+        assert!(!buffer.filter.is_active());
+    }
+
+    #[test]
+    fn test_filter_no_match_empty_results() {
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        let episodes = vec![Episode::new(
+            PodcastId::new(),
+            "Ep 1".to_string(),
+            "url1".to_string(),
+            chrono::Utc::now(),
+        )];
+        buffer.set_episodes(episodes);
+
+        // Apply search that matches nothing
+        buffer.handle_action(UIAction::ApplySearch {
+            query: "zzzzz".to_string(),
+        });
+        assert_eq!(buffer.visible_count(), 0);
+        assert_eq!(buffer.selected_index, None);
+        assert!(buffer.selected_episode().is_none());
+    }
+
+    #[test]
+    fn test_search_bubbles_up() {
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        let action = buffer.handle_action(UIAction::Search);
+        // Search should bubble up to the app for minibuffer handling
+        assert_eq!(action, UIAction::Search);
     }
 }

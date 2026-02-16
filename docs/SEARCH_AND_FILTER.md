@@ -115,8 +115,8 @@ Sprint 5, Days 3-4:
 ### Functional Requirements
 
 1. **FR-1**: Users can filter episodes by status (`new`, `downloaded`, `played`, `downloading`, `failed`) in `EpisodeListBuffer` and `WhatsNewBuffer`
-2. **FR-2**: Users can filter episodes by date range (`today`, `7d`, `30d`, `90d`, `all`) in any episode view
-3. **FR-3**: Users can filter episodes by duration category (`short` <15min, `medium` 15-45min, `long` >45min) in any episode view
+2. **FR-2**: Users can filter episodes by relative date range using freeform duration syntax (`12h`, `7d`, `2w`, `1m`, etc.) in any episode view — reuses `parse_cleanup_duration()` for consistency with cleanup commands
+3. **FR-3**: ~~Users can filter episodes by duration category~~ — **DEFERRED** (see Design Decision #13). Infrastructure code retained in `filters.rs` but command not exposed to users until `FeedParser::extract_duration()` is implemented.
 4. **FR-4**: Users can search by text (case-insensitive substring match against title and description) in `EpisodeListBuffer`, `WhatsNewBuffer`, and `PodcastListBuffer`
 5. **FR-5**: Filters can be combined (e.g., status=downloaded AND date=7d AND text="interview")
 6. **FR-6**: Active filters are clearly indicated in the buffer title/chrome
@@ -149,7 +149,7 @@ pub struct EpisodeFilter {
     /// Filter by episode status
     pub status: Option<EpisodeStatusFilter>,
     
-    /// Filter by date range
+    /// Filter by date range (freeform relative duration)
     pub date_range: Option<DateRangeFilter>,
     
     /// Filter by duration category
@@ -166,24 +166,50 @@ pub enum EpisodeStatusFilter {
     DownloadFailed,
 }
 
-/// Date range filter options
+/// Freeform relative date range filter.
+///
+/// Uses the same duration syntax as cleanup commands (`12h`, `7d`, `2w`, `1m`)
+/// parsed via `parse_cleanup_duration()` from `utils/time.rs`.
+/// Stores the cutoff as total hours for matching, plus the original input
+/// string for display purposes.
+///
+/// ### Design Decision (#10)
+/// Replaced the original fixed enum (`Today`/`Last7Days`/`Last30Days`/etc.)
+/// with this freeform struct to:
+/// - Reuse `parse_cleanup_duration()` — one duration syntax across the app
+/// - Allow arbitrary ranges (e.g., `3d`, `2w`, `6m`) instead of preset buckets
+/// - Stay consistent with `:cleanup <duration>` command syntax
 #[derive(Debug, Clone, PartialEq)]
-pub enum DateRangeFilter {
-    Today,
-    Last7Days,
-    Last30Days,
-    Last90Days,
-    LastYear,
+pub struct DateRangeFilter {
+    /// Cutoff in hours (from `parse_cleanup_duration`)
+    pub hours: u64,
+    /// Original input string for display (e.g., "7d", "2w")
+    pub display: String,
 }
 
-/// Duration filter categories
+/// Duration filter categories.
+///
+/// **DEFERRED** — infrastructure retained but not exposed to users.
+/// Episode duration data is not yet populated from RSS feeds
+/// (`FeedParser::extract_duration()` returns `None`).
+/// See Design Decision #13.
+///
+/// When activated (future sprint), thresholds will be configurable via `UiConfig`:
+/// - `filter_short_max_minutes` (default: 15) — episodes shorter than this are "short"
+/// - `filter_long_min_minutes` (default: 45) — episodes longer than this are "long"
+/// - "medium" = everything in between
+///
+/// ### Design Decision (#11)
+/// Made configurable because podcast episode lengths vary widely.
+/// A daily news podcast listener might consider 30 min "long",
+/// while a long-form interview listener might consider it "short".
 #[derive(Debug, Clone, PartialEq)]
 pub enum DurationFilter {
-    /// Under 15 minutes
+    /// Under `filter_short_max_minutes` (default: 15 min)
     Short,
-    /// 15 to 45 minutes
+    /// Between short and long thresholds
     Medium,
-    /// Over 45 minutes
+    /// Over `filter_long_min_minutes` (default: 45 min)
     Long,
 }
 
@@ -305,12 +331,8 @@ pub enum UIAction {
 |---------|-------------|---------|
 | `search <query>` | Text search in current buffer | `search interview` |
 | `filter-status <status>` | Filter by status | `filter-status downloaded` |
-| `filter-date <range>` | Filter by date range | `filter-date 7d` |
-| `filter-duration <category>` | Filter by duration | `filter-duration short` |
-| `clear-filters` / `widen` | Remove all filters | `clear-filters` |
-
----
-
+| `filter-date <duration>` | Filter by relative date range (same syntax as `:cleanup`) | `filter-date 7d`, `filter-date 2w`, `filter-date 1m` |
+| ~~`filter-duration <category>`~~ | **DEFERRED** — episode duration data not yet available (see Decision #13) | — |
 ## Detailed Implementation Plan
 
 ### Phase 1: Core Filter Infrastructure (Estimated: ~200 LOC)
@@ -378,8 +400,8 @@ pub enum UIAction {
 1. Handle `UIAction::Search`: show minibuffer prompt "Search: " and set context (replaces placeholder from #51)
 2. Handle `UIAction::ApplySearch`: dispatch to active buffer
 3. Handle `UIAction::ClearFilters`: dispatch to active buffer
-4. Handle `UIAction::FilterByStatus` / `FilterByDateRange` / `FilterByDuration`: show minibuffer with completion candidates
-5. Add `search`, `filter-status`, `filter-date`, `filter-duration`, `clear-filters`, `widen` to `execute_command_direct`
+4. Handle `UIAction::FilterByStatus` / `FilterByDateRange`: show minibuffer with completion candidates
+5. Add `search`, `filter-status`, `filter-date`, `clear-filters`, `widen` to `execute_command_direct` (duration deferred — Decision #13)
 6. Add these commands to `get_available_commands()` for tab completion
 7. Handle search prompt context in `handle_minibuffer_input_with_context`
 
@@ -414,8 +436,8 @@ Structured filters (status, date, duration) are accessed via the `:` command pro
 |---------|-----------------|----------|
 | `:search <text>` | Yes | Text search (same as `/`) |
 | `:filter-status` | Yes, cycles: `new`, `downloaded`, `played`, `downloading`, `failed` | Set status filter |
-| `:filter-date` | Yes, cycles: `today`, `7d`, `30d`, `90d`, `year` | Set date range filter |
-| `:filter-duration` | Yes, cycles: `short`, `medium`, `long` | Set duration filter |
+| `:filter-date` | Yes, examples: `1d`, `7d`, `2w`, `1m`, `3m` | Set date range filter (freeform, same syntax as `:cleanup`) |
+| ~~`:filter-duration`~~ | — | **DEFERRED** — see Decision #13 |
 | `:clear-filters` / `:widen` | Yes | Remove all active filters |
 
 ### Keybinding Conflict Analysis
@@ -614,6 +636,10 @@ User selects item at display position 2 in filtered list:
 | 7 | AND logic for combined filters | Most intuitive for narrowing results; consistent with Emacs narrowing | 2026-02-16 |
 | 8 | `src/ui/filters.rs` as new module | Keeps filter logic separate from buffer/component code; reusable across buffers; testable in isolation | 2026-02-16 |
 | 9 | Align with #51's `UIAction::Search` naming | Avoids duplicate action variants; #51 lays groundwork, this feature provides the implementation; single action for both F3 and `/` | 2026-02-16 |
+| 10 | Freeform date range using `parse_cleanup_duration()` | Replaces fixed `DateRangeFilter` enum with arbitrary relative durations (`7d`, `3w`, `1m`, `12h`). Reuses existing `parse_cleanup_duration()` from `utils/time.rs` for consistency with cleanup commands. More flexible (users type any duration, not just preset buckets). Keeps one duration syntax across the entire app. | 2026-02-16 |
+| 11 | Configurable duration filter thresholds | Duration categories (`short`/`medium`/`long`) have user-configurable boundaries via `UiConfig.filter_short_max_minutes` and `UiConfig.filter_long_min_minutes`. Defaults: short < 15min, medium 15-45min, long > 45min. Podcast episode lengths vary widely; what's "short" depends on the listener. | 2026-02-16 |
+| 12 | Document filter commands in help buffer and KEYBINDINGS.md | Filter commands must be discoverable. Help buffer gets a SEARCH & FILTER section. KEYBINDINGS.md gets a Search & Filter Commands subsection. Duration syntax documented consistently with cleanup commands. | 2026-02-16 |
+| 13 | Defer duration filter (`filter-duration`) from user-facing UI | `FeedParser::extract_duration()` is a stub that always returns `None` — episodes have no duration data. Since no episodes can match a duration filter, exposing the command would silently return empty results and confuse users. **Infrastructure retained**: `DurationFilter` enum, `parse_duration_filter()`, `matches_with_thresholds()`, `EpisodeFilter.duration` field, and configurable threshold constants all remain in `filters.rs` for future use. **Removed from UI**: `:filter-duration` command, `SetDurationFilter` UIAction variant, `UiConfig` threshold fields, help text, tab completions. **Re-enable when**: `extract_duration()` is implemented to parse iTunes `<itunes:duration>` or similar RSS duration fields, and episode data is backfilled. At that point, restore the command, UIAction, config fields, and wiring. See also Decision #11 (configurable thresholds — design preserved). | 2026-02-16 |
 
 ---
 

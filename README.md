@@ -87,10 +87,15 @@ The application is currently **in active development** with core RSS/download fe
 
 **🚧 Development Status**: Pre-built binaries are available for testing core features (RSS subscriptions, downloads, and UI). Audio playback is not yet functional.
 
-#### Pre-built Binaries
-Download the latest release for your platform from the [releases page](https://github.com/yourusername/podcast-tui/releases).
+#### Windows (winget)
+```powershell
+winget install lqdev.PodcastTUI
+```
 
-**Windows:**
+#### Pre-built Binaries
+Download the latest release for your platform from the [releases page](https://github.com/lqdev/podcast-tui/releases).
+
+**Windows (manual):**
 ```powershell
 # Download and extract podcast-tui-vX.X.X-windows-x86_64.zip
 # Run podcast-tui.exe

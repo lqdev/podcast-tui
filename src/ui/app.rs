@@ -684,6 +684,52 @@ impl UIApp {
                 self.trigger_async_opml_export(output_path);
                 Ok(true)
             }
+            UIAction::Search => {
+                // Open minibuffer with search prompt
+                self.minibuffer.set_content(MinibufferContent::Input {
+                    prompt: "Search: ".to_string(),
+                    input: String::new(),
+                });
+                Ok(true)
+            }
+            UIAction::ApplySearch { query } => {
+                // Dispatch directly to the active buffer
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    current_buffer.handle_action(UIAction::ApplySearch { query });
+                }
+                Ok(true)
+            }
+            UIAction::ClearFilters => {
+                // Dispatch to the active buffer
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    current_buffer.handle_action(UIAction::ClearFilters);
+                }
+                self.show_message("Filters cleared".to_string());
+                Ok(true)
+            }
+            UIAction::SetStatusFilter { status } => {
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    let result = current_buffer.handle_action(UIAction::SetStatusFilter { status });
+                    match result {
+                        UIAction::ShowMessage(msg) => self.show_message(msg),
+                        UIAction::ShowError(msg) => self.show_error(msg),
+                        _ => {}
+                    }
+                }
+                Ok(true)
+            }
+            UIAction::SetDateRangeFilter { range } => {
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    let result =
+                        current_buffer.handle_action(UIAction::SetDateRangeFilter { range });
+                    match result {
+                        UIAction::ShowMessage(msg) => self.show_message(msg),
+                        UIAction::ShowError(msg) => self.show_error(msg),
+                        _ => {}
+                    }
+                }
+                Ok(true)
+            }
             UIAction::Refresh => {
                 // Handle F5 refresh - refresh current buffer based on its type
                 let current_buffer_id = self.buffer_manager.current_buffer_id();
@@ -804,6 +850,13 @@ impl UIApp {
                         }
                         UIAction::ShowError(msg) => {
                             self.show_error(msg);
+                        }
+                        UIAction::Search => {
+                            // Buffer bubbled up Search — open the minibuffer prompt
+                            self.minibuffer.set_content(MinibufferContent::Input {
+                                prompt: "Search: ".to_string(),
+                                input: String::new(),
+                            });
                         }
                         _ => {
                             // Ignore other actions to avoid infinite recursion
@@ -1282,6 +1335,74 @@ impl UIApp {
                     Ok(true)
                 }
             }
+            "search" => {
+                if parts.len() > 1 {
+                    let query = parts[1..].join(" ");
+                    if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                        let result =
+                            current_buffer.handle_action(UIAction::ApplySearch { query });
+                        if let UIAction::ShowMessage(msg) = result {
+                            self.show_message(msg);
+                        }
+                    }
+                    Ok(true)
+                } else {
+                    // Open search prompt
+                    self.minibuffer.set_content(MinibufferContent::Input {
+                        prompt: "Search: ".to_string(),
+                        input: String::new(),
+                    });
+                    Ok(true)
+                }
+            }
+            "filter-status" => {
+                if parts.len() > 1 {
+                    let status = parts[1].to_string();
+                    if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                        let result = current_buffer
+                            .handle_action(UIAction::SetStatusFilter { status });
+                        match result {
+                            UIAction::ShowMessage(msg) => self.show_message(msg),
+                            UIAction::ShowError(msg) => self.show_error(msg),
+                            _ => {}
+                        }
+                    }
+                    Ok(true)
+                } else {
+                    self.show_error(
+                        "Usage: filter-status <status> (new, downloaded, played, downloading, failed)"
+                            .to_string(),
+                    );
+                    Ok(true)
+                }
+            }
+            "filter-date" => {
+                if parts.len() > 1 {
+                    let range = parts[1].to_string();
+                    if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                        let result = current_buffer
+                            .handle_action(UIAction::SetDateRangeFilter { range });
+                        match result {
+                            UIAction::ShowMessage(msg) => self.show_message(msg),
+                            UIAction::ShowError(msg) => self.show_error(msg),
+                            _ => {}
+                        }
+                    }
+                    Ok(true)
+                } else {
+                    self.show_error(
+                        "Usage: filter-date <range> (today, 12h, 7d, 2w, 1m)".to_string(),
+                    );
+                    Ok(true)
+                }
+            }
+            "clear-filters" | "widen" => {
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    current_buffer.handle_action(UIAction::ClearFilters);
+                }
+                self.show_message("Filters cleared".to_string());
+                Ok(true)
+            }
             _ => {
                 self.show_error(format!("Unknown command: {}", parts[0]));
                 Ok(true)
@@ -1452,6 +1573,22 @@ impl UIApp {
             // Cleanup commands
             "clean-older-than".to_string(),
             "cleanup".to_string(),
+            // Search & filter commands
+            "search".to_string(),
+            "filter-status".to_string(),
+            "filter-status new".to_string(),
+            "filter-status downloaded".to_string(),
+            "filter-status played".to_string(),
+            "filter-status downloading".to_string(),
+            "filter-status failed".to_string(),
+            "filter-date".to_string(),
+            "filter-date today".to_string(),
+            "filter-date 1d".to_string(),
+            "filter-date 7d".to_string(),
+            "filter-date 2w".to_string(),
+            "filter-date 1m".to_string(),
+            "clear-filters".to_string(),
+            "widen".to_string(),
         ]
     }
 
@@ -2550,7 +2687,15 @@ impl UIApp {
 
         // Check context from prompt FIRST (before checking for URLs)
         if let Some(prompt) = &prompt_context {
-            if prompt.starts_with("Import OPML from") {
+            if prompt.starts_with("Search:") {
+                // This is a search query — dispatch to active buffer
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    current_buffer.handle_action(UIAction::ApplySearch {
+                        query: input.to_string(),
+                    });
+                }
+                return;
+            } else if prompt.starts_with("Import OPML from") {
                 // This is an OPML import
                 self.trigger_async_opml_import(input.to_string());
                 return;

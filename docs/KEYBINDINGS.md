@@ -103,6 +103,15 @@ This document outlines the keybinding system for the Podcast TUI application.
 - `sync [path]` / `sync-device [path]` - Sync downloaded episodes to external device
 - `sync-dry-run [path]` / `sync-preview [path]` - Preview sync changes without applying them
 
+#### Search & Filter Commands
+- `search` - Search episodes by title (also `C-s` keybinding)
+- `filter-status <status>` - Filter by status: `new`, `downloaded`, `played`, `downloading`, `failed`
+- `filter-date <range>` - Filter by publish date: `today`, `12h`, `7d`, `2w`, `1m` (same syntax as cleanup)
+- `clear-filters` / `widen` - Remove all active filters
+
+> **Note**: Duration filtering (`filter-duration`) is deferred until episode duration
+> data is populated from RSS feeds. See Design Decision #13 in `docs/SEARCH_AND_FILTER.md`.
+
 ### Auto-Completion Features
 
 The command prompt supports intelligent auto-completion:

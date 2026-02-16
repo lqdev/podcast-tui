@@ -404,10 +404,17 @@ impl FeedParser {
         None
     }
 
-    /// Extract duration from feed entry
+    /// Extract duration from feed entry.
+    ///
+    /// **Stub** — always returns `None`. When implemented, should parse:
+    /// - iTunes `<itunes:duration>` tag (HH:MM:SS or seconds)
+    /// - Other RSS duration fields
+    ///
+    /// Implementing this will also unblock the deferred `:filter-duration`
+    /// command. See Design Decision #13 in `docs/SEARCH_AND_FILTER.md`.
     fn extract_duration(&self, _entry: &feed_rs::model::Entry) -> Option<chrono::Duration> {
         // TODO: Parse duration from iTunes extensions when feed-rs supports it
-        // For now, return None
+        // For now, return None — duration filter deferred (Decision #13)
         None
     }
 }

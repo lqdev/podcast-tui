@@ -17,6 +17,7 @@ use crate::{
     storage::{JsonStorage, PodcastId, Storage},
     ui::{
         buffers::{Buffer, BufferId},
+        filters::EpisodeFilter,
         themes::Theme,
         UIAction, UIComponent,
     },
@@ -43,6 +44,8 @@ pub struct WhatsNewBuffer {
     subscription_manager: Option<Arc<SubscriptionManager<JsonStorage>>>,
     download_manager: Option<Arc<DownloadManager<JsonStorage>>>,
     max_episodes: usize,
+    filter: EpisodeFilter,
+    filtered_indices: Vec<usize>,
 }
 
 impl WhatsNewBuffer {
@@ -58,6 +61,8 @@ impl WhatsNewBuffer {
             subscription_manager: None,
             download_manager: None,
             max_episodes,
+            filter: EpisodeFilter::default(),
+            filtered_indices: Vec::new(),
         }
     }
 
@@ -122,21 +127,44 @@ impl WhatsNewBuffer {
 
             self.episodes = all_episodes;
 
-            // Set initial selection
-            if !self.episodes.is_empty() && self.selected_index.is_none() {
-                self.selected_index = Some(0);
-            }
+            // Apply filters (resets selection + scroll as appropriate)
+            self.apply_filters();
 
-            self.scroll_offset = 0;
             Ok(())
         } else {
             Err("No subscription manager available".to_string())
         }
     }
 
-    /// Get selected episode
+    /// Get selected episode (maps through filtered_indices)
     pub fn selected_episode(&self) -> Option<&AggregatedEpisode> {
-        self.selected_index.and_then(|i| self.episodes.get(i))
+        self.selected_index
+            .and_then(|i| self.filtered_indices.get(i))
+            .and_then(|&actual| self.episodes.get(actual))
+    }
+
+    /// Apply current filter to episodes, rebuilding filtered_indices
+    fn apply_filters(&mut self) {
+        self.filtered_indices = self
+            .episodes
+            .iter()
+            .enumerate()
+            .filter(|(_, agg_ep)| self.filter.matches(&agg_ep.episode))
+            .map(|(i, _)| i)
+            .collect();
+
+        // Reset selection when filter changes
+        if self.filtered_indices.is_empty() {
+            self.selected_index = None;
+        } else {
+            self.selected_index = Some(0);
+        }
+        self.scroll_offset = 0;
+    }
+
+    /// Number of currently visible (filtered) episodes
+    fn visible_count(&self) -> usize {
+        self.filtered_indices.len()
     }
 
     /// Set episodes data directly (for background refresh)
@@ -151,32 +179,19 @@ impl WhatsNewBuffer {
             })
             .collect();
 
-        // Set initial selection
-        if !self.episodes.is_empty() && self.selected_index.is_none() {
-            self.selected_index = Some(0);
-        }
-        // Reset selection if it's out of bounds
-        if let Some(selected) = self.selected_index {
-            if selected >= self.episodes.len() {
-                self.selected_index = if self.episodes.is_empty() {
-                    None
-                } else {
-                    Some(self.episodes.len() - 1)
-                };
-            }
-        }
-
-        self.scroll_offset = 0;
+        // Reapply filters (resets selection and scroll)
+        self.apply_filters();
     }
 
     /// Move selection up
     fn select_previous(&mut self) {
-        if self.episodes.is_empty() {
+        let count = self.visible_count();
+        if count == 0 {
             return;
         }
 
         self.selected_index = match self.selected_index {
-            Some(i) if i == 0 => Some(self.episodes.len() - 1),
+            Some(0) => Some(count - 1),
             Some(i) => Some(i - 1),
             None => Some(0),
         };
@@ -191,12 +206,13 @@ impl WhatsNewBuffer {
 
     /// Move selection down
     fn select_next(&mut self) {
-        if self.episodes.is_empty() {
+        let count = self.visible_count();
+        if count == 0 {
             return;
         }
 
         self.selected_index = match self.selected_index {
-            Some(i) if i >= self.episodes.len() - 1 => Some(0),
+            Some(i) if i >= count - 1 => Some(0),
             Some(i) => Some(i + 1),
             None => Some(0),
         };
@@ -231,6 +247,8 @@ impl Buffer for WhatsNewBuffer {
             "  C-p, ↑    Previous episode".to_string(),
             "  Enter     View episode details".to_string(),
             "  D         Download episode".to_string(),
+            "  /         Search episodes".to_string(),
+            "  F6        Clear filters".to_string(),
             "  F5        Refresh episode list".to_string(),
             "  C-h       Show help".to_string(),
         ]
@@ -253,7 +271,7 @@ impl UIComponent for WhatsNewBuffer {
                 UIAction::Render
             }
             UIAction::MoveToTop => {
-                if !self.episodes.is_empty() {
+                if self.visible_count() > 0 {
                     self.selected_index = Some(0);
                     self.scroll_offset = 0;
                     UIAction::Render
@@ -262,8 +280,8 @@ impl UIComponent for WhatsNewBuffer {
                 }
             }
             UIAction::MoveToBottom => {
-                if !self.episodes.is_empty() {
-                    self.selected_index = Some(self.episodes.len() - 1);
+                if self.visible_count() > 0 {
+                    self.selected_index = Some(self.visible_count() - 1);
                     UIAction::Render
                 } else {
                     UIAction::None
@@ -308,12 +326,63 @@ impl UIComponent for WhatsNewBuffer {
                     UIAction::ShowMessage("No episode selected for download".to_string())
                 }
             }
+            UIAction::Search => UIAction::Search,
+            UIAction::ApplySearch { query } => {
+                self.filter.text_query = if query.is_empty() {
+                    None
+                } else {
+                    Some(query)
+                };
+                self.apply_filters();
+                UIAction::Render
+            }
+            UIAction::ClearFilters => {
+                self.filter.clear();
+                self.apply_filters();
+                UIAction::Render
+            }
+            UIAction::SetStatusFilter { status } => {
+                use crate::ui::filters::parse_status_filter;
+                match parse_status_filter(&status) {
+                    Some(sf) => {
+                        self.filter.status = Some(sf);
+                        self.apply_filters();
+                        UIAction::Render
+                    }
+                    None => UIAction::ShowMessage(format!("Unknown status filter: {}", status)),
+                }
+            }
+            UIAction::SetDateRangeFilter { range } => {
+                use crate::ui::filters::parse_date_range;
+                match parse_date_range(&range) {
+                    Some(dr) => {
+                        self.filter.date_range = Some(dr);
+                        self.apply_filters();
+                        UIAction::Render
+                    }
+                    None => UIAction::ShowError(format!("Unknown date range: '{}'. Use: today, 12h, 7d, 2w, 1m", range)),
+                }
+            }
             _ => UIAction::None,
         }
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect) {
-        let title = format!(" What's New ({} episodes) ", self.episodes.len());
+        let filtered_count = self.filtered_indices.len();
+        let total_count = self.episodes.len();
+
+        // Build title with filter indicator
+        let title = if self.filter.is_active() {
+            format!(
+                " What's New ({} of {} episodes) [{}] ",
+                filtered_count,
+                total_count,
+                self.filter.description()
+            )
+        } else {
+            format!(" What's New ({} episodes) ", total_count)
+        };
+
         let block = Block::default()
             .borders(Borders::ALL)
             .title(title)
@@ -330,6 +399,22 @@ impl UIComponent for WhatsNewBuffer {
 
             let message = ratatui::widgets::Paragraph::new(
                 "No new episodes available.\n\nEpisodes will appear here after refreshing podcasts.\nPress 'R' to refresh all podcasts.",
+            )
+            .style(self.theme.default_style())
+            .alignment(ratatui::layout::Alignment::Center)
+            .wrap(ratatui::widgets::Wrap { trim: true });
+
+            frame.render_widget(message, inner);
+            return;
+        }
+
+        if filtered_count == 0 && self.filter.is_active() {
+            // Filter active but nothing matches
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+
+            let message = ratatui::widgets::Paragraph::new(
+                "No episodes match the current filter.\n\nPress F6 or run :clear-filters to reset.",
             )
             .style(self.theme.default_style())
             .alignment(ratatui::layout::Alignment::Center)
@@ -364,16 +449,16 @@ impl UIComponent for WhatsNewBuffer {
                 .add_modifier(Modifier::BOLD),
         );
 
-        // Create table rows
-        let rows: Vec<Row> = self
-            .episodes
+        // Create table rows from filtered_indices
+        let end_index = (self.scroll_offset + visible_height).min(filtered_count);
+        let rows: Vec<Row> = self.filtered_indices[self.scroll_offset..end_index]
             .iter()
             .enumerate()
-            .skip(self.scroll_offset)
-            .take(visible_height)
-            .map(|(idx, agg_episode)| {
+            .map(|(display_index, &actual_index)| {
+                let display_pos = self.scroll_offset + display_index;
+                let agg_episode = &self.episodes[actual_index];
                 let episode = &agg_episode.episode;
-                let style = if Some(idx) == self.selected_index {
+                let style = if Some(display_pos) == self.selected_index {
                     Style::default()
                         .bg(self.theme.colors.selection)
                         .fg(self.theme.colors.text)
@@ -414,7 +499,15 @@ impl UIComponent for WhatsNewBuffer {
     }
 
     fn title(&self) -> String {
-        format!("What's New ({} episodes)", self.episodes.len())
+        if self.filter.is_active() {
+            format!(
+                "What's New ({} of {} episodes)",
+                self.filtered_indices.len(),
+                self.episodes.len()
+            )
+        } else {
+            format!("What's New ({} episodes)", self.episodes.len())
+        }
     }
 }
 
@@ -474,6 +567,7 @@ mod tests {
             podcast_title: "Test Podcast".to_string(),
             episode: episode.clone(),
         }];
+        buffer.filtered_indices = vec![0];
         buffer.selected_index = Some(0);
 
         // Test SelectItem action
@@ -608,11 +702,140 @@ mod tests {
         // Verify scroll was reset
         assert_eq!(buffer.scroll_offset, 0);
 
-        // Verify selection was adjusted to be valid (should be last episode since 5 >= 3)
-        assert_eq!(buffer.selected_index, Some(2)); // Last episode (0-indexed)
+        // Verify selection resets to first item (apply_filters resets cursor)
+        assert_eq!(buffer.selected_index, Some(0));
 
         // Verify new episodes were set
         assert_eq!(buffer.episodes.len(), 3);
         assert!(buffer.episodes[0].episode.title.starts_with("New Episode"));
+    }
+
+    #[test]
+    fn test_text_search_filters_episodes() {
+        use crate::podcast::Episode;
+        use crate::storage::PodcastId;
+        use crate::ui::events::AggregatedEpisode as EventsAggregatedEpisode;
+
+        let mut buffer = WhatsNewBuffer::new(100);
+        let podcast_id = PodcastId::new();
+
+        let agg_episodes = vec![
+            EventsAggregatedEpisode {
+                podcast_id: podcast_id.clone(),
+                podcast_title: "Rust Pod".to_string(),
+                episode: Episode::new(
+                    podcast_id.clone(),
+                    "Rust Programming".to_string(),
+                    "url1".to_string(),
+                    chrono::Utc::now(),
+                ),
+            },
+            EventsAggregatedEpisode {
+                podcast_id: podcast_id.clone(),
+                podcast_title: "Python Pod".to_string(),
+                episode: Episode::new(
+                    podcast_id.clone(),
+                    "Python Tips".to_string(),
+                    "url2".to_string(),
+                    chrono::Utc::now(),
+                ),
+            },
+            EventsAggregatedEpisode {
+                podcast_id: podcast_id.clone(),
+                podcast_title: "Rust Pod".to_string(),
+                episode: Episode::new(
+                    podcast_id.clone(),
+                    "Rust async".to_string(),
+                    "url3".to_string(),
+                    chrono::Utc::now(),
+                ),
+            },
+        ];
+        buffer.set_episodes(agg_episodes);
+        assert_eq!(buffer.visible_count(), 3);
+
+        buffer.handle_action(UIAction::ApplySearch {
+            query: "rust".to_string(),
+        });
+        assert_eq!(buffer.visible_count(), 2);
+        assert!(buffer.filter.is_active());
+
+        let ep = buffer.selected_episode().expect("should have episode");
+        assert_eq!(ep.episode.title, "Rust Programming");
+
+        buffer.handle_action(UIAction::MoveDown);
+        let ep = buffer.selected_episode().expect("should have episode");
+        assert_eq!(ep.episode.title, "Rust async");
+    }
+
+    #[test]
+    fn test_clear_filters_restores_all() {
+        use crate::podcast::Episode;
+        use crate::storage::PodcastId;
+        use crate::ui::events::AggregatedEpisode as EventsAggregatedEpisode;
+
+        let mut buffer = WhatsNewBuffer::new(100);
+        let podcast_id = PodcastId::new();
+
+        let agg_episodes = vec![
+            EventsAggregatedEpisode {
+                podcast_id: podcast_id.clone(),
+                podcast_title: "Pod".to_string(),
+                episode: Episode::new(
+                    podcast_id.clone(),
+                    "Ep 1".to_string(),
+                    "url1".to_string(),
+                    chrono::Utc::now(),
+                ),
+            },
+            EventsAggregatedEpisode {
+                podcast_id: podcast_id.clone(),
+                podcast_title: "Pod".to_string(),
+                episode: Episode::new(
+                    podcast_id.clone(),
+                    "Ep 2".to_string(),
+                    "url2".to_string(),
+                    chrono::Utc::now(),
+                ),
+            },
+        ];
+        buffer.set_episodes(agg_episodes);
+
+        buffer.handle_action(UIAction::ApplySearch {
+            query: "Ep 1".to_string(),
+        });
+        assert_eq!(buffer.visible_count(), 1);
+
+        buffer.handle_action(UIAction::ClearFilters);
+        assert_eq!(buffer.visible_count(), 2);
+        assert!(!buffer.filter.is_active());
+    }
+
+    #[test]
+    fn test_filter_no_match_empty_results() {
+        use crate::podcast::Episode;
+        use crate::storage::PodcastId;
+        use crate::ui::events::AggregatedEpisode as EventsAggregatedEpisode;
+
+        let mut buffer = WhatsNewBuffer::new(100);
+        let podcast_id = PodcastId::new();
+
+        buffer.set_episodes(vec![EventsAggregatedEpisode {
+            podcast_id: podcast_id.clone(),
+            podcast_title: "Pod".to_string(),
+            episode: Episode::new(
+                podcast_id.clone(),
+                "Episode".to_string(),
+                "url".to_string(),
+                chrono::Utc::now(),
+            ),
+        }]);
+
+        buffer.handle_action(UIAction::ApplySearch {
+            query: "zzzzz".to_string(),
+        });
+        assert_eq!(buffer.visible_count(), 0);
+        assert_eq!(buffer.selected_index, None);
+        assert!(buffer.selected_episode().is_none());
     }
 }

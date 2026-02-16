@@ -16,6 +16,7 @@ use crate::{
     storage::JsonStorage,
     ui::{
         buffers::{Buffer, BufferId},
+        filters::PodcastFilter,
         themes::Theme,
         UIAction, UIComponent,
     },
@@ -40,6 +41,8 @@ pub struct PodcastListBuffer {
     state: PodcastListState,
     status_message: Option<String>,
     subscription_manager: Option<Arc<SubscriptionManager<JsonStorage>>>,
+    filter: PodcastFilter,
+    filtered_indices: Vec<usize>,
 }
 
 impl PodcastListBuffer {
@@ -55,6 +58,8 @@ impl PodcastListBuffer {
             state: PodcastListState::Ready,
             status_message: None,
             subscription_manager: None,
+            filter: PodcastFilter::default(),
+            filtered_indices: Vec::new(),
         }
     }
 
@@ -89,14 +94,38 @@ impl PodcastListBuffer {
     pub fn set_podcasts(&mut self, podcasts: Vec<Podcast>) {
         self.podcasts = podcasts;
         self.state = PodcastListState::Ready;
-        if !self.podcasts.is_empty() && self.selected_index.is_none() {
-            self.selected_index = Some(0);
-        }
+        self.apply_filters();
     }
 
-    /// Get the currently selected podcast
+    /// Get the currently selected podcast (maps through filtered_indices)
     pub fn selected_podcast(&self) -> Option<&Podcast> {
-        self.selected_index.and_then(|i| self.podcasts.get(i))
+        self.selected_index
+            .and_then(|i| self.filtered_indices.get(i))
+            .and_then(|&actual| self.podcasts.get(actual))
+    }
+
+    /// Apply current filter to podcasts, rebuilding filtered_indices
+    fn apply_filters(&mut self) {
+        self.filtered_indices = self
+            .podcasts
+            .iter()
+            .enumerate()
+            .filter(|(_, podcast)| self.filter.matches(podcast))
+            .map(|(i, _)| i)
+            .collect();
+
+        // Reset selection when filter changes
+        if self.filtered_indices.is_empty() {
+            self.selected_index = None;
+        } else {
+            self.selected_index = Some(0);
+        }
+        self.scroll_offset = 0;
+    }
+
+    /// Number of currently visible (filtered) podcasts
+    fn visible_count(&self) -> usize {
+        self.filtered_indices.len()
     }
 
     /// Get the number of podcasts
@@ -106,12 +135,13 @@ impl PodcastListBuffer {
 
     /// Move selection up
     fn select_previous(&mut self) {
-        if self.podcasts.is_empty() {
+        let count = self.visible_count();
+        if count == 0 {
             return;
         }
 
         self.selected_index = match self.selected_index {
-            Some(i) if i == 0 => Some(self.podcasts.len() - 1),
+            Some(0) => Some(count - 1),
             Some(i) => Some(i - 1),
             None => Some(0),
         };
@@ -119,12 +149,13 @@ impl PodcastListBuffer {
 
     /// Move selection down
     fn select_next(&mut self) {
-        if self.podcasts.is_empty() {
+        let count = self.visible_count();
+        if count == 0 {
             return;
         }
 
         self.selected_index = match self.selected_index {
-            Some(i) if i >= self.podcasts.len() - 1 => Some(0),
+            Some(i) if i >= count - 1 => Some(0),
             Some(i) => Some(i + 1),
             None => Some(0),
         };
@@ -176,6 +207,8 @@ impl Buffer for PodcastListBuffer {
             "  Enter     View episodes".to_string(),
             "  a         Add podcast".to_string(),
             "  d         Delete podcast".to_string(),
+            "  /         Search podcasts".to_string(),
+            "  F6        Clear filters".to_string(),
             "  r         Refresh feeds".to_string(),
             "  C-h       Show help".to_string(),
         ]
@@ -196,7 +229,8 @@ impl UIComponent for PodcastListBuffer {
                 UIAction::Render
             }
             UIAction::PageUp => {
-                if self.podcasts.is_empty() {
+                let count = self.visible_count();
+                if count == 0 {
                     return UIAction::None;
                 }
 
@@ -209,13 +243,14 @@ impl UIComponent for PodcastListBuffer {
                 UIAction::Render
             }
             UIAction::PageDown => {
-                if self.podcasts.is_empty() {
+                let count = self.visible_count();
+                if count == 0 {
                     return UIAction::None;
                 }
 
                 // Move down by 10 items or to the bottom
                 if let Some(current) = self.selected_index {
-                    self.selected_index = Some((current + 10).min(self.podcasts.len() - 1));
+                    self.selected_index = Some((current + 10).min(count - 1));
                 } else {
                     self.selected_index = Some(0);
                 }
@@ -233,7 +268,7 @@ impl UIComponent for PodcastListBuffer {
                 }
             }
             UIAction::MoveToTop => {
-                if !self.podcasts.is_empty() {
+                if self.visible_count() > 0 {
                     self.selected_index = Some(0);
                     self.scroll_offset = 0;
                     UIAction::Render
@@ -242,8 +277,8 @@ impl UIComponent for PodcastListBuffer {
                 }
             }
             UIAction::MoveToBottom => {
-                if !self.podcasts.is_empty() {
-                    self.selected_index = Some(self.podcasts.len() - 1);
+                if self.visible_count() > 0 {
+                    self.selected_index = Some(self.visible_count() - 1);
                     // Scroll adjustment happens in render based on area size
                     UIAction::Render
                 } else {
@@ -259,6 +294,21 @@ impl UIComponent for PodcastListBuffer {
                 } else {
                     UIAction::ShowMessage("No podcast selected to refresh".to_string())
                 }
+            }
+            UIAction::Search => UIAction::Search,
+            UIAction::ApplySearch { query } => {
+                self.filter.text_query = if query.is_empty() {
+                    None
+                } else {
+                    Some(query)
+                };
+                self.apply_filters();
+                UIAction::Render
+            }
+            UIAction::ClearFilters => {
+                self.filter = PodcastFilter::default();
+                self.apply_filters();
+                UIAction::Render
             }
             _ => UIAction::None,
         }
@@ -325,7 +375,29 @@ impl UIComponent for PodcastListBuffer {
                     .wrap(Wrap { trim: true });
 
                     frame.render_widget(empty_text, chunks[0]);
+                } else if self.visible_count() == 0 && self.filter.is_active() {
+                    // Filter active but nothing matches
+                    let title = format!(
+                        "Podcasts [{}]",
+                        self.filter.description()
+                    );
+                    let filter_block = Block::default()
+                        .title(title)
+                        .borders(Borders::ALL)
+                        .border_style(border_style)
+                        .title_style(self.theme.title_style());
+
+                    let filter_text = Paragraph::new(
+                        "No podcasts match the current filter.\n\nPress F6 or run :clear-filters to reset.",
+                    )
+                    .block(filter_block)
+                    .style(self.theme.muted_style())
+                    .wrap(Wrap { trim: true });
+
+                    frame.render_widget(filter_text, chunks[0]);
                 } else {
+                    let filtered_count = self.visible_count();
+
                     // Calculate visible height (subtract 2 for borders)
                     let visible_height = chunks[0].height.saturating_sub(2) as usize;
 
@@ -333,20 +405,20 @@ impl UIComponent for PodcastListBuffer {
                     self.adjust_scroll(visible_height);
 
                     // Calculate the range of items to display
-                    let end_index = (self.scroll_offset + visible_height).min(self.podcasts.len());
-                    let visible_podcasts = &self.podcasts[self.scroll_offset..end_index];
+                    let end_index = (self.scroll_offset + visible_height).min(filtered_count);
 
-                    let items: Vec<ListItem> = visible_podcasts
+                    let items: Vec<ListItem> = self.filtered_indices[self.scroll_offset..end_index]
                         .iter()
                         .enumerate()
-                        .map(|(visible_i, podcast)| {
-                            let actual_i = self.scroll_offset + visible_i;
+                        .map(|(display_index, &actual_index)| {
+                            let display_pos = self.scroll_offset + display_index;
+                            let podcast = &self.podcasts[actual_index];
                             let title = podcast.title.clone();
                             let author = podcast.author.as_deref().unwrap_or("Unknown");
                             let episode_count = ""; // TODO: Add episode count when available
 
                             let content = format!("  {} - {}{}", title, author, episode_count);
-                            let style = if Some(actual_i) == self.selected_index {
+                            let style = if Some(display_pos) == self.selected_index {
                                 self.theme.selected_style()
                             } else {
                                 self.theme.text_style()
@@ -356,10 +428,20 @@ impl UIComponent for PodcastListBuffer {
                         })
                         .collect();
 
+                    // Build title with filter indicator
+                    let block_title = if self.filter.is_active() {
+                        format!(
+                            "Podcasts [{}]",
+                            self.filter.description()
+                        )
+                    } else {
+                        "Podcasts".to_string()
+                    };
+
                     let list = List::new(items)
                         .block(
                             Block::default()
-                                .title("Podcasts")
+                                .title(block_title)
                                 .borders(Borders::ALL)
                                 .border_style(border_style)
                                 .title_style(self.theme.title_style()),
@@ -378,7 +460,22 @@ impl UIComponent for PodcastListBuffer {
             match &self.state {
                 PodcastListState::Ready if !self.podcasts.is_empty() => {
                     if let Some(index) = self.selected_index {
-                        format!(" {} of {} podcasts ", index + 1, self.podcasts.len())
+                        if self.filter.is_active() {
+                            format!(
+                                " {} of {} matching ({} total) ",
+                                index + 1,
+                                self.visible_count(),
+                                self.podcasts.len()
+                            )
+                        } else {
+                            format!(" {} of {} podcasts ", index + 1, self.podcasts.len())
+                        }
+                    } else if self.filter.is_active() {
+                        format!(
+                            " 0 of {} matching ({} total) ",
+                            self.visible_count(),
+                            self.podcasts.len()
+                        )
                     } else {
                         format!(" {} podcasts ", self.podcasts.len())
                     }
@@ -466,5 +563,72 @@ mod tests {
         let action = buffer.handle_action(UIAction::MoveUp);
         assert_eq!(action, UIAction::Render);
         assert_eq!(buffer.selected_index, Some(1));
+    }
+
+    #[test]
+    fn test_text_search_filters_podcasts() {
+        let mut buffer = PodcastListBuffer::new();
+        let podcasts = vec![
+            Podcast::new("Rust Radio".to_string(), "http://example.com/1".to_string()),
+            Podcast::new(
+                "Python Bytes".to_string(),
+                "http://example.com/2".to_string(),
+            ),
+            Podcast::new(
+                "Rust in Production".to_string(),
+                "http://example.com/3".to_string(),
+            ),
+        ];
+        buffer.set_podcasts(podcasts);
+        assert_eq!(buffer.visible_count(), 3);
+
+        buffer.handle_action(UIAction::ApplySearch {
+            query: "rust".to_string(),
+        });
+        assert_eq!(buffer.visible_count(), 2);
+        assert!(buffer.filter.is_active());
+
+        let podcast = buffer.selected_podcast().expect("should have podcast");
+        assert_eq!(podcast.title, "Rust Radio");
+
+        buffer.handle_action(UIAction::MoveDown);
+        let podcast = buffer.selected_podcast().expect("should have podcast");
+        assert_eq!(podcast.title, "Rust in Production");
+    }
+
+    #[test]
+    fn test_clear_podcast_filter() {
+        let mut buffer = PodcastListBuffer::new();
+        let podcasts = vec![
+            Podcast::new("Alpha Show".to_string(), "http://example.com/a".to_string()),
+            Podcast::new("Beta Show".to_string(), "http://example.com/b".to_string()),
+        ];
+        buffer.set_podcasts(podcasts);
+
+        buffer.handle_action(UIAction::ApplySearch {
+            query: "alpha".to_string(),
+        });
+        assert_eq!(buffer.visible_count(), 1);
+
+        buffer.handle_action(UIAction::ClearFilters);
+        assert_eq!(buffer.visible_count(), 2);
+        assert!(!buffer.filter.is_active());
+    }
+
+    #[test]
+    fn test_podcast_filter_no_matches() {
+        let mut buffer = PodcastListBuffer::new();
+        let podcasts = vec![Podcast::new(
+            "My Podcast".to_string(),
+            "http://example.com/1".to_string(),
+        )];
+        buffer.set_podcasts(podcasts);
+
+        buffer.handle_action(UIAction::ApplySearch {
+            query: "zzzzz".to_string(),
+        });
+        assert_eq!(buffer.visible_count(), 0);
+        assert_eq!(buffer.selected_index, None);
+        assert!(buffer.selected_podcast().is_none());
     }
 }

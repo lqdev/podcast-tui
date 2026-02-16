@@ -222,7 +222,7 @@ impl UIApp {
             // Buffers already loaded, just update status and show welcome
             self.update_status_bar();
             self.show_message("Welcome to Podcast TUI! Press F1 or ? for help.".to_string());
-            
+
             // Trigger background loading of buffer data (non-blocking)
             self.trigger_background_refresh(crate::ui::events::BufferRefreshType::PodcastList);
             self.trigger_background_refresh(crate::ui::events::BufferRefreshType::Downloads);
@@ -230,7 +230,9 @@ impl UIApp {
         }
 
         // Perform initial render to display UI immediately (before event loop)
-        terminal.draw(|f| self.render(f)).map_err(|e| UIError::Render(e.to_string()))?;
+        terminal
+            .draw(|f| self.render(f))
+            .map_err(|e| UIError::Render(e.to_string()))?;
 
         // Main event loop
         let result = loop {
@@ -851,7 +853,9 @@ impl UIApp {
                         total_new_episodes
                     ));
                 } else {
-                    self.show_message("Podcast refresh completed. No new episodes found".to_string());
+                    self.show_message(
+                        "Podcast refresh completed. No new episodes found".to_string(),
+                    );
                 }
             }
             AppEvent::BufferDataRefreshed { buffer_type, data } => {
@@ -1002,16 +1006,27 @@ impl UIApp {
             AppEvent::OpmlExportFailed { path, error } => {
                 self.show_error(format!("OPML export to {} failed: {}", path, error));
             }
-            AppEvent::DeviceSyncStarted { device_path, dry_run } => {
+            AppEvent::DeviceSyncStarted {
+                device_path,
+                dry_run,
+            } => {
                 let mode = if dry_run { " (dry run)" } else { "" };
-                self.show_message(format!("Starting device sync to {}{}...", device_path.display(), mode));
+                self.show_message(format!(
+                    "Starting device sync to {}{}...",
+                    device_path.display(),
+                    mode
+                ));
             }
-            AppEvent::DeviceSyncCompleted { device_path, report, dry_run } => {
+            AppEvent::DeviceSyncCompleted {
+                device_path,
+                report,
+                dry_run,
+            } => {
                 // Update sync buffer with results
                 if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
                     sync_buffer.add_sync_result(device_path.clone(), report.clone(), dry_run);
                 }
-                
+
                 let mode = if dry_run { " (dry run)" } else { "" };
                 let summary = if report.is_success() {
                     format!(
@@ -1034,7 +1049,11 @@ impl UIApp {
                 self.show_message(summary);
             }
             AppEvent::DeviceSyncFailed { device_path, error } => {
-                self.show_error(format!("Device sync to {} failed: {}", device_path.display(), error));
+                self.show_error(format!(
+                    "Device sync to {} failed: {}",
+                    device_path.display(),
+                    error
+                ));
             }
             AppEvent::DownloadCleanupCompleted {
                 deleted_count,
@@ -1242,8 +1261,7 @@ impl UIApp {
                 } else {
                     // Prompt for duration
                     self.minibuffer.set_content(MinibufferContent::Input {
-                        prompt: "Delete downloads older than (e.g., 7d, 2w, 1m, 12h): "
-                            .to_string(),
+                        prompt: "Delete downloads older than (e.g., 7d, 2w, 1m, 12h): ".to_string(),
                         input: String::new(),
                     });
                     Ok(true)
@@ -2066,22 +2084,29 @@ impl UIApp {
 
     /// Get the default sync device path from config, falling back to the constant default
     fn get_default_sync_path(&self) -> String {
-        self.config.downloads.sync_device_path
+        self.config
+            .downloads
+            .sync_device_path
             .as_ref()
             .map(|p| shellexpand::tilde(p).to_string())
             .unwrap_or_else(|| crate::constants::downloads::DEFAULT_SYNC_DEVICE_PATH.to_string())
     }
 
     /// Trigger async device sync
-    fn trigger_async_device_sync(&mut self, device_path_str: String, delete_orphans: bool, dry_run: bool) {
+    fn trigger_async_device_sync(
+        &mut self,
+        device_path_str: String,
+        delete_orphans: bool,
+        dry_run: bool,
+    ) {
         let download_manager = self.download_manager.clone();
         let app_event_tx = self.app_event_tx.clone();
-        
+
         // Expand tilde and convert to PathBuf
         let expanded_path = shellexpand::tilde(&device_path_str).to_string();
         let device_path = std::path::PathBuf::from(expanded_path);
         let device_path_clone = device_path.clone();
-        
+
         // Use config defaults if not specified
         let delete_orphans = if delete_orphans {
             true
@@ -2096,7 +2121,10 @@ impl UIApp {
         });
 
         tokio::spawn(async move {
-            match download_manager.sync_to_device(device_path.clone(), delete_orphans, dry_run).await {
+            match download_manager
+                .sync_to_device(device_path.clone(), delete_orphans, dry_run)
+                .await
+            {
                 Ok(report) => {
                     let _ = app_event_tx.send(AppEvent::DeviceSyncCompleted {
                         device_path,
@@ -2433,11 +2461,14 @@ impl UIApp {
                 if let Some(whats_new_buffer) = self.buffer_manager.get_whats_new_buffer_mut() {
                     let episode_count = episodes.len();
                     whats_new_buffer.set_episodes(episodes);
-                    
+
                     // Show message only if we're currently viewing the What's New buffer
                     if let Some(active_id) = self.buffer_manager.active_buffer_id() {
                         if active_id == "whats-new" {
-                            self.show_message(format!("What's New updated with {} episode(s)", episode_count));
+                            self.show_message(format!(
+                                "What's New updated with {} episode(s)",
+                                episode_count
+                            ));
                         }
                     }
                 }
@@ -2534,15 +2565,10 @@ impl UIApp {
                 return;
             } else if prompt.starts_with("Delete downloads older than") {
                 // This is a duration input prompt (no argument was provided)
-                if let Some(total_hours) =
-                    crate::utils::time::parse_cleanup_duration(input)
-                {
+                if let Some(total_hours) = crate::utils::time::parse_cleanup_duration(input) {
                     let label = crate::utils::time::format_cleanup_duration(total_hours);
                     self.minibuffer.set_content(MinibufferContent::Input {
-                        prompt: format!(
-                            "Delete downloaded episodes older than {}? (y/n) ",
-                            label
-                        ),
+                        prompt: format!("Delete downloaded episodes older than {}? (y/n) ", label),
                         input: String::new(),
                     });
                     self.pending_cleanup_hours = Some(total_hours);

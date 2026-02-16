@@ -291,10 +291,7 @@ impl BufferManager {
     }
 
     /// Create Sync buffer
-    pub fn create_sync_buffer(
-        &mut self,
-        download_manager: Arc<DownloadManager<JsonStorage>>,
-    ) {
+    pub fn create_sync_buffer(&mut self, download_manager: Arc<DownloadManager<JsonStorage>>) {
         let mut sync_buffer = crate::ui::buffers::sync::SyncBuffer::new();
         sync_buffer.set_download_manager(download_manager);
         let _ = self.add_buffer(Box::new(sync_buffer));
@@ -369,9 +366,7 @@ impl BufferManager {
     }
 
     /// Get mutable reference to Sync buffer
-    pub fn get_sync_buffer_mut(
-        &mut self,
-    ) -> Option<&mut crate::ui::buffers::sync::SyncBuffer> {
+    pub fn get_sync_buffer_mut(&mut self) -> Option<&mut crate::ui::buffers::sync::SyncBuffer> {
         let buffer_id = "sync".to_string();
         self.get_buffer(&buffer_id).and_then(|buffer| {
             // This is safe because we know sync buffer is always SyncBuffer

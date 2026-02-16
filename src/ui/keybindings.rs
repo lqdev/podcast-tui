@@ -157,6 +157,10 @@ impl KeyHandler {
         // OPML Import/Export
         self.bind_key(KeyChord::shift(KeyCode::Char('A')), UIAction::ImportOpml);
         self.bind_key(KeyChord::shift(KeyCode::Char('E')), UIAction::ExportOpml);
+
+        // Search and filter
+        self.bind_key(KeyChord::none(KeyCode::Char('/')), UIAction::Search);
+        self.bind_key(KeyChord::none(KeyCode::F(6)), UIAction::ClearFilters);
     }
 
     /// Bind a key chord to an action

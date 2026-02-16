@@ -277,12 +277,18 @@ pub struct UiConfig {
     // What's New buffer settings
     #[serde(default = "default_whats_new_episode_limit")]
     pub whats_new_episode_limit: usize,
+    // NOTE: Duration filter config (filter_short_max_minutes, filter_long_min_minutes)
+    // deferred until episode duration data is populated from RSS feeds.
+    // See Design Decision #13 in docs/SEARCH_AND_FILTER.md.
 }
 
 // Default function for serde
 fn default_whats_new_episode_limit() -> usize {
     ui::DEFAULT_WHATS_NEW_LIMIT
 }
+
+// NOTE: Duration filter default fns removed — deferred until extract_duration is implemented.
+// See Design Decision #13.
 
 impl Default for UiConfig {
     fn default() -> Self {

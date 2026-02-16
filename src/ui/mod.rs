@@ -10,6 +10,7 @@ pub mod app;
 pub mod buffers;
 pub mod components;
 pub mod events;
+pub mod filters;
 pub mod keybindings;
 pub mod themes;
 
@@ -151,6 +152,21 @@ pub enum UIAction {
         delete_orphans: bool,
         dry_run: bool,
     },
+
+    // Search & filter actions
+    /// Activate text search in the current buffer (opens minibuffer for input)
+    Search,
+    /// Apply a text search query to the active buffer
+    ApplySearch { query: String },
+    /// Clear all search/filters in the active buffer
+    ClearFilters,
+    /// Set a specific status filter via command
+    SetStatusFilter { status: String },
+    /// Set a specific date range filter via command
+    SetDateRangeFilter { range: String },
+    // NOTE: DurationFilter deferred — episode duration data not yet populated
+    // from RSS feeds (extract_duration is a stub). See Design Decision #13.
+    // SetDurationFilter { duration: String },
 
     // Render request
     Render,

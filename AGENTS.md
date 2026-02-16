@@ -275,6 +275,7 @@ mod tests {
 - **[docs/STORAGE_DESIGN.md](docs/STORAGE_DESIGN.md)** - Storage abstraction architecture
 - **[docs/OPML_SUPPORT.md](docs/OPML_SUPPORT.md)** - OPML import/export implementation
 - **[docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)** - Complete keyboard shortcuts reference
+- **[docs/WINGET_PUBLISHING.md](docs/WINGET_PUBLISHING.md)** - Windows Package Manager (winget) publishing workflow
 
 ### Project Management
 

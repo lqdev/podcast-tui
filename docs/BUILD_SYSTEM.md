@@ -218,7 +218,8 @@ cargo build --target x86_64-unknown-linux-gnu
 
 ### Package Managers
 
-Consider publishing to:
+Published or planned:
+- **winget** (Windows): `winget install lqdev.PodcastTUI` — see [WINGET_PUBLISHING.md](WINGET_PUBLISHING.md)
 - **crates.io**: `cargo install podcast-tui`
 - **Homebrew** (macOS/Linux): Custom tap
 - **Chocolatey** (Windows): Submit package

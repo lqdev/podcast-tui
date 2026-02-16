@@ -127,7 +127,10 @@ impl KeyHandler {
         );
         self.bind_key(KeyChord::none(KeyCode::Char('q')), UIAction::Quit);
         self.bind_key(KeyChord::none(KeyCode::Char('h')), UIAction::ShowHelp);
+        // Bind '?' without modifiers (crossterm handles the shift automatically for the char)
         self.bind_key(KeyChord::none(KeyCode::Char('?')), UIAction::ShowHelp);
+        // Also bind with shift modifier in case some terminals report it that way
+        self.bind_key(KeyChord::shift(KeyCode::Char('?')), UIAction::ShowHelp);
         // Bind ':' without modifiers (crossterm handles the shift automatically for the char)
         self.bind_key(KeyChord::none(KeyCode::Char(':')), UIAction::PromptCommand);
         // Also bind with shift modifier in case some terminals report it that way

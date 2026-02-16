@@ -395,12 +395,27 @@ impl UIApp {
                 Ok(false)
             }
             UIAction::ShowHelp => {
-                let _ = self.buffer_manager.switch_to_buffer(&"*help*".to_string());
+                // Try to find existing help buffer by name, or create a new one
+                let mut help_id = self.buffer_manager.find_buffer_id_by_name("*Help*");
+                if help_id.is_none() {
+                    self.buffer_manager.create_help_buffer();
+                    help_id = self.buffer_manager.find_buffer_id_by_name("*Help*");
+                }
+                if let Some(id) = help_id {
+                    let _ = self.buffer_manager.switch_to_buffer(&id);
+                }
                 self.update_status_bar();
                 Ok(true)
             }
             UIAction::SwitchBuffer(name) => {
-                let _ = self.buffer_manager.switch_to_buffer(&name);
+                // Try to find buffer by name first, then fall back to ID
+                let buffer_id = self
+                    .buffer_manager
+                    .find_buffer_id_by_name(&name)
+                    .unwrap_or_else(|| name.clone());
+                if let Err(_) = self.buffer_manager.switch_to_buffer(&buffer_id) {
+                    self.show_error(format!("Failed to switch to buffer: {}", name));
+                }
                 self.update_status_bar();
                 Ok(true)
             }
@@ -2908,6 +2923,66 @@ mod tests {
         assert!(result.unwrap());
 
         // Should have switched to help buffer
+        assert_eq!(app.buffer_manager.current_buffer_name().unwrap(), "*Help*");
+    }
+
+    #[tokio::test]
+    async fn test_show_help_reopens_after_close() {
+        use crate::config::DownloadConfig;
+        use crate::storage::JsonStorage;
+        use tempfile::TempDir;
+
+        let config = Config::default();
+
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_dir.path().to_path_buf(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
+
+        let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager,
+            storage,
+            app_event_tx,
+        )
+        .unwrap();
+        app.initialize().await.unwrap();
+
+        // Open help buffer
+        let result = app.handle_action(UIAction::ShowHelp).await;
+        assert!(result.is_ok());
+        assert_eq!(app.buffer_manager.current_buffer_name().unwrap(), "*Help*");
+
+        // Close the help buffer
+        let help_id = app.buffer_manager.current_buffer_id().unwrap();
+        let _ = app.buffer_manager.remove_buffer(&help_id);
+
+        // Verify help buffer is gone
+        let has_help = app
+            .buffer_manager
+            .buffer_names()
+            .iter()
+            .any(|(_, name)| name == "*Help*");
+        assert!(!has_help, "Help buffer should be removed");
+
+        // Reopen help buffer via ShowHelp action
+        let result = app.handle_action(UIAction::ShowHelp).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+
+        // Should have recreated and switched to help buffer
         assert_eq!(app.buffer_manager.current_buffer_name().unwrap(), "*Help*");
     }
 

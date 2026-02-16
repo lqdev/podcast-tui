@@ -36,11 +36,11 @@ pub struct SyncBuffer {
     focused: bool,
     theme: Theme,
     download_manager: Option<Arc<DownloadManager<JsonStorage>>>,
-    
+
     // Sync state
     last_sync: Option<SyncHistoryEntry>,
     sync_history: Vec<SyncHistoryEntry>,
-    
+
     // UI state
     selected_index: usize,
     scroll_offset: usize,
@@ -222,11 +222,7 @@ impl UIComponent for SyncBuffer {
 
         // Status section
         let status_text = if let Some(ref entry) = self.last_sync {
-            let mode = if entry.dry_run {
-                " [DRY RUN]"
-            } else {
-                ""
-            };
+            let mode = if entry.dry_run { " [DRY RUN]" } else { "" };
             format!(
                 "Last Sync: {}{}\nDevice: {}\nResult: {} copied, {} deleted, {} skipped, {} errors",
                 entry.timestamp.format("%Y-%m-%d %H:%M:%S"),
@@ -283,7 +279,11 @@ impl UIComponent for SyncBuffer {
                     status_icon,
                     mode,
                     entry.timestamp.format("%Y-%m-%d %H:%M"),
-                    entry.device_path.file_name().unwrap_or_default().to_string_lossy(),
+                    entry
+                        .device_path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy(),
                     entry.report.files_copied.len(),
                     entry.report.files_deleted.len()
                 );

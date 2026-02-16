@@ -36,8 +36,12 @@ async fn test_sync_to_device_copies_files() {
     // Initialize components
     let storage = Arc::new(JsonStorage::with_data_dir(data_dir.clone()));
     let download_manager = Arc::new(
-        DownloadManager::new(storage.clone(), downloads_dir.clone(), config.downloads.clone())
-            .unwrap(),
+        DownloadManager::new(
+            storage.clone(),
+            downloads_dir.clone(),
+            config.downloads.clone(),
+        )
+        .unwrap(),
     );
 
     // Test sync directly (simulating what the command would trigger)
@@ -89,8 +93,12 @@ async fn test_sync_dry_run() {
     // Initialize components
     let storage = Arc::new(JsonStorage::with_data_dir(data_dir.clone()));
     let download_manager = Arc::new(
-        DownloadManager::new(storage.clone(), downloads_dir.clone(), config.downloads.clone())
-            .unwrap(),
+        DownloadManager::new(
+            storage.clone(),
+            downloads_dir.clone(),
+            config.downloads.clone(),
+        )
+        .unwrap(),
     );
 
     // Test dry run sync

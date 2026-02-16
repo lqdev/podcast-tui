@@ -513,10 +513,10 @@ mod tests {
         use crate::ui::events::AggregatedEpisode as EventsAggregatedEpisode;
 
         let mut buffer = WhatsNewBuffer::new(100);
-        
+
         // Initially empty
         assert_eq!(buffer.episodes.len(), 0);
-        
+
         // Create some episodes
         let podcast_id = PodcastId::new();
         let episode1 = Episode::new(
@@ -531,7 +531,7 @@ mod tests {
             "https://example.com/audio2.mp3".to_string(),
             chrono::Utc::now(),
         );
-        
+
         let agg_episodes = vec![
             EventsAggregatedEpisode {
                 podcast_id: podcast_id.clone(),
@@ -544,18 +544,18 @@ mod tests {
                 episode: episode2,
             },
         ];
-        
+
         // Set episodes
         buffer.set_episodes(agg_episodes);
-        
+
         // Verify episodes were set
         assert_eq!(buffer.episodes.len(), 2);
         assert_eq!(buffer.episodes[0].episode.title, "Episode 1");
         assert_eq!(buffer.episodes[1].episode.title, "Episode 2");
-        
+
         // Verify selection was set
         assert_eq!(buffer.selected_index, Some(0));
-        
+
         // Verify scroll offset was reset
         assert_eq!(buffer.scroll_offset, 0);
     }
@@ -567,7 +567,7 @@ mod tests {
         use crate::ui::events::AggregatedEpisode as EventsAggregatedEpisode;
 
         let mut buffer = WhatsNewBuffer::new(100);
-        
+
         // Create initial episodes
         let podcast_id = PodcastId::new();
         let episodes: Vec<EventsAggregatedEpisode> = (0..10)
@@ -582,13 +582,13 @@ mod tests {
                 ),
             })
             .collect();
-        
+
         buffer.set_episodes(episodes);
-        
+
         // Set selection and scroll
         buffer.selected_index = Some(5);
         buffer.scroll_offset = 3;
-        
+
         // Update with new episodes (fewer than before)
         let new_episodes: Vec<EventsAggregatedEpisode> = (0..3)
             .map(|i| EventsAggregatedEpisode {
@@ -602,15 +602,15 @@ mod tests {
                 ),
             })
             .collect();
-        
+
         buffer.set_episodes(new_episodes);
-        
+
         // Verify scroll was reset
         assert_eq!(buffer.scroll_offset, 0);
-        
+
         // Verify selection was adjusted to be valid (should be last episode since 5 >= 3)
         assert_eq!(buffer.selected_index, Some(2)); // Last episode (0-indexed)
-        
+
         // Verify new episodes were set
         assert_eq!(buffer.episodes.len(), 3);
         assert!(buffer.episodes[0].episode.title.starts_with("New Episode"));

@@ -4,7 +4,9 @@
 **Status**: Design Phase  
 **Sprint**: 5 (Enhanced Features)  
 **Priority**: P1 (Episode filtering), P2 (Text search)  
-**Branch**: `feat/search-and-filter`
+**Branch**: `feat/search-and-filter`  
+**Prerequisites**: [Issue #51](https://github.com/lqdev/podcast-tui/issues/51) — F3 search keybinding groundwork  
+**Tracking Issue**: [Issue #52](https://github.com/lqdev/podcast-tui/issues/52)
 
 ---
 
@@ -52,6 +54,15 @@ Two architectural approaches were evaluated:
 - User activates filter/search mode, types query, list narrows in-place
 - Pros: No new buffer type needed; all existing actions (download, detail, etc.) work unchanged on filtered results; consistent with Emacs narrowing; simpler implementation
 - **Cons**: Requires modifying existing buffer structs (but changes are additive and non-breaking)
+
+### Relationship to Issue #51 (F3 Search Keybinding)
+
+[Issue #51](https://github.com/lqdev/podcast-tui/issues/51) proposes replacing the redundant `F3` keybinding (currently mapped to Help buffer switching, which is already available via `F1`/`h`/`?`) with a `UIAction::Search` action. This is groundwork that directly feeds into this feature:
+
+- **#51 adds `UIAction::Search`** as a placeholder variant — this design builds on it to provide the full implementation
+- **#51 binds `F3` → Search** — this design adds `/` as a complementary binding (universal vim/less convention)
+- **Naming alignment**: This design uses `UIAction::Search` (matching #51's naming) rather than a separate `SearchInBuffer` variant. The `Search` action opens the search prompt in the minibuffer within the context of the current active buffer.
+- **Dependency**: If #51 is merged first, the `UIAction::Search` variant and `F3` binding already exist; this implementation simply provides the handler. If implementing without #51, both the variant and F3 binding must be added as part of this work.
 
 ### TUI Search Pattern Research
 
@@ -258,7 +269,9 @@ pub enum UIAction {
     // ... existing variants ...
     
     /// Activate text search in the current buffer (opens minibuffer for input)
-    SearchInBuffer,
+    /// NOTE: Named `Search` to align with Issue #51's UIAction::Search variant.
+    /// Both F3 and `/` map to this action.
+    Search,
     
     /// Apply a text search query to the active buffer
     ApplySearch { query: String },
@@ -317,7 +330,7 @@ pub enum UIAction {
 
 **File: `src/ui/mod.rs`**
 
-1. Add new `UIAction` variants: `SearchInBuffer`, `ApplySearch`, `ClearFilters`, `FilterByStatus`, `FilterByDateRange`, `FilterByDuration`, `SetStatusFilter`, `SetDateRangeFilter`, `SetDurationFilter`
+1. Add new `UIAction` variants: `Search` (may already exist from #51), `ApplySearch`, `ClearFilters`, `FilterByStatus`, `FilterByDateRange`, `FilterByDuration`, `SetStatusFilter`, `SetDateRangeFilter`, `SetDurationFilter`
 
 ### Phase 3: EpisodeListBuffer Filter Integration (~150 LOC)
 
@@ -356,12 +369,13 @@ pub enum UIAction {
 
 **File: `src/ui/keybindings.rs`**
 
-1. Bind `/` → `UIAction::SearchInBuffer`
-2. Bind `Ctrl+/` or `F6` → `UIAction::ClearFilters` (fallback if Ctrl+/ doesn't work in some terminals)
+1. Bind `/` → `UIAction::Search` (same action as F3 from #51)
+2. If #51 is not yet merged, also bind `F3` → `UIAction::Search`
+3. Bind `F6` → `UIAction::ClearFilters`
 
 **File: `src/ui/app.rs`**
 
-1. Handle `UIAction::SearchInBuffer`: show minibuffer prompt "Search: " and set context
+1. Handle `UIAction::Search`: show minibuffer prompt "Search: " and set context (replaces placeholder from #51)
 2. Handle `UIAction::ApplySearch`: dispatch to active buffer
 3. Handle `UIAction::ClearFilters`: dispatch to active buffer
 4. Handle `UIAction::FilterByStatus` / `FilterByDateRange` / `FilterByDuration`: show minibuffer with completion candidates
@@ -387,7 +401,10 @@ pub enum UIAction {
 | Key | Action | Context | Rationale |
 |-----|--------|---------|-----------|
 | `/` | Open search/text filter input | Any filterable buffer | Universal "search" key (vim, less, man, etc.) |
+| `F3` | Open search/text filter input | Any filterable buffer | Standard editor convention (VS Code, etc.); replaces redundant Help switch per [#51](https://github.com/lqdev/podcast-tui/issues/51) |
 | `F6` | Clear all filters | Any filterable buffer | Available F-key, safe across terminals |
+
+> **Note**: Both `/` and `F3` trigger the same `UIAction::Search`. `F3` is the "discoverable" function key (listed in help); `/` is the power-user shortcut for those familiar with vim/less conventions.
 
 ### Filter Commands via `:` prompt
 
@@ -404,6 +421,7 @@ Structured filters (status, date, duration) are accessed via the `:` command pro
 ### Keybinding Conflict Analysis
 
 - `/` is currently **unbound** — safe to use
+- `F3` is currently bound to Help buffer switch, but **#51 proposes reassigning it to Search** (Help is already available via F1/h/?)
 - `F6` through `F9` are currently **unbound** — safe to use
 - No conflict with planned Sprint 4 playback keys (`Space`, `s`, `[`, `]`, `+`, `-`, `n`, `p`)
 - No conflict with existing navigation, buffer, or podcast management keys
@@ -411,8 +429,8 @@ Structured filters (status, date, duration) are accessed via the `:` command pro
 ### Search Input Flow
 
 ```
-User presses '/' in EpisodeListBuffer:
-  1. UIApp receives UIAction::SearchInBuffer
+User presses '/' or F3 in EpisodeListBuffer:
+  1. UIApp receives UIAction::Search
   2. UIApp calls minibuffer.show_prompt("Search: ", vec![])
   3. Minibuffer enters input mode → keystrokes go to minibuffer
   4. User types search text, sees it in minibuffer
@@ -572,7 +590,7 @@ User selects item at display position 2 in filtered list:
 - All changes are additive
 - No existing struct fields removed
 - No existing functions signatures changed
-- No existing keybindings moved or removed
+- F3 reassignment from Help to Search is handled by #51 (not a regression — Help remains accessible via F1/h/?)
 - Default filter state is empty (inactive) — same as current behavior
 
 ### Backward Compatibility
@@ -588,13 +606,14 @@ User selects item at display position 2 in filtered list:
 | # | Decision | Rationale | Date |
 |---|----------|-----------|------|
 | 1 | Inline filtering over dedicated SearchBuffer | Simpler UX, no action re-wiring, Emacs narrowing philosophy, preserves existing buffer actions | 2026-02-16 |
-| 2 | `/` for search keybinding | Universal convention (vim, less, man, etc.), currently unbound, single keystroke | 2026-02-16 |
+| 2 | `/` and `F3` for search keybinding | `/` is universal convention (vim, less, man); `F3` follows editor convention (VS Code) per #51; both map to same action | 2026-02-16 |
 | 3 | Submit-on-Enter (not incremental live search) | Simpler implementation; consistent with existing minibuffer input model; avoids complexity of dispatching per-keystroke to buffer while minibuffer owns input | 2026-02-16 |
 | 4 | Status/date/duration filters via `:` commands | Preserves single-key space for playback (Sprint 4); provides tab-completion UX; consistent with existing command system | 2026-02-16 |
 | 5 | Filter indices approach over cloning filtered data | Memory efficient; preserves original data for instant filter changes; simpler action dispatch (index mapping) | 2026-02-16 |
 | 6 | `F6` for clear-filters | Available F-key; works across all terminals; single-keystroke convenience for common action | 2026-02-16 |
 | 7 | AND logic for combined filters | Most intuitive for narrowing results; consistent with Emacs narrowing | 2026-02-16 |
 | 8 | `src/ui/filters.rs` as new module | Keeps filter logic separate from buffer/component code; reusable across buffers; testable in isolation | 2026-02-16 |
+| 9 | Align with #51's `UIAction::Search` naming | Avoids duplicate action variants; #51 lays groundwork, this feature provides the implementation; single action for both F3 and `/` | 2026-02-16 |
 
 ---
 
@@ -604,7 +623,7 @@ User selects item at display position 2 in filtered list:
 |------|-------------|-------------|
 | `src/ui/filters.rs` | **NEW** | Filter types, matching logic, display helpers |
 | `src/ui/mod.rs` | Modified | Add `pub mod filters`, new `UIAction` variants |
-| `src/ui/keybindings.rs` | Modified | Bind `/` → `SearchInBuffer`, `F6` → `ClearFilters` |
+| `src/ui/keybindings.rs` | Modified | Bind `/` → `Search` (+ `F3` if #51 not merged), `F6` → `ClearFilters` |
 | `src/ui/app.rs` | Modified | Handle new actions, add commands, minibuffer integration |
 | `src/ui/buffers/episode_list.rs` | Modified | Add filter state, filtered rendering, filter actions |
 | `src/ui/buffers/whats_new.rs` | Modified | Add filter state, filtered rendering, filter actions |
@@ -618,6 +637,15 @@ User selects item at display position 2 in filtered list:
 
 ---
 
-**Document Version**: 1.0  
+## Appendix: Relationship to Other Issues
+
+| Issue | Relationship | Notes |
+|-------|-------------|-------|
+| [#51](https://github.com/lqdev/podcast-tui/issues/51) | Prerequisite / Companion | Adds `UIAction::Search` variant and `F3` binding as placeholder. This feature builds on that foundation. Can be implemented independently if #51 isn't merged — just include the `Search` variant and `F3` binding as part of this work. |
+| [#52](https://github.com/lqdev/podcast-tui/issues/52) | Tracking Issue | The implementation issue for this design document. |
+
+---
+
+**Document Version**: 1.1  
 **Author**: GitHub Copilot  
 **Reviewers**: Project maintainer

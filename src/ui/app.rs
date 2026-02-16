@@ -396,10 +396,12 @@ impl UIApp {
             }
             UIAction::ShowHelp => {
                 // Try to find existing help buffer by name, or create a new one
-                if self.buffer_manager.find_buffer_id_by_name("*Help*").is_none() {
+                let mut help_id = self.buffer_manager.find_buffer_id_by_name("*Help*");
+                if help_id.is_none() {
                     self.buffer_manager.create_help_buffer();
+                    help_id = self.buffer_manager.find_buffer_id_by_name("*Help*");
                 }
-                if let Some(id) = self.buffer_manager.find_buffer_id_by_name("*Help*") {
+                if let Some(id) = help_id {
                     let _ = self.buffer_manager.switch_to_buffer(&id);
                 }
                 self.update_status_bar();
@@ -410,8 +412,10 @@ impl UIApp {
                 let buffer_id = self
                     .buffer_manager
                     .find_buffer_id_by_name(&name)
-                    .unwrap_or(name);
-                let _ = self.buffer_manager.switch_to_buffer(&buffer_id);
+                    .unwrap_or_else(|| name.clone());
+                if let Err(_) = self.buffer_manager.switch_to_buffer(&buffer_id) {
+                    self.show_error(format!("Failed to switch to buffer: {}", name));
+                }
                 self.update_status_bar();
                 Ok(true)
             }

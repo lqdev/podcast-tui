@@ -483,16 +483,18 @@ impl<S: Storage> DownloadManager<S> {
             ));
         }
 
-        let seconds = max_age_hours.checked_mul(3600).ok_or_else(|| {
-            DownloadError::Storage("max_age_hours is too large".to_string())
-        })?;
+        let seconds = max_age_hours
+            .checked_mul(3600)
+            .ok_or_else(|| DownloadError::Storage("max_age_hours is too large".to_string()))?;
 
         let duration = std::time::Duration::from_secs(seconds);
-        let cutoff = std::time::SystemTime::now().checked_sub(duration).ok_or_else(|| {
-            DownloadError::Storage(
-                "max_age_hours is too large relative to system time".to_string(),
-            )
-        })?;
+        let cutoff = std::time::SystemTime::now()
+            .checked_sub(duration)
+            .ok_or_else(|| {
+                DownloadError::Storage(
+                    "max_age_hours is too large relative to system time".to_string(),
+                )
+            })?;
 
         let mut deleted_count: usize = 0;
         let mut failed_count: usize = 0;
@@ -524,8 +526,10 @@ impl<S: Storage> DownloadManager<S> {
                                         Ok(_) => {
                                             episode.status = EpisodeStatus::New;
                                             episode.local_path = None;
-                                            if let Err(_) =
-                                                self.storage.save_episode(podcast_id, &episode).await
+                                            if let Err(_) = self
+                                                .storage
+                                                .save_episode(podcast_id, &episode)
+                                                .await
                                             {
                                                 failed_count += 1;
                                             }
@@ -543,9 +547,7 @@ impl<S: Storage> DownloadManager<S> {
                         // Clean up the stale status
                         episode.status = EpisodeStatus::New;
                         episode.local_path = None;
-                        if let Err(_) =
-                            self.storage.save_episode(podcast_id, &episode).await
-                        {
+                        if let Err(_) = self.storage.save_episode(podcast_id, &episode).await {
                             failed_count += 1;
                         }
                     }
@@ -640,17 +642,17 @@ impl<S: Storage> DownloadManager<S> {
     /// Simple file download implementation
     async fn download_file(&self, url: &str, path: &Path) -> Result<(), DownloadError> {
         let response = self.client.get(url).send().await?;
-        
+
         // Check if the response is successful, otherwise error_for_status will return an error
         let response = response.error_for_status()?;
-        
+
         // Get content type to verify it's actually audio
         let content_type = response
             .headers()
             .get("content-type")
             .and_then(|ct| ct.to_str().ok())
             .unwrap_or("unknown");
-        
+
         // Reject downloads that are not audio files
         // This catches cases where servers return HTML error pages with 200 OK status
         let is_audio = content_type.starts_with("audio/") 
@@ -658,14 +660,14 @@ impl<S: Storage> DownloadManager<S> {
             || content_type.starts_with("video/") // Some podcasts use video MIME types
             || content_type == "binary/octet-stream"
             || content_type == "unknown"; // Allow unknown content type as fallback
-        
+
         if !is_audio && content_type.contains("html") {
             return Err(DownloadError::InvalidPath(format!(
                 "Server returned HTML instead of audio file (Content-Type: {}). The audio URL may be invalid or the file may have been removed.",
                 content_type
             )));
         }
-        
+
         let mut file = fs::File::create(path).await?;
         let mut stream = response.bytes_stream();
 
@@ -990,10 +992,10 @@ impl<S: Storage> DownloadManager<S> {
     /// Download artwork and return MIME type and data
     async fn download_artwork(&self, url: &str) -> Result<(String, Vec<u8>), DownloadError> {
         let response = self.client.get(url).send().await?;
-        
+
         // Check if the response is successful
         let response = response.error_for_status()?;
-        
+
         let content_type = response
             .headers()
             .get("content-type")
@@ -1081,8 +1083,7 @@ impl<S: Storage> DownloadManager<S> {
         let mut device_files: std::collections::HashMap<PathBuf, (PathBuf, u64)> =
             std::collections::HashMap::new();
 
-        self.scan_directory(&device_path, &mut device_files)
-            .await?;
+        self.scan_directory(&device_path, &mut device_files).await?;
 
         // Step 3: Determine what needs to be copied (new or changed files)
         for (relative_path, (source_path, source_size)) in &pc_files {
@@ -1110,7 +1111,7 @@ impl<S: Storage> DownloadManager<S> {
             } else {
                 // File doesn't exist on device, needs to be copied
                 let target_path = device_path.join(relative_path);
-                
+
                 // Create parent directories if needed
                 if let Some(parent) = target_path.parent() {
                     if !dry_run {
@@ -1145,10 +1146,9 @@ impl<S: Storage> DownloadManager<S> {
                     if !dry_run {
                         match fs::remove_file(device_file_path).await {
                             Ok(_) => report.files_deleted.push(relative_path.clone()),
-                            Err(e) => report.errors.push((
-                                relative_path.clone(),
-                                format!("Delete failed: {}", e),
-                            )),
+                            Err(e) => report
+                                .errors
+                                .push((relative_path.clone(), format!("Delete failed: {}", e))),
                         }
                     } else {
                         report.files_deleted.push(relative_path.clone());
@@ -1166,7 +1166,7 @@ impl<S: Storage> DownloadManager<S> {
     }
 
     /// Recursively scan a directory and build a map of relative paths to (absolute path, file size)
-    /// 
+    ///
     /// # Arguments
     /// * `root_path` - The original root path for computing relative paths
     /// * `current_path` - The current directory being scanned (for recursion)
@@ -1176,7 +1176,8 @@ impl<S: Storage> DownloadManager<S> {
         root_path: &'a Path,
         current_path: &'a Path,
         files: &'a mut std::collections::HashMap<PathBuf, (PathBuf, u64)>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SyncError>> + 'a + Send>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SyncError>> + 'a + Send>>
+    {
         Box::pin(async move {
             let mut entries = fs::read_dir(current_path).await?;
 
@@ -1221,10 +1222,9 @@ impl<S: Storage> DownloadManager<S> {
         &'a self,
         base_path: &'a Path,
         files: &'a mut std::collections::HashMap<PathBuf, (PathBuf, u64)>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SyncError>> + 'a + Send>> {
-        Box::pin(async move {
-            self.scan_directory_impl(base_path, base_path, files).await
-        })
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SyncError>> + 'a + Send>>
+    {
+        Box::pin(async move { self.scan_directory_impl(base_path, base_path, files).await })
     }
 
     /// Copy a file from source to destination with error handling
@@ -1244,7 +1244,8 @@ impl<S: Storage> DownloadManager<S> {
     fn cleanup_empty_directories_in<'a>(
         &'a self,
         base_path: &'a Path,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SyncError>> + 'a + Send>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SyncError>> + 'a + Send>>
+    {
         Box::pin(async move {
             let mut entries = fs::read_dir(base_path).await?;
             let mut subdirs = Vec::new();
@@ -1326,7 +1327,7 @@ mod tests {
 
         let invalid_path = PathBuf::from("/nonexistent/path");
         let result = manager.sync_to_device(invalid_path, true, false).await;
-        
+
         assert!(result.is_err());
         match result {
             Err(SyncError::DevicePathInvalid(_)) => {
@@ -1357,7 +1358,10 @@ mod tests {
         fs::create_dir_all(&device_path).await.unwrap();
 
         // Run sync in dry-run mode
-        let report = manager.sync_to_device(device_path.clone(), false, true).await.unwrap();
+        let report = manager
+            .sync_to_device(device_path.clone(), false, true)
+            .await
+            .unwrap();
 
         // Verify dry-run results
         assert_eq!(report.files_copied.len(), 1);
@@ -1382,8 +1386,12 @@ mod tests {
         fs::create_dir_all(&podcast_dir).await.unwrap();
         let test_file1 = podcast_dir.join("episode1.mp3");
         let test_file2 = podcast_dir.join("episode2.mp3");
-        fs::write(&test_file1, b"test audio content 1").await.unwrap();
-        fs::write(&test_file2, b"test audio content 2").await.unwrap();
+        fs::write(&test_file1, b"test audio content 1")
+            .await
+            .unwrap();
+        fs::write(&test_file2, b"test audio content 2")
+            .await
+            .unwrap();
 
         let manager =
             DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
@@ -1393,7 +1401,10 @@ mod tests {
         fs::create_dir_all(&device_path).await.unwrap();
 
         // Run sync
-        let report = manager.sync_to_device(device_path.clone(), false, false).await.unwrap();
+        let report = manager
+            .sync_to_device(device_path.clone(), false, false)
+            .await
+            .unwrap();
 
         // Verify sync results
         assert_eq!(report.files_copied.len(), 2);
@@ -1433,7 +1444,10 @@ mod tests {
         fs::write(&device_file, content).await.unwrap();
 
         // Run sync
-        let report = manager.sync_to_device(device_path.clone(), false, false).await.unwrap();
+        let report = manager
+            .sync_to_device(device_path.clone(), false, false)
+            .await
+            .unwrap();
 
         // Verify file was skipped
         assert_eq!(report.files_copied.len(), 0);
@@ -1467,7 +1481,10 @@ mod tests {
         fs::write(&orphan_file, b"old content").await.unwrap();
 
         // Run sync with delete_orphans=true
-        let report = manager.sync_to_device(device_path.clone(), true, false).await.unwrap();
+        let report = manager
+            .sync_to_device(device_path.clone(), true, false)
+            .await
+            .unwrap();
 
         // Verify orphan was deleted
         assert_eq!(report.files_copied.len(), 1); // episode1.mp3 copied
@@ -1502,7 +1519,10 @@ mod tests {
         fs::write(&device_file, b"old content").await.unwrap();
 
         // Run sync
-        let report = manager.sync_to_device(device_path.clone(), false, false).await.unwrap();
+        let report = manager
+            .sync_to_device(device_path.clone(), false, false)
+            .await
+            .unwrap();
 
         // Verify file was updated
         assert_eq!(report.files_copied.len(), 1);
@@ -1513,5 +1533,389 @@ mod tests {
         // Verify content was updated
         let device_content = fs::read(&device_file).await.unwrap();
         assert_eq!(device_content, new_content);
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests for cleanup_old_downloads / cleanup_old_downloads_hours
+    // -----------------------------------------------------------------------
+
+    /// Helper: set a file's modification time to `age` in the past.
+    fn set_file_mtime_age(path: &std::path::Path, age: std::time::Duration) {
+        use std::fs::FileTimes;
+        let past = std::time::SystemTime::now() - age;
+        let times = FileTimes::new().set_modified(past);
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_times(times)
+            .unwrap();
+    }
+
+    /// Helper: create a podcast, an episode marked as Downloaded with a real
+    /// file on disk, and save both to storage. Returns (podcast_id, episode).
+    async fn setup_downloaded_episode(
+        storage: &Arc<JsonStorage>,
+        downloads_dir: &std::path::Path,
+        podcast_title: &str,
+        episode_title: &str,
+        filename: &str,
+    ) -> (PodcastId, Episode) {
+        use crate::podcast::Podcast;
+
+        let podcast = Podcast::new(
+            podcast_title.to_string(),
+            "https://example.com/feed".to_string(),
+        );
+        let podcast_id = podcast.id.clone();
+        storage.save_podcast(&podcast).await.unwrap();
+
+        let episode_file = downloads_dir.join(podcast_title).join(filename);
+        fs::create_dir_all(episode_file.parent().unwrap())
+            .await
+            .unwrap();
+        fs::write(&episode_file, b"fake audio data").await.unwrap();
+
+        let mut episode = Episode::new(
+            podcast_id.clone(),
+            episode_title.to_string(),
+            format!("https://example.com/{}", filename),
+            Utc::now(),
+        );
+        episode.status = EpisodeStatus::Downloaded;
+        episode.local_path = Some(episode_file);
+        storage.save_episode(&podcast_id, &episode).await.unwrap();
+
+        (podcast_id, episode)
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_deletes_old_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        let manager = DownloadManager::new(
+            storage.clone(),
+            downloads_dir.clone(),
+            DownloadConfig::default(),
+        )
+        .unwrap();
+
+        // Create two episodes under the same podcast
+        let (podcast_id, old_ep) =
+            setup_downloaded_episode(&storage, &downloads_dir, "TestPod", "Old Ep", "old.mp3")
+                .await;
+
+        // Create second episode reusing the same podcast_id
+        let new_file = downloads_dir.join("TestPod").join("new.mp3");
+        fs::write(&new_file, b"new audio").await.unwrap();
+        let mut new_ep = Episode::new(
+            podcast_id.clone(),
+            "New Ep".to_string(),
+            "https://example.com/new.mp3".to_string(),
+            Utc::now(),
+        );
+        new_ep.status = EpisodeStatus::Downloaded;
+        new_ep.local_path = Some(new_file.clone());
+        storage.save_episode(&podcast_id, &new_ep).await.unwrap();
+
+        // Make old episode file 10 days old; new episode stays fresh
+        let ten_days = std::time::Duration::from_secs(10 * 24 * 3600);
+        set_file_mtime_age(old_ep.local_path.as_ref().unwrap(), ten_days);
+
+        // Cleanup with 7-day cutoff (168 hours)
+        let result = manager.cleanup_old_downloads_hours(7 * 24).await;
+        assert!(result.is_ok(), "cleanup should succeed: {:?}", result);
+        assert_eq!(result.unwrap(), 1, "should have deleted exactly 1 file");
+
+        // Old file should be gone
+        assert!(!old_ep.local_path.as_ref().unwrap().exists());
+
+        // New file should still exist
+        assert!(new_file.exists());
+
+        // Verify episode statuses persisted
+        let episodes = storage.load_episodes(&podcast_id).await.unwrap();
+        let old_saved = episodes.iter().find(|e| e.id == old_ep.id).unwrap();
+        assert_eq!(old_saved.status, EpisodeStatus::New);
+        assert!(old_saved.local_path.is_none());
+
+        let new_saved = episodes.iter().find(|e| e.id == new_ep.id).unwrap();
+        assert_eq!(new_saved.status, EpisodeStatus::Downloaded);
+        assert!(new_saved.local_path.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_preserves_new_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        let manager = DownloadManager::new(
+            storage.clone(),
+            downloads_dir.clone(),
+            DownloadConfig::default(),
+        )
+        .unwrap();
+
+        let (podcast_id, episode) = setup_downloaded_episode(
+            &storage,
+            &downloads_dir,
+            "FreshPod",
+            "Fresh Ep",
+            "fresh.mp3",
+        )
+        .await;
+
+        // File was just created — well within a 24-hour cutoff
+        let result = manager.cleanup_old_downloads_hours(24).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0, "no files should be deleted");
+
+        // File still exists, status unchanged
+        assert!(episode.local_path.as_ref().unwrap().exists());
+        let episodes = storage.load_episodes(&podcast_id).await.unwrap();
+        let saved = episodes.iter().find(|e| e.id == episode.id).unwrap();
+        assert_eq!(saved.status, EpisodeStatus::Downloaded);
+        assert!(saved.local_path.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_resets_stale_status() {
+        use crate::podcast::Podcast;
+
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        let manager = DownloadManager::new(
+            storage.clone(),
+            downloads_dir.clone(),
+            DownloadConfig::default(),
+        )
+        .unwrap();
+
+        // Create podcast and episode that claims to be Downloaded,
+        // but the file does NOT exist on disk.
+        let podcast = Podcast::new(
+            "StalePod".to_string(),
+            "https://example.com/feed".to_string(),
+        );
+        let podcast_id = podcast.id.clone();
+        storage.save_podcast(&podcast).await.unwrap();
+
+        let phantom_path = downloads_dir.join("StalePod").join("ghost.mp3");
+        let mut episode = Episode::new(
+            podcast_id.clone(),
+            "Ghost Episode".to_string(),
+            "https://example.com/ghost.mp3".to_string(),
+            Utc::now(),
+        );
+        episode.status = EpisodeStatus::Downloaded;
+        episode.local_path = Some(phantom_path.clone());
+        storage.save_episode(&podcast_id, &episode).await.unwrap();
+
+        // Sanity: file truly doesn't exist
+        assert!(!phantom_path.exists());
+
+        let result = manager.cleanup_old_downloads_hours(24).await;
+        assert!(result.is_ok());
+
+        // Episode status should be reset to New
+        let episodes = storage.load_episodes(&podcast_id).await.unwrap();
+        let saved = episodes.iter().find(|e| e.id == episode.id).unwrap();
+        assert_eq!(saved.status, EpisodeStatus::New);
+        assert!(saved.local_path.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_skips_non_downloaded_episodes() {
+        use crate::podcast::Podcast;
+
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        let manager = DownloadManager::new(
+            storage.clone(),
+            downloads_dir.clone(),
+            DownloadConfig::default(),
+        )
+        .unwrap();
+
+        let podcast = Podcast::new(
+            "SkipPod".to_string(),
+            "https://example.com/feed".to_string(),
+        );
+        let podcast_id = podcast.id.clone();
+        storage.save_podcast(&podcast).await.unwrap();
+
+        // Create episodes with non-Downloaded statuses
+        let statuses = [
+            EpisodeStatus::New,
+            EpisodeStatus::Downloading,
+            EpisodeStatus::DownloadFailed,
+        ];
+
+        let mut episode_ids = Vec::new();
+        for (i, status) in statuses.iter().enumerate() {
+            let mut ep = Episode::new(
+                podcast_id.clone(),
+                format!("Episode {}", i),
+                format!("https://example.com/ep{}.mp3", i),
+                Utc::now(),
+            );
+            ep.status = status.clone();
+            episode_ids.push((ep.id.clone(), status.clone()));
+            storage.save_episode(&podcast_id, &ep).await.unwrap();
+        }
+
+        let result = manager.cleanup_old_downloads_hours(1).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+
+        // Verify all episodes are untouched (match by ID, not order)
+        let episodes = storage.load_episodes(&podcast_id).await.unwrap();
+        for (id, expected_status) in &episode_ids {
+            let ep = episodes.iter().find(|e| &e.id == id).unwrap();
+            assert_eq!(&ep.status, expected_status);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_rejects_zero_hours() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+
+        let result = manager.cleanup_old_downloads_hours(0).await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("must be greater than 0"),
+            "expected 'must be greater than 0' but got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_rejects_overflow() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+
+        let result = manager.cleanup_old_downloads_hours(u64::MAX).await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("too large"),
+            "expected 'too large' but got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_empty_storage() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+
+        let result = manager.cleanup_old_downloads_hours(24).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_removes_empty_directories() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        let manager = DownloadManager::new(
+            storage.clone(),
+            downloads_dir.clone(),
+            DownloadConfig::default(),
+        )
+        .unwrap();
+
+        // Create a single episode — the only file in its podcast directory
+        let (podcast_id, episode) =
+            setup_downloaded_episode(&storage, &downloads_dir, "LonelyPod", "Solo Ep", "solo.mp3")
+                .await;
+
+        // Make the file 10 days old
+        let ten_days = std::time::Duration::from_secs(10 * 24 * 3600);
+        set_file_mtime_age(episode.local_path.as_ref().unwrap(), ten_days);
+
+        let podcast_dir = downloads_dir.join("LonelyPod");
+        assert!(
+            podcast_dir.exists(),
+            "podcast dir should exist before cleanup"
+        );
+
+        let result = manager.cleanup_old_downloads_hours(7 * 24).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1);
+
+        // The podcast subdirectory should have been cleaned up
+        assert!(
+            !podcast_dir.exists(),
+            "empty podcast directory should be removed after cleanup"
+        );
+
+        // Verify episode status
+        let episodes = storage.load_episodes(&podcast_id).await.unwrap();
+        let saved = episodes.iter().find(|e| e.id == episode.id).unwrap();
+        assert_eq!(saved.status, EpisodeStatus::New);
+        assert!(saved.local_path.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_old_downloads_wrapper() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        let manager = DownloadManager::new(
+            storage.clone(),
+            downloads_dir.clone(),
+            DownloadConfig::default(),
+        )
+        .unwrap();
+
+        // Create an episode with mtime 10 days ago
+        let (_podcast_id, episode) =
+            setup_downloaded_episode(&storage, &downloads_dir, "WrapperPod", "Old Ep", "old.mp3")
+                .await;
+
+        let ten_days = std::time::Duration::from_secs(10 * 24 * 3600);
+        set_file_mtime_age(episode.local_path.as_ref().unwrap(), ten_days);
+
+        // Use the days-based wrapper: 7 days = 168 hours
+        let result = manager.cleanup_old_downloads(7).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            1,
+            "wrapper should correctly convert days to hours"
+        );
+
+        // Confirm file is deleted
+        assert!(!episode.local_path.as_ref().unwrap().exists());
     }
 }

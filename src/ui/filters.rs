@@ -50,7 +50,15 @@ impl Default for EpisodeFilter {
 
 impl EpisodeFilter {
     /// Set configurable duration thresholds from user config.
+    ///
+    /// Ensures that `short_max` is strictly less than `long_min` so that the
+    /// "medium" duration band remains a logical, non-empty range. If the
+    /// provided values are invalid, the thresholds are left unchanged.
     pub fn set_duration_thresholds(&mut self, short_max: u32, long_min: u32) {
+        if short_max >= long_min {
+            // Invalid configuration; keep existing thresholds.
+            return;
+        }
         self.short_max_minutes = short_max;
         self.long_min_minutes = long_min;
     }
@@ -831,5 +839,33 @@ mod tests {
         // 46 minutes = 2760s → long
         assert!(DurationFilter::Long.matches(Some(2760)));
         assert!(!DurationFilter::Medium.matches(Some(2760)));
+    }
+
+    // --- Duration threshold validation tests ---
+
+    #[test]
+    fn test_set_duration_thresholds_valid() {
+        let mut filter = EpisodeFilter::default();
+        filter.set_duration_thresholds(10, 50);
+        assert_eq!(filter.short_max_minutes, 10);
+        assert_eq!(filter.long_min_minutes, 50);
+    }
+
+    #[test]
+    fn test_set_duration_thresholds_invalid_equal() {
+        let mut filter = EpisodeFilter::default();
+        filter.set_duration_thresholds(30, 30);
+        // Should keep defaults when short_max == long_min
+        assert_eq!(filter.short_max_minutes, DEFAULT_SHORT_MAX_MINUTES);
+        assert_eq!(filter.long_min_minutes, DEFAULT_LONG_MIN_MINUTES);
+    }
+
+    #[test]
+    fn test_set_duration_thresholds_invalid_reversed() {
+        let mut filter = EpisodeFilter::default();
+        filter.set_duration_thresholds(60, 10);
+        // Should keep defaults when short_max > long_min
+        assert_eq!(filter.short_max_minutes, DEFAULT_SHORT_MAX_MINUTES);
+        assert_eq!(filter.long_min_minutes, DEFAULT_LONG_MIN_MINUTES);
     }
 }

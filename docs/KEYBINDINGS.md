@@ -104,7 +104,7 @@ This document outlines the keybinding system for the Podcast TUI application.
 - `sync-dry-run [path]` / `sync-preview [path]` - Preview sync changes without applying them
 
 #### Search & Filter Commands
-- `search` - Search episodes by title (also `C-s` keybinding)
+- `search` - Search episodes by title (also `/` keybinding)
 - `filter-status <status>` - Filter by status: `new`, `downloaded`, `played`, `downloading`, `failed`
 - `filter-date <range>` - Filter by publish date: `today`, `12h`, `7d`, `2w`, `1m` (same syntax as cleanup)
 - `clear-filters` / `widen` - Remove all active filters

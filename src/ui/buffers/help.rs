@@ -136,7 +136,7 @@ impl HelpBuffer {
             "                           is set in config (default: 30 days)".to_string(),
             "".to_string(),
             "SEARCH & FILTER (Episode lists):".to_string(),
-            "  C-s / :search      Search episodes by title".to_string(),
+            "  / :search          Search episodes by title".to_string(),
             "  :filter-status <s>  Filter by status: new, downloaded, played".to_string(),
             "  :filter-date <d>    Filter by age: today, 12h, 7d, 2w, 1m".to_string(),
             "  :clear-filters      Remove all active filters".to_string(),

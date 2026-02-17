@@ -693,6 +693,9 @@ impl UIApp {
                                                 .to_string(),
                                         );
                                     } else {
+                                        let _ = self
+                                            .buffer_manager
+                                            .remove_buffer(&"playlist-picker".to_string());
                                         self.buffer_manager.create_playlist_picker_buffer(
                                             options, podcast_id, episode_id,
                                         );
@@ -730,6 +733,13 @@ impl UIApp {
                 podcast_id,
                 episode_id,
             } => {
+                if self.buffer_manager.current_buffer_id().as_deref() == Some("playlist-picker") {
+                    let _ = self
+                        .buffer_manager
+                        .remove_buffer(&"playlist-picker".to_string());
+                    self.update_status_bar();
+                }
+                self.show_message("Downloading and adding to playlist...".to_string());
                 self.trigger_async_add_to_playlist(playlist_id, podcast_id, episode_id);
                 Ok(true)
             }
@@ -822,6 +832,15 @@ impl UIApp {
                         } => {
                             self.show_message(format!("Deleting download: {}", episode_title));
                             self.trigger_async_delete_download(podcast_id, episode_id);
+                        }
+                        UIAction::TriggerRemoveFromPlaylist {
+                            playlist_id,
+                            episode_id,
+                        } => {
+                            self.trigger_async_remove_from_playlist(playlist_id, episode_id);
+                        }
+                        UIAction::ShowError(msg) => {
+                            self.show_error(msg);
                         }
                         UIAction::ShowMessage(msg) => {
                             self.show_message(msg);
@@ -1376,6 +1395,12 @@ impl UIApp {
                 episode_title,
                 error,
             } => {
+                if self.buffer_manager.current_buffer_id().as_deref() == Some("playlist-picker") {
+                    let _ = self
+                        .buffer_manager
+                        .remove_buffer(&"playlist-picker".to_string());
+                    self.update_status_bar();
+                }
                 self.show_error(format!(
                     "Failed to add '{}' to playlist '{}': {}",
                     episode_title, playlist_name, error

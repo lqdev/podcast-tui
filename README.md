@@ -56,12 +56,12 @@ The application follows a modular architecture with clear separation of concerns
 - ✅ **Keyboard Navigation** - Intuitive keybindings for efficient navigation
 - ✅ **Command Auto-completion** - Intelligent command completion in minibuffer
 - ✅ **Buffer Management** - Multiple buffers for different views
+- ✅ **Playlist Support** - User playlists plus auto-generated `Today` (last 24h) playlist
 - ✅ **Theme System** - Multiple themes (dark, light, high-contrast, solarized)
 - ✅ **Cross-platform Build** - Windows and Linux build support
 
 **🚧 In Progress / Planned:**
 - ⏳ **Audio Playback** - Basic playback controls (not yet implemented)
-- ⏳ **Playlist Creation** - Create and manage custom episode playlists (not yet implemented)
 - ⏳ **Episode Notes** - Add personal notes to episodes (not yet implemented)
 - ⏳ **Statistics Tracking** - Listen time and download statistics (not yet implemented)
 - ⏳ **Search & Filtering** - Episode search and filtering (not yet implemented)
@@ -193,15 +193,24 @@ See [assets/README.md](assets/README.md) for more details about the icon design 
 - `Enter` - Play selected episode (when playback implemented)
 - `Shift+D` - Download episode (works in both episode list and episode detail buffers)
 - `Shift+X` - Delete downloaded file for selected episode
+- `p` - Add selected episode to a playlist
 - `Ctrl+x` - Delete ALL downloaded episodes and clean up
 - `:clean-older-than <duration>` - Delete downloads older than duration (e.g., `7d`, `2w`, `1m`)
 - `:cleanup <duration>` - Alias for clean-older-than
+
+### Playlist Commands
+- `:playlists` - Open playlist buffer
+- `:playlist-create [name]` - Create playlist
+- `:playlist-delete <name>` - Delete playlist
+- `:playlist-refresh` - Refresh `Today` auto-playlist
+- `:playlist-sync` - Sync podcasts + playlists to device
 
 ### Buffer Management
 - `F2` - Switch to podcast list
 - `F3` - Switch to help
 - `F4` - Switch to downloads
 - `F5` - Refresh current buffer
+- `F7` - Switch to playlists
 - `Ctrl+b` - Show buffer list / Switch buffer
 - `Ctrl+k` - Close current buffer
 - `Ctrl+l` - List all buffers
@@ -231,12 +240,18 @@ Configuration is stored in JSON format at:
 {
   "downloads": {
     "directory": "~/Downloads/Podcasts",
-    "concurrent": 3,
+    "concurrent_downloads": 3,
     "cleanup_after_days": 30,
-    "sync_device_path": "/mnt/mp3player/Podcasts",
+    "sync_device_path": "/mnt/mp3player",
     "sync_delete_orphans": true,
     "sync_preserve_structure": true,
-    "sync_dry_run": false
+    "sync_dry_run": false,
+    "sync_include_playlists": true
+  },
+  "playlist": {
+    "today_refresh_policy": "daily",
+    "auto_download_on_add": true,
+    "download_retries": 3
   },
   "audio": {
     "volume": 0.8,
@@ -256,23 +271,24 @@ Configuration is stored in JSON format at:
 
 ### Device Sync Configuration
 
-The device sync feature allows you to sync downloaded episodes to external MP3 players or USB devices:
+The device sync feature allows you to sync downloaded episodes and playlists to external MP3 players or USB devices:
 
 - `sync_device_path`: Default path to your device (can be overridden at runtime)
 - `sync_delete_orphans`: Remove files on device that aren't on PC (default: true)
 - `sync_preserve_structure`: Keep podcast folder structure on device (default: true)  
 - `sync_dry_run`: Preview changes without applying them (default: false)
+- `sync_include_playlists`: Include playlists in sync (default: true)
 
 **Usage:**
 ```bash
 # Sync to device (prompts for path or uses config default)
 :sync
 
-# Sync to specific path
-:sync /mnt/usb/Music/Podcasts
+# Sync to specific parent path (creates Podcasts/ and Playlists/)
+:sync /mnt/usb/Music
 
 # Preview changes without applying
-:sync-dry-run /mnt/usb/Music/Podcasts
+:sync-dry-run /mnt/usb/Music
 
 # View sync history
 :buffer sync
@@ -292,8 +308,14 @@ Podcast TUI uses JSON files for data storage:
 ├── episodes/                   # Episode metadata and notes
 │   ├── {podcast-id}/
 │   │   ├── {episode-id}.json
-├── playlists/                  # User playlists
-│   ├── {playlist-id}.json
+├── playlists/                  # Playlists metadata + audio copies
+│   ├── Morning Commute/
+│   │   ├── playlist.json
+│   │   └── audio/
+│   │       ├── 001-episode.mp3
+│   ├── Today/
+│   │   ├── playlist.json
+│   │   └── audio/
 └── stats.json                  # Usage statistics
 ```
 

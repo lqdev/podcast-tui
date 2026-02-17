@@ -12,13 +12,13 @@ This guide will help you get Podcast TUI running on your system, regardless of p
 ✅ Subscribe to RSS podcast feeds  
 ✅ Browse episodes with full metadata  
 ✅ Download episodes (2-3 at a time)  
+✅ Create/manage playlists and auto-generated `Today` playlist  
 ✅ OPML import/export  
 ✅ Intuitive keyboard shortcuts  
 ✅ 4 color themes  
 
 ### Not Yet Working
 ❌ Audio playback (coming in Sprint 4)  
-❌ Playlists (Sprint 5)  
 ❌ Episode notes (Sprint 5)  
 ❌ Statistics (Sprint 6)  
 
@@ -48,9 +48,11 @@ cargo build --release
 - `F1` or `?` → Help
 - `:` → Command prompt
 - `a` → Add podcast
+- `F7` → Open playlists buffer
 - `↓`/`↑` → Navigate
 - `Enter` → Select
 - `Shift+D` → Download episode
+- `p` → Add selected episode to playlist
 - `q` or `F10` → Quit
 
 ---
@@ -68,7 +70,6 @@ cargo build --release
 
 **🚧 What's Coming:**
 - Audio playback (Sprint 4 - next up)
-- Playlists (Sprint 5)
 - Episode notes (Sprint 5)
 - Statistics tracking (Sprint 6)
 - Search & filtering enhancements (Sprint 5)
@@ -234,6 +235,7 @@ sudo pacman -S base-devel rust openssl
 - `F2` - Podcast list
 - `F3` - Help
 - `F4` - Downloads
+- `F7` - Playlists
 
 **Podcast Management:**
 - `a` - Add podcast subscription
@@ -245,6 +247,7 @@ sudo pacman -S base-devel rust openssl
 **Episode Actions:**
 - `Shift+D` - Download episode
 - `Shift+X` - Delete downloaded file
+- `p` - Add selected episode to playlist
 - `Ctrl+x` - Delete ALL downloads
 - `:clean-older-than <dur>` - Delete downloads older than duration (e.g., `7d`, `2w`)
 - `:cleanup <dur>` - Alias for clean-older-than
@@ -280,8 +283,14 @@ The application will create configuration files on first run:
 {
   "downloads": {
     "directory": "~/Downloads/Podcasts",
-    "concurrent": 3,
-    "cleanup_after_days": 30
+    "concurrent_downloads": 3,
+    "cleanup_after_days": 30,
+    "sync_include_playlists": true
+  },
+  "playlist": {
+    "today_refresh_policy": "daily",
+    "auto_download_on_add": true,
+    "download_retries": 3
   },
   "ui": {
     "theme": "dark"

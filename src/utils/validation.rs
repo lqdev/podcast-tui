@@ -47,6 +47,39 @@ pub fn sanitize_filename(filename: &str) -> String {
     sanitized.trim().chars().take(255).collect()
 }
 
+/// Sanitize playlist names for safe filesystem directory usage.
+pub fn sanitize_playlist_name(name: &str) -> String {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return "Untitled".to_string();
+    }
+
+    let mut sanitized = String::new();
+    for ch in trimmed.chars() {
+        match ch {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => sanitized.push('-'),
+            c if c.is_control() => {}
+            c if c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_' | '(' | ')') => {
+                sanitized.push(c)
+            }
+            _ => sanitized.push('_'),
+        }
+    }
+
+    let normalized: String = sanitized
+        .trim()
+        .trim_matches(|c: char| c == '.' || c == '-' || c == ' ')
+        .chars()
+        .take(100)
+        .collect();
+
+    if normalized.is_empty() {
+        "Untitled".to_string()
+    } else {
+        normalized
+    }
+}
+
 /// Validate audio file extension
 pub fn is_supported_audio_format(filename: &str) -> bool {
     let supported_extensions = ["mp3", "m4a", "aac", "ogg", "wav", "flac"];
@@ -108,5 +141,13 @@ mod tests {
         assert!(is_supported_audio_format("episode.ogg"));
         assert!(!is_supported_audio_format("episode.txt"));
         assert!(!is_supported_audio_format("no_extension"));
+    }
+
+    #[test]
+    fn test_playlist_name_sanitization() {
+        assert_eq!(sanitize_playlist_name("Morning Commute"), "Morning Commute");
+        assert_eq!(sanitize_playlist_name("My: Playlist?"), "My- Playlist");
+        assert_eq!(sanitize_playlist_name("   "), "Untitled");
+        assert_eq!(sanitize_playlist_name("***"), "Untitled");
     }
 }

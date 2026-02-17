@@ -110,11 +110,21 @@ pub enum StorageError {
         episode_id: EpisodeId,
     },
 
+    #[error("Playlist not found: {id}")]
+    PlaylistNotFound { id: String },
+
     #[error("Directory creation failed: {path}")]
     DirectoryCreation { path: String },
 
     #[error("File operation failed: {operation} on {path}: {error}")]
     FileOperation {
+        operation: String,
+        path: String,
+        error: String,
+    },
+
+    #[error("Playlist file operation failed: {operation} on {path}: {error}")]
+    PlaylistFileOperation {
         operation: String,
         path: String,
         error: String,

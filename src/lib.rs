@@ -3,6 +3,7 @@ pub mod config;
 pub mod constants;
 pub mod download;
 pub mod podcast;
+pub mod playlist;
 pub mod storage;
 pub mod ui;
 pub mod utils;

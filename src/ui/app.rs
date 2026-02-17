@@ -23,6 +23,7 @@ use crate::{
     config::Config,
     constants::ui as ui_constants,
     download::DownloadManager,
+    playlist::{auto_generator::TodayGenerator, manager::PlaylistManager},
     podcast::subscription::SubscriptionManager,
     storage::{JsonStorage, Storage},
     ui::{
@@ -52,6 +53,12 @@ pub struct UIApp {
 
     /// Download manager
     download_manager: Arc<DownloadManager<JsonStorage>>,
+
+    /// Playlist manager
+    playlist_manager: Arc<PlaylistManager>,
+
+    /// Auto-generated "Today" playlist manager
+    today_generator: Arc<TodayGenerator>,
 
     /// Storage (reserved for future direct access)
     _storage: Arc<JsonStorage>,
@@ -102,6 +109,18 @@ impl UIApp {
         storage: Arc<JsonStorage>,
         app_event_tx: mpsc::UnboundedSender<AppEvent>,
     ) -> UIResult<Self> {
+        let playlists_dir = storage.data_dir.join("playlists");
+        let playlist_manager = Arc::new(PlaylistManager::new(
+            storage.clone(),
+            download_manager.clone(),
+            playlists_dir.clone(),
+        ));
+        let today_generator = Arc::new(TodayGenerator::new(
+            storage.clone(),
+            download_manager.clone(),
+            playlists_dir,
+        ));
+
         let theme = Theme::from_name(&config.ui.theme)?;
         let buffer_manager = BufferManager::new();
         let mut status_bar = StatusBar::new();
@@ -117,6 +136,8 @@ impl UIApp {
             theme,
             subscription_manager,
             download_manager,
+            playlist_manager,
+            today_generator,
             _storage: storage,
             buffer_manager,
             status_bar,
@@ -142,6 +163,18 @@ impl UIApp {
         app_event_tx: mpsc::UnboundedSender<AppEvent>,
         status_tx: mpsc::UnboundedSender<crate::InitStatus>,
     ) -> UIResult<Self> {
+        let playlists_dir = storage.data_dir.join("playlists");
+        let playlist_manager = Arc::new(PlaylistManager::new(
+            storage.clone(),
+            download_manager.clone(),
+            playlists_dir.clone(),
+        ));
+        let today_generator = Arc::new(TodayGenerator::new(
+            storage.clone(),
+            download_manager.clone(),
+            playlists_dir,
+        ));
+
         let theme = Theme::from_name(&config.ui.theme)?;
         let mut buffer_manager = BufferManager::new();
         let mut status_bar = StatusBar::new();
@@ -158,6 +191,7 @@ impl UIApp {
         buffer_manager.create_podcast_list_buffer(subscription_manager.clone());
         buffer_manager.create_downloads_buffer(download_manager.clone(), storage.clone());
         buffer_manager.create_sync_buffer(download_manager.clone());
+        buffer_manager.create_playlist_list_buffer(playlist_manager.clone());
         buffer_manager.create_whats_new_buffer(
             subscription_manager.clone(),
             download_manager.clone(),
@@ -178,6 +212,8 @@ impl UIApp {
             theme,
             subscription_manager,
             download_manager,
+            playlist_manager,
+            today_generator,
             _storage: storage,
             buffer_manager,
             status_bar,
@@ -334,6 +370,8 @@ impl UIApp {
             self.download_manager.clone(),
             self.config.ui.whats_new_episode_limit,
         );
+        self.buffer_manager
+            .create_playlist_list_buffer(self.playlist_manager.clone());
 
         // Set initial buffer
         if let Some(buffer_id) = self.buffer_manager.get_buffer_ids().first() {
@@ -350,6 +388,7 @@ impl UIApp {
         self.trigger_background_refresh(crate::ui::events::BufferRefreshType::PodcastList);
         self.trigger_background_refresh(crate::ui::events::BufferRefreshType::Downloads);
         self.trigger_background_refresh(crate::ui::events::BufferRefreshType::WhatsNew);
+        self.trigger_async_refresh_today();
 
         Ok(())
     }
@@ -499,7 +538,31 @@ impl UIApp {
                 });
                 Ok(true)
             }
+            UIAction::CreatePlaylist => {
+                self.minibuffer.set_content(MinibufferContent::Input {
+                    prompt: "Create playlist: ".to_string(),
+                    input: String::new(),
+                });
+                Ok(true)
+            }
             UIAction::DeletePodcast => {
+                if self.buffer_manager.current_buffer_id().as_deref() == Some("playlist-list") {
+                    if let Some(playlist_buffer) =
+                        self.buffer_manager.get_playlist_list_buffer_mut()
+                    {
+                        let result_action = playlist_buffer.handle_action(UIAction::DeletePlaylist);
+                        match result_action {
+                            UIAction::TriggerDeletePlaylist { playlist_id } => {
+                                self.trigger_async_delete_playlist(playlist_id);
+                            }
+                            UIAction::ShowError(msg) => self.show_error(msg),
+                            UIAction::ShowMessage(msg) => self.show_message(msg),
+                            _ => {}
+                        }
+                    }
+                    return Ok(true);
+                }
+
                 if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
                     if let Some(podcast) = podcast_buffer.selected_podcast() {
                         let podcast_id = podcast.id.clone();
@@ -522,6 +585,11 @@ impl UIApp {
                 Ok(true)
             }
             UIAction::RefreshPodcast => {
+                if self.buffer_manager.current_buffer_id().as_deref() == Some("playlist-list") {
+                    self.trigger_async_refresh_today();
+                    return Ok(true);
+                }
+
                 if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut() {
                     if let Some(podcast) = podcast_buffer.selected_podcast() {
                         let podcast_id = podcast.id.clone();
@@ -538,6 +606,155 @@ impl UIApp {
                 } else {
                     self.show_error("Podcast list not available".to_string());
                 }
+                Ok(true)
+            }
+            UIAction::OpenPlaylistList => {
+                let list_id = "playlist-list".to_string();
+                if !self.buffer_manager.get_buffer_ids().contains(&list_id) {
+                    self.buffer_manager
+                        .create_playlist_list_buffer(self.playlist_manager.clone());
+                }
+                let _ = self.buffer_manager.switch_to_buffer(&list_id);
+                self.update_status_bar();
+                self.load_playlists_into_buffer().await;
+                Ok(true)
+            }
+            UIAction::OpenPlaylistDetail {
+                playlist_id,
+                playlist_name,
+            } => {
+                match self.playlist_manager.get_playlist(&playlist_id).await {
+                    Ok(playlist) => {
+                        let detail_id = format!(
+                            "playlist-{}",
+                            playlist_name.replace(' ', "-").to_lowercase()
+                        );
+                        if !self.buffer_manager.get_buffer_ids().contains(&detail_id) {
+                            self.buffer_manager.create_playlist_detail_buffer(
+                                playlist_id.clone(),
+                                playlist_name.clone(),
+                                playlist.playlist_type.clone(),
+                                self.playlist_manager.clone(),
+                            );
+                        }
+                        if let Some(detail_buffer) = self
+                            .buffer_manager
+                            .get_playlist_detail_buffer_mut_by_id(&detail_id)
+                        {
+                            detail_buffer.set_playlist(playlist);
+                        }
+                        let _ = self.buffer_manager.switch_to_buffer(&detail_id);
+                        self.update_status_bar();
+                    }
+                    Err(e) => self.show_error(format!("Failed to open playlist: {}", e)),
+                }
+                Ok(true)
+            }
+            UIAction::AddToPlaylist => {
+                if let Some(current_id) = self.buffer_manager.current_buffer_id() {
+                    if current_id.starts_with("episodes-") {
+                        let mut selected: Option<(
+                            crate::storage::PodcastId,
+                            crate::storage::EpisodeId,
+                        )> = None;
+                        if let Some(episode_buffer) = self
+                            .buffer_manager
+                            .get_episode_list_buffer_mut_by_id(&current_id)
+                        {
+                            if let Some(episode) = episode_buffer.selected_episode() {
+                                selected =
+                                    Some((episode_buffer.podcast_id.clone(), episode.id.clone()));
+                            }
+                        }
+
+                        if let Some((podcast_id, episode_id)) = selected {
+                            match self.playlist_manager.list_playlists().await {
+                                Ok(playlists) => {
+                                    let options: Vec<_> = playlists
+                                        .into_iter()
+                                        .filter_map(|playlist| {
+                                            if matches!(
+                                                playlist.playlist_type,
+                                                crate::playlist::PlaylistType::User
+                                            ) {
+                                                Some((
+                                                    playlist.id,
+                                                    playlist.name,
+                                                    playlist.episodes.len(),
+                                                ))
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .collect();
+                                    if options.is_empty() {
+                                        self.show_error(
+                                            "No user playlists available; create one first"
+                                                .to_string(),
+                                        );
+                                    } else {
+                                        self.buffer_manager.create_playlist_picker_buffer(
+                                            options, podcast_id, episode_id,
+                                        );
+                                        let _ = self
+                                            .buffer_manager
+                                            .switch_to_buffer(&"playlist-picker".to_string());
+                                        self.update_status_bar();
+                                    }
+                                }
+                                Err(e) => {
+                                    self.show_error(format!("Failed to list playlists: {}", e))
+                                }
+                            }
+                        } else {
+                            self.show_error("No episode selected".to_string());
+                        }
+                    } else {
+                        self.show_message(
+                            "Add-to-playlist is available from episode lists".to_string(),
+                        );
+                    }
+                }
+                Ok(true)
+            }
+            UIAction::RefreshAutoPlaylists => {
+                self.trigger_async_refresh_today();
+                Ok(true)
+            }
+            UIAction::TriggerCreatePlaylist { name, description } => {
+                self.trigger_async_create_playlist(name, description);
+                Ok(true)
+            }
+            UIAction::TriggerAddToPlaylist {
+                playlist_id,
+                podcast_id,
+                episode_id,
+            } => {
+                self.trigger_async_add_to_playlist(playlist_id, podcast_id, episode_id);
+                Ok(true)
+            }
+            UIAction::TriggerRemoveFromPlaylist {
+                playlist_id,
+                episode_id,
+            } => {
+                self.trigger_async_remove_from_playlist(playlist_id, episode_id);
+                Ok(true)
+            }
+            UIAction::TriggerDeletePlaylist { playlist_id } => {
+                self.trigger_async_delete_playlist(playlist_id);
+                Ok(true)
+            }
+            UIAction::TriggerReorderPlaylist {
+                playlist_id,
+                from_idx,
+                to_idx,
+            } => {
+                self.trigger_async_reorder_playlist(playlist_id, from_idx, to_idx);
+                Ok(true)
+            }
+            UIAction::SyncPlaylist { .. } => {
+                let default_path = self.get_default_sync_path();
+                self.trigger_async_device_sync(default_path, false, false);
                 Ok(true)
             }
             UIAction::HardRefreshPodcast => {
@@ -754,6 +971,9 @@ impl UIApp {
                         // If it's the downloads buffer, trigger background refresh of downloads
                         self.trigger_background_refresh(BufferRefreshType::Downloads);
                         self.show_message("Refreshing downloads...".to_string());
+                    } else if buffer_id == "playlist-list" || buffer_id.starts_with("playlist-") {
+                        self.trigger_async_refresh_today();
+                        self.show_message("Refreshing playlists...".to_string());
                     } else if buffer_id == "whats-new" {
                         // If it's the What's New buffer, trigger background refresh of episodes
                         self.trigger_background_refresh(BufferRefreshType::WhatsNew);
@@ -844,6 +1064,53 @@ impl UIApp {
 
                             // Refresh any open buffer list buffers
                             self.refresh_buffer_list_if_open();
+                        }
+                        UIAction::OpenPlaylistDetail {
+                            playlist_id,
+                            playlist_name,
+                        } => match self.playlist_manager.get_playlist(&playlist_id).await {
+                            Ok(playlist) => {
+                                let detail_id = format!(
+                                    "playlist-{}",
+                                    playlist_name.replace(' ', "-").to_lowercase()
+                                );
+                                if !self.buffer_manager.get_buffer_ids().contains(&detail_id) {
+                                    self.buffer_manager.create_playlist_detail_buffer(
+                                        playlist_id.clone(),
+                                        playlist_name.clone(),
+                                        playlist.playlist_type.clone(),
+                                        self.playlist_manager.clone(),
+                                    );
+                                }
+                                if let Some(detail_buffer) = self
+                                    .buffer_manager
+                                    .get_playlist_detail_buffer_mut_by_id(&detail_id)
+                                {
+                                    detail_buffer.set_playlist(playlist);
+                                }
+                                let _ = self.buffer_manager.switch_to_buffer(&detail_id);
+                                self.update_status_bar();
+                            }
+                            Err(e) => self.show_error(format!("Failed to open playlist: {}", e)),
+                        },
+                        UIAction::TriggerDeletePlaylist { playlist_id } => {
+                            self.trigger_async_delete_playlist(playlist_id);
+                        }
+                        UIAction::TriggerAddToPlaylist {
+                            playlist_id,
+                            podcast_id,
+                            episode_id,
+                        } => {
+                            self.trigger_async_add_to_playlist(playlist_id, podcast_id, episode_id);
+                        }
+                        UIAction::TriggerRemoveFromPlaylist {
+                            playlist_id,
+                            episode_id,
+                        } => {
+                            self.trigger_async_remove_from_playlist(playlist_id, episode_id);
+                        }
+                        UIAction::RefreshAutoPlaylists => {
+                            self.trigger_async_refresh_today();
                         }
                         UIAction::ShowMessage(msg) => {
                             self.show_message(msg);
@@ -1073,6 +1340,83 @@ impl UIApp {
             }
             AppEvent::OpmlExportFailed { path, error } => {
                 self.show_error(format!("OPML export to {} failed: {}", path, error));
+            }
+            AppEvent::PlaylistCreated { playlist } => {
+                self.load_playlists_into_buffer().await;
+                self.show_message(format!("Playlist created: {}", playlist.name));
+            }
+            AppEvent::PlaylistCreationFailed { name, error } => {
+                self.show_error(format!("Failed to create playlist '{}': {}", name, error));
+            }
+            AppEvent::PlaylistDeleted { name } => {
+                self.load_playlists_into_buffer().await;
+                self.show_message(format!("Playlist deleted: {}", name));
+            }
+            AppEvent::PlaylistDeletionFailed { name, error } => {
+                self.show_error(format!("Failed to delete playlist '{}': {}", name, error));
+            }
+            AppEvent::EpisodeAddedToPlaylist {
+                playlist_name,
+                episode_title,
+            } => {
+                self.load_playlists_into_buffer().await;
+                if self.buffer_manager.current_buffer_id().as_deref() == Some("playlist-picker") {
+                    let _ = self
+                        .buffer_manager
+                        .remove_buffer(&"playlist-picker".to_string());
+                    self.update_status_bar();
+                }
+                self.show_message(format!(
+                    "Added '{}' to playlist '{}'",
+                    episode_title, playlist_name
+                ));
+            }
+            AppEvent::EpisodeAddToPlaylistFailed {
+                playlist_name,
+                episode_title,
+                error,
+            } => {
+                self.show_error(format!(
+                    "Failed to add '{}' to playlist '{}': {}",
+                    episode_title, playlist_name, error
+                ));
+            }
+            AppEvent::EpisodeRemovedFromPlaylist {
+                playlist_name,
+                episode_title,
+            } => {
+                self.load_playlists_into_buffer().await;
+                self.show_message(format!(
+                    "Removed '{}' from playlist '{}'",
+                    episode_title, playlist_name
+                ));
+            }
+            AppEvent::EpisodeRemoveFromPlaylistFailed {
+                playlist_name,
+                episode_title,
+                error,
+            } => {
+                self.show_error(format!(
+                    "Failed to remove '{}' from playlist '{}': {}",
+                    episode_title, playlist_name, error
+                ));
+            }
+            AppEvent::PlaylistReordered { name } => {
+                self.load_playlists_into_buffer().await;
+                self.show_message(format!("Playlist reordered: {}", name));
+            }
+            AppEvent::PlaylistReorderFailed { name, error } => {
+                self.show_error(format!("Failed to reorder playlist '{}': {}", name, error));
+            }
+            AppEvent::TodayPlaylistRefreshed { added, removed } => {
+                self.load_playlists_into_buffer().await;
+                self.show_message(format!(
+                    "Today playlist refreshed: {} added, {} removed",
+                    added, removed
+                ));
+            }
+            AppEvent::TodayPlaylistRefreshFailed { error } => {
+                self.show_error(format!("Failed to refresh Today playlist: {}", error));
             }
             AppEvent::DeviceSyncStarted {
                 device_path,
@@ -1304,6 +1648,47 @@ impl UIApp {
                     Ok(true)
                 }
             }
+            "playlists" => {
+                let list_id = "playlist-list".to_string();
+                if !self.buffer_manager.get_buffer_ids().contains(&list_id) {
+                    self.buffer_manager
+                        .create_playlist_list_buffer(self.playlist_manager.clone());
+                }
+                let _ = self.buffer_manager.switch_to_buffer(&list_id);
+                self.update_status_bar();
+                self.trigger_async_refresh_today();
+                Ok(true)
+            }
+            "playlist-create" | "playlist-new" => {
+                if parts.len() > 1 {
+                    let name = parts[1..].join(" ");
+                    self.trigger_async_create_playlist(name, None);
+                } else {
+                    self.minibuffer.set_content(MinibufferContent::Input {
+                        prompt: "Create playlist: ".to_string(),
+                        input: String::new(),
+                    });
+                }
+                Ok(true)
+            }
+            "playlist-delete" => {
+                if parts.len() > 1 {
+                    let name = parts[1..].join(" ");
+                    self.trigger_async_delete_playlist_by_name(name);
+                } else {
+                    self.show_error("Usage: playlist-delete <name>".to_string());
+                }
+                Ok(true)
+            }
+            "playlist-refresh" => {
+                self.trigger_async_refresh_today();
+                Ok(true)
+            }
+            "playlist-sync" => {
+                let default_path = self.get_default_sync_path();
+                self.trigger_async_device_sync(default_path, false, false);
+                Ok(true)
+            }
             "clean-older-than" | "cleanup" => {
                 if parts.len() > 1 {
                     let duration_str = parts[1];
@@ -1339,8 +1724,7 @@ impl UIApp {
                 if parts.len() > 1 {
                     let query = parts[1..].join(" ");
                     if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
-                        let result =
-                            current_buffer.handle_action(UIAction::ApplySearch { query });
+                        let result = current_buffer.handle_action(UIAction::ApplySearch { query });
                         if let UIAction::ShowMessage(msg) = result {
                             self.show_message(msg);
                         }
@@ -1359,8 +1743,8 @@ impl UIApp {
                 if parts.len() > 1 {
                     let status = parts[1].to_string();
                     if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
-                        let result = current_buffer
-                            .handle_action(UIAction::SetStatusFilter { status });
+                        let result =
+                            current_buffer.handle_action(UIAction::SetStatusFilter { status });
                         match result {
                             UIAction::ShowMessage(msg) => self.show_message(msg),
                             UIAction::ShowError(msg) => self.show_error(msg),
@@ -1380,8 +1764,8 @@ impl UIApp {
                 if parts.len() > 1 {
                     let range = parts[1].to_string();
                     if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
-                        let result = current_buffer
-                            .handle_action(UIAction::SetDateRangeFilter { range });
+                        let result =
+                            current_buffer.handle_action(UIAction::SetDateRangeFilter { range });
                         match result {
                             UIAction::ShowMessage(msg) => self.show_message(msg),
                             UIAction::ShowError(msg) => self.show_error(msg),
@@ -1478,6 +1862,7 @@ impl UIApp {
             "download" | "dl" => "downloads".to_string(),
             "new" | "whats-new" | "latest" => "whats-new".to_string(),
             "sync" | "device-sync" => "sync".to_string(),
+            "playlist" | "playlists" => "playlist-list".to_string(),
             _ => buffer_name.clone(),
         };
 
@@ -1570,6 +1955,13 @@ impl UIApp {
             "sync-device".to_string(),
             "sync-dry-run".to_string(),
             "sync-preview".to_string(),
+            // Playlist commands
+            "playlists".to_string(),
+            "playlist-create".to_string(),
+            "playlist-new".to_string(),
+            "playlist-delete".to_string(),
+            "playlist-refresh".to_string(),
+            "playlist-sync".to_string(),
             // Cleanup commands
             "clean-older-than".to_string(),
             "cleanup".to_string(),
@@ -2086,6 +2478,217 @@ impl UIApp {
         tokio::spawn(async move {
             // Send a custom event to trigger refresh on the UI thread
             let _ = app_event_tx.send(AppEvent::DownloadsRefreshed);
+        });
+    }
+
+    fn trigger_async_create_playlist(&mut self, name: String, description: Option<String>) {
+        let playlist_manager = self.playlist_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let name_for_error = name.clone();
+
+        tokio::spawn(async move {
+            match playlist_manager.create_playlist(&name, description).await {
+                Ok(playlist) => {
+                    let _ = app_event_tx.send(AppEvent::PlaylistCreated { playlist });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::PlaylistCreationFailed {
+                        name: name_for_error,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    fn trigger_async_delete_playlist(&mut self, playlist_id: crate::playlist::PlaylistId) {
+        let playlist_manager = self.playlist_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+
+        tokio::spawn(async move {
+            let playlist_name = playlist_manager
+                .get_playlist(&playlist_id)
+                .await
+                .map(|playlist| playlist.name)
+                .unwrap_or_else(|_| playlist_id.to_string());
+
+            match playlist_manager.delete_playlist(&playlist_id).await {
+                Ok(_) => {
+                    let _ = app_event_tx.send(AppEvent::PlaylistDeleted {
+                        name: playlist_name,
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::PlaylistDeletionFailed {
+                        name: playlist_name,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    fn trigger_async_delete_playlist_by_name(&mut self, playlist_name: String) {
+        let playlist_manager = self.playlist_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let lookup_name = playlist_name.clone();
+
+        tokio::spawn(async move {
+            match playlist_manager.get_playlist_by_name(&lookup_name).await {
+                Ok(playlist) => match playlist_manager.delete_playlist(&playlist.id).await {
+                    Ok(_) => {
+                        let _ = app_event_tx.send(AppEvent::PlaylistDeleted {
+                            name: playlist.name,
+                        });
+                    }
+                    Err(e) => {
+                        let _ = app_event_tx.send(AppEvent::PlaylistDeletionFailed {
+                            name: playlist.name,
+                            error: e.to_string(),
+                        });
+                    }
+                },
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::PlaylistDeletionFailed {
+                        name: playlist_name,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    fn trigger_async_add_to_playlist(
+        &mut self,
+        playlist_id: crate::playlist::PlaylistId,
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+    ) {
+        let playlist_manager = self.playlist_manager.clone();
+        let storage = self._storage.clone();
+        let app_event_tx = self.app_event_tx.clone();
+
+        tokio::spawn(async move {
+            let playlist_name = playlist_manager
+                .get_playlist(&playlist_id)
+                .await
+                .map(|playlist| playlist.name)
+                .unwrap_or_else(|_| playlist_id.to_string());
+            let episode_title = storage
+                .load_episode(&podcast_id, &episode_id)
+                .await
+                .map(|episode| episode.title)
+                .unwrap_or_else(|_| episode_id.to_string());
+
+            match playlist_manager
+                .add_episode_to_playlist(&playlist_id, &podcast_id, &episode_id)
+                .await
+            {
+                Ok(_) => {
+                    let _ = app_event_tx.send(AppEvent::EpisodeAddedToPlaylist {
+                        playlist_name,
+                        episode_title,
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::EpisodeAddToPlaylistFailed {
+                        playlist_name,
+                        episode_title,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    fn trigger_async_remove_from_playlist(
+        &mut self,
+        playlist_id: crate::playlist::PlaylistId,
+        episode_id: crate::storage::EpisodeId,
+    ) {
+        let playlist_manager = self.playlist_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+
+        tokio::spawn(async move {
+            let playlist_name = playlist_manager
+                .get_playlist(&playlist_id)
+                .await
+                .map(|playlist| playlist.name)
+                .unwrap_or_else(|_| playlist_id.to_string());
+
+            match playlist_manager
+                .remove_episode_from_playlist(&playlist_id, &episode_id)
+                .await
+            {
+                Ok(_) => {
+                    let _ = app_event_tx.send(AppEvent::EpisodeRemovedFromPlaylist {
+                        playlist_name,
+                        episode_title: episode_id.to_string(),
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::EpisodeRemoveFromPlaylistFailed {
+                        playlist_name,
+                        episode_title: episode_id.to_string(),
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    fn trigger_async_reorder_playlist(
+        &mut self,
+        playlist_id: crate::playlist::PlaylistId,
+        from_idx: usize,
+        to_idx: usize,
+    ) {
+        let playlist_manager = self.playlist_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+
+        tokio::spawn(async move {
+            let playlist_name = playlist_manager
+                .get_playlist(&playlist_id)
+                .await
+                .map(|playlist| playlist.name)
+                .unwrap_or_else(|_| playlist_id.to_string());
+            match playlist_manager
+                .reorder_episode(&playlist_id, from_idx, to_idx)
+                .await
+            {
+                Ok(_) => {
+                    let _ = app_event_tx.send(AppEvent::PlaylistReordered {
+                        name: playlist_name,
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::PlaylistReorderFailed {
+                        name: playlist_name,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    fn trigger_async_refresh_today(&mut self) {
+        let today_generator = self.today_generator.clone();
+        let app_event_tx = self.app_event_tx.clone();
+
+        tokio::spawn(async move {
+            match today_generator.refresh().await {
+                Ok(result) => {
+                    let _ = app_event_tx.send(AppEvent::TodayPlaylistRefreshed {
+                        added: result.added,
+                        removed: result.removed,
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::TodayPlaylistRefreshFailed {
+                        error: e.to_string(),
+                    });
+                }
+            }
         });
     }
 
@@ -2658,6 +3261,17 @@ impl UIApp {
         }
     }
 
+    async fn load_playlists_into_buffer(&mut self) {
+        match self.playlist_manager.list_playlists().await {
+            Ok(playlists) => {
+                if let Some(buffer) = self.buffer_manager.get_playlist_list_buffer_mut() {
+                    buffer.set_playlists(playlists);
+                }
+            }
+            Err(e) => self.show_error(format!("Failed to load playlists: {}", e)),
+        }
+    }
+
     /// Handle minibuffer input submission with context
     fn handle_minibuffer_input_with_context(
         &mut self,
@@ -2715,6 +3329,9 @@ impl UIApp {
             } else if prompt.starts_with("Dry run sync to") {
                 // This is a device sync dry run
                 self.trigger_async_device_sync(input.to_string(), false, true);
+                return;
+            } else if prompt.starts_with("Create playlist:") {
+                self.trigger_async_create_playlist(input.to_string(), None);
                 return;
             } else if prompt.starts_with("Delete downloaded episodes older than") {
                 // This is a cleanup confirmation (y/n)

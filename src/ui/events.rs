@@ -122,10 +122,15 @@ pub enum UIEvent {
 #[derive(Debug, Clone)]
 pub enum AppEvent {
     /// Podcast subscription completed successfully
-    PodcastSubscribed { podcast: crate::podcast::Podcast },
+    PodcastSubscribed {
+        podcast: crate::podcast::Podcast,
+    },
 
     /// Podcast subscription failed
-    PodcastSubscriptionFailed { url: String, error: String },
+    PodcastSubscriptionFailed {
+        url: String,
+        error: String,
+    },
 
     /// Podcast refresh completed
     PodcastRefreshed {
@@ -140,7 +145,9 @@ pub enum AppEvent {
     },
 
     /// All podcasts refresh completed
-    AllPodcastsRefreshed { total_new_episodes: usize },
+    AllPodcastsRefreshed {
+        total_new_episodes: usize,
+    },
 
     /// Background buffer data refreshed
     BufferDataRefreshed {
@@ -209,14 +216,20 @@ pub enum AppEvent {
     DownloadsRefreshed,
 
     /// All downloads deleted successfully
-    AllDownloadsDeleted { deleted_count: usize },
+    AllDownloadsDeleted {
+        deleted_count: usize,
+    },
 
     /// All downloads deletion failed
-    AllDownloadsDeletionFailed { error: String },
+    AllDownloadsDeletionFailed {
+        error: String,
+    },
 
     // OPML Import/Export events
     /// OPML import started
-    OpmlImportStarted { source: String },
+    OpmlImportStarted {
+        source: String,
+    },
 
     /// OPML import progress update
     OpmlImportProgress {
@@ -232,19 +245,80 @@ pub enum AppEvent {
     },
 
     /// OPML import failed
-    OpmlImportFailed { source: String, error: String },
+    OpmlImportFailed {
+        source: String,
+        error: String,
+    },
 
     /// OPML export started
-    OpmlExportStarted { path: String },
+    OpmlExportStarted {
+        path: String,
+    },
 
     /// OPML export progress update
-    OpmlExportProgress { status: String },
+    OpmlExportProgress {
+        status: String,
+    },
 
     /// OPML export completed
-    OpmlExportCompleted { path: String, feed_count: usize },
+    OpmlExportCompleted {
+        path: String,
+        feed_count: usize,
+    },
 
     /// OPML export failed
-    OpmlExportFailed { path: String, error: String },
+    OpmlExportFailed {
+        path: String,
+        error: String,
+    },
+
+    // Playlist events
+    PlaylistCreated {
+        playlist: crate::playlist::Playlist,
+    },
+    PlaylistCreationFailed {
+        name: String,
+        error: String,
+    },
+    PlaylistDeleted {
+        name: String,
+    },
+    PlaylistDeletionFailed {
+        name: String,
+        error: String,
+    },
+    EpisodeAddedToPlaylist {
+        playlist_name: String,
+        episode_title: String,
+    },
+    EpisodeAddToPlaylistFailed {
+        playlist_name: String,
+        episode_title: String,
+        error: String,
+    },
+    EpisodeRemovedFromPlaylist {
+        playlist_name: String,
+        episode_title: String,
+    },
+    EpisodeRemoveFromPlaylistFailed {
+        playlist_name: String,
+        episode_title: String,
+        error: String,
+    },
+    PlaylistReordered {
+        name: String,
+    },
+    PlaylistReorderFailed {
+        name: String,
+        error: String,
+    },
+    TodayPlaylistRefreshed {
+        added: usize,
+        removed: usize,
+    },
+    TodayPlaylistRefreshFailed {
+        error: String,
+    },
 
     // Device sync events
     /// Device sync started
@@ -273,7 +347,9 @@ pub enum AppEvent {
     },
 
     /// Download cleanup failed
-    DownloadCleanupFailed { error: String },
+    DownloadCleanupFailed {
+        error: String,
+    },
 }
 
 /// Types of buffer refresh operations

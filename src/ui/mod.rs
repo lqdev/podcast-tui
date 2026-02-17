@@ -129,6 +129,41 @@ pub enum UIAction {
     /// Hard refresh podcast (re-parse existing episodes)
     HardRefreshPodcast,
 
+    // Playlist actions
+    OpenPlaylistList,
+    OpenPlaylistDetail {
+        playlist_id: crate::playlist::PlaylistId,
+        playlist_name: String,
+    },
+    CreatePlaylist,
+    DeletePlaylist,
+    AddToPlaylist,
+    RefreshAutoPlaylists,
+    TriggerCreatePlaylist {
+        name: String,
+        description: Option<String>,
+    },
+    TriggerAddToPlaylist {
+        playlist_id: crate::playlist::PlaylistId,
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+    },
+    TriggerRemoveFromPlaylist {
+        playlist_id: crate::playlist::PlaylistId,
+        episode_id: crate::storage::EpisodeId,
+    },
+    TriggerDeletePlaylist {
+        playlist_id: crate::playlist::PlaylistId,
+    },
+    TriggerReorderPlaylist {
+        playlist_id: crate::playlist::PlaylistId,
+        from_idx: usize,
+        to_idx: usize,
+    },
+    SyncPlaylist {
+        playlist_id: crate::playlist::PlaylistId,
+    },
+
     // OPML Import/Export actions
     /// Import podcasts from OPML file or URL
     ImportOpml,
@@ -157,13 +192,19 @@ pub enum UIAction {
     /// Activate text search in the current buffer (opens minibuffer for input)
     Search,
     /// Apply a text search query to the active buffer
-    ApplySearch { query: String },
+    ApplySearch {
+        query: String,
+    },
     /// Clear all search/filters in the active buffer
     ClearFilters,
     /// Set a specific status filter via command
-    SetStatusFilter { status: String },
+    SetStatusFilter {
+        status: String,
+    },
     /// Set a specific date range filter via command
-    SetDateRangeFilter { range: String },
+    SetDateRangeFilter {
+        range: String,
+    },
     // NOTE: DurationFilter deferred — episode duration data not yet populated
     // from RSS feeds (extract_duration is a stub). See Design Decision #13.
     // SetDurationFilter { duration: String },

@@ -312,6 +312,16 @@ pub enum AppEvent {
         name: String,
         error: String,
     },
+    PlaylistRebuilt {
+        name: String,
+        rebuilt: usize,
+        skipped: usize,
+        failed: usize,
+    },
+    PlaylistRebuildFailed {
+        name: String,
+        error: String,
+    },
     TodayPlaylistRefreshed {
         added: usize,
         removed: usize,

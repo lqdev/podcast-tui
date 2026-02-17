@@ -141,6 +141,9 @@ pub enum UIAction {
     DeletePlaylist,
     AddToPlaylist,
     RefreshAutoPlaylists,
+    RebuildPlaylistFiles {
+        playlist_id: crate::playlist::PlaylistId,
+    },
     TriggerCreatePlaylist {
         name: String,
         description: Option<String>,

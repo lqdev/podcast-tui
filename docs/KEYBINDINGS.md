@@ -163,7 +163,8 @@ The command prompt supports intelligent auto-completion:
 - `Enter` opens playlist detail
 - `c` creates a playlist
 - `d` deletes selected playlist (with confirmation)
-- `r` refreshes `Today`
+- `r` refreshes `Today` (from playlist list)
+- `r` in playlist detail refreshes `Today` for auto playlists, or rebuilds files for user playlists
 
 ### Help Buffer
 - Read-only buffer with help information

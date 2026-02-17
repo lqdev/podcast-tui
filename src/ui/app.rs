@@ -600,6 +600,34 @@ impl UIApp {
                 Ok(true)
             }
             UIAction::RefreshPodcast => {
+                if let Some(current_id) = self.buffer_manager.current_buffer_id() {
+                    if current_id.starts_with("playlist-") && current_id != "playlist-list" {
+                        let result_action = if let Some(detail_buffer) = self
+                            .buffer_manager
+                            .get_playlist_detail_buffer_mut_by_id(&current_id)
+                        {
+                            detail_buffer.handle_action(UIAction::RefreshPodcast)
+                        } else {
+                            UIAction::ShowError("Playlist detail not available".to_string())
+                        };
+
+                        match result_action {
+                            UIAction::RefreshAutoPlaylists => {
+                                self.show_message("Refreshing Today playlist...".to_string());
+                                self.trigger_async_refresh_today();
+                            }
+                            UIAction::RebuildPlaylistFiles { playlist_id } => {
+                                self.show_message("Rebuilding playlist files...".to_string());
+                                self.trigger_async_rebuild_playlist(playlist_id);
+                            }
+                            UIAction::ShowMessage(msg) => self.show_message(msg),
+                            UIAction::ShowError(msg) => self.show_error(msg),
+                            _ => {}
+                        }
+                        return Ok(true);
+                    }
+                }
+
                 if self.buffer_manager.current_buffer_id().as_deref() == Some("playlist-list") {
                     self.trigger_async_refresh_today();
                     return Ok(true);
@@ -737,6 +765,11 @@ impl UIApp {
             }
             UIAction::RefreshAutoPlaylists => {
                 self.trigger_async_refresh_today();
+                Ok(true)
+            }
+            UIAction::RebuildPlaylistFiles { playlist_id } => {
+                self.show_message("Rebuilding playlist files...".to_string());
+                self.trigger_async_rebuild_playlist(playlist_id);
                 Ok(true)
             }
             UIAction::TriggerCreatePlaylist { name, description } => {
@@ -1005,9 +1038,31 @@ impl UIApp {
                         // If it's the downloads buffer, trigger background refresh of downloads
                         self.trigger_background_refresh(BufferRefreshType::Downloads);
                         self.show_message("Refreshing downloads...".to_string());
-                    } else if buffer_id == "playlist-list" || buffer_id.starts_with("playlist-") {
+                    } else if buffer_id == "playlist-list" {
                         self.trigger_async_refresh_today();
                         self.show_message("Refreshing playlists...".to_string());
+                    } else if buffer_id.starts_with("playlist-") {
+                        let result_action = if let Some(detail_buffer) = self
+                            .buffer_manager
+                            .get_playlist_detail_buffer_mut_by_id(&buffer_id)
+                        {
+                            detail_buffer.handle_action(UIAction::Refresh)
+                        } else {
+                            UIAction::ShowError("Playlist detail not available".to_string())
+                        };
+                        match result_action {
+                            UIAction::RefreshAutoPlaylists => {
+                                self.show_message("Refreshing Today playlist...".to_string());
+                                self.trigger_async_refresh_today();
+                            }
+                            UIAction::RebuildPlaylistFiles { playlist_id } => {
+                                self.show_message("Rebuilding playlist files...".to_string());
+                                self.trigger_async_rebuild_playlist(playlist_id);
+                            }
+                            UIAction::ShowMessage(msg) => self.show_message(msg),
+                            UIAction::ShowError(msg) => self.show_error(msg),
+                            _ => {}
+                        }
                     } else if buffer_id == "whats-new" {
                         // If it's the What's New buffer, trigger background refresh of episodes
                         self.trigger_background_refresh(BufferRefreshType::WhatsNew);
@@ -1459,6 +1514,22 @@ impl UIApp {
             }
             AppEvent::PlaylistReorderFailed { name, error } => {
                 self.show_error(format!("Failed to reorder playlist '{}': {}", name, error));
+            }
+            AppEvent::PlaylistRebuilt {
+                name,
+                rebuilt,
+                skipped,
+                failed,
+            } => {
+                self.load_playlists_into_buffer().await;
+                self.refresh_open_playlist_detail_buffers().await;
+                self.show_message(format!(
+                    "Playlist rebuilt '{}': {} rebuilt, {} skipped, {} failed",
+                    name, rebuilt, skipped, failed
+                ));
+            }
+            AppEvent::PlaylistRebuildFailed { name, error } => {
+                self.show_error(format!("Failed to rebuild playlist '{}': {}", name, error));
             }
             AppEvent::TodayPlaylistRefreshed { added, removed } => {
                 self.load_playlists_into_buffer().await;
@@ -2717,6 +2788,36 @@ impl UIApp {
                 }
                 Err(e) => {
                     let _ = app_event_tx.send(AppEvent::PlaylistReorderFailed {
+                        name: playlist_name,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    fn trigger_async_rebuild_playlist(&mut self, playlist_id: crate::playlist::PlaylistId) {
+        let playlist_manager = self.playlist_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+
+        tokio::spawn(async move {
+            let playlist_name = playlist_manager
+                .get_playlist(&playlist_id)
+                .await
+                .map(|playlist| playlist.name)
+                .unwrap_or_else(|_| playlist_id.to_string());
+
+            match playlist_manager.rebuild_playlist_files(&playlist_id).await {
+                Ok(result) => {
+                    let _ = app_event_tx.send(AppEvent::PlaylistRebuilt {
+                        name: playlist_name,
+                        rebuilt: result.rebuilt,
+                        skipped: result.skipped,
+                        failed: result.failed,
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::PlaylistRebuildFailed {
                         name: playlist_name,
                         error: e.to_string(),
                     });

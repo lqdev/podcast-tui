@@ -122,7 +122,7 @@ impl HelpBuffer {
             "  F7            Switch to playlists buffer".to_string(),
             "  c             Create playlist".to_string(),
             "  d             Delete selected playlist (with confirmation)".to_string(),
-            "  r             Refresh Today auto-playlist".to_string(),
+            "  r             Refresh Today or rebuild selected user playlist".to_string(),
             "  p             Add selected episode to a playlist (episode lists)".to_string(),
             "  Ctrl+↑/Ctrl+↓ Reorder episodes in playlist detail".to_string(),
             "".to_string(),

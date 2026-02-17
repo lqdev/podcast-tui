@@ -58,9 +58,14 @@ impl PlaylistDetailBuffer {
         self.episodes = playlist.episodes;
         if self.episodes.is_empty() {
             self.selected_index = None;
-        } else if self.selected_index.is_none() {
-            self.selected_index = Some(0);
+        } else {
+            let selected = self.selected_index.unwrap_or(0);
+            self.selected_index = Some(selected.min(self.episodes.len() - 1));
         }
+    }
+
+    pub fn playlist_id(&self) -> &PlaylistId {
+        &self.playlist_id
     }
 
     pub async fn load_playlist(&mut self) -> Result<(), String> {

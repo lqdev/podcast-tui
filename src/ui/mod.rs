@@ -52,6 +52,8 @@ pub enum UIAction {
     PageDown,
     MoveToTop,
     MoveToBottom,
+    MoveEpisodeUp,
+    MoveEpisodeDown,
 
     // Buffer actions
     SwitchBuffer(String),

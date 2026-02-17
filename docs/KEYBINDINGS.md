@@ -56,6 +56,8 @@ This document outlines the keybinding system for the Podcast TUI application.
 - `Shift+D` - Download selected episode
 - `Shift+X` - Delete downloaded file for selected episode
 - `p` - Add selected episode to a playlist
+- `Ctrl+↑` - Move selected playlist episode up (playlist detail buffer)
+- `Ctrl+↓` - Move selected playlist episode down (playlist detail buffer)
 - `Ctrl+x` - Delete ALL downloaded episodes and clean up downloads folder
 
 ### Minibuffer Input (When Active)
@@ -160,7 +162,7 @@ The command prompt supports intelligent auto-completion:
 - Shows all user playlists plus auto-generated `Today` playlist
 - `Enter` opens playlist detail
 - `c` creates a playlist
-- `d` deletes selected playlist
+- `d` deletes selected playlist (with confirmation)
 - `r` refreshes `Today`
 
 ### Help Buffer

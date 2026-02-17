@@ -1143,6 +1143,13 @@ impl UIApp {
                         } => {
                             self.trigger_async_remove_from_playlist(playlist_id, episode_id);
                         }
+                        UIAction::TriggerReorderPlaylist {
+                            playlist_id,
+                            from_idx,
+                            to_idx,
+                        } => {
+                            self.trigger_async_reorder_playlist(playlist_id, from_idx, to_idx);
+                        }
                         UIAction::RefreshAutoPlaylists => {
                             self.trigger_async_refresh_today();
                         }

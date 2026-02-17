@@ -70,6 +70,8 @@ impl KeyHandler {
         self.bind_key(KeyChord::none(KeyCode::PageDown), UIAction::PageDown);
         self.bind_key(KeyChord::none(KeyCode::Home), UIAction::MoveToTop);
         self.bind_key(KeyChord::none(KeyCode::End), UIAction::MoveToBottom);
+        self.bind_key(KeyChord::ctrl(KeyCode::Up), UIAction::MoveEpisodeUp);
+        self.bind_key(KeyChord::ctrl(KeyCode::Down), UIAction::MoveEpisodeDown);
 
         // Function keys - rarely clash
         self.bind_key(KeyChord::none(KeyCode::F(1)), UIAction::ShowHelp);

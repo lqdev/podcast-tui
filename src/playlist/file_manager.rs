@@ -1,5 +1,5 @@
 use crate::playlist::PlaylistEpisode;
-use crate::utils::validation::{sanitize_filename, sanitize_playlist_name};
+use crate::utils::validation::sanitize_playlist_name;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -29,7 +29,6 @@ impl PlaylistFileManager {
         source_path: &Path,
         playlist_name: &str,
         order: usize,
-        episode_title: &str,
     ) -> Result<String, PlaylistFileError> {
         if !source_path.exists() {
             return Err(PlaylistFileError::SourceNotFound(
@@ -45,13 +44,12 @@ impl PlaylistFileManager {
             .and_then(|s| s.to_str())
             .filter(|s| !s.is_empty())
             .unwrap_or("mp3");
-        let sanitized_title = sanitize_filename(episode_title);
-        let safe_title = if sanitized_title.trim().is_empty() {
-            "Untitled".to_string()
-        } else {
-            sanitized_title
-        };
-        let filename = format!("{:03}-{}.{}", order, safe_title, extension);
+        let stem = source_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "Untitled".to_string());
+        let filename = format!("{:03}-{}.{}", order, stem, extension);
         let target_path = audio_dir.join(&filename);
 
         fs::copy(source_path, &target_path).await?;
@@ -217,7 +215,7 @@ mod tests {
     #[tokio::test]
     async fn test_copy_episode_creates_file() {
         let temp = TempDir::new().expect("Failed to create temp dir");
-        let playlists_dir = temp.path().join("playlists");
+        let playlists_dir = temp.path().join("Playlists");
         let source = temp.path().join("source.mp3");
         fs::write(&source, b"abc")
             .await
@@ -225,7 +223,7 @@ mod tests {
 
         let manager = PlaylistFileManager::new(playlists_dir.clone());
         let filename = manager
-            .copy_episode_to_playlist(&source, "Morning Commute", 1, "Episode 1")
+            .copy_episode_to_playlist(&source, "Morning Commute", 1)
             .await
             .expect("Failed to copy episode");
         let copied = manager.playlist_audio_dir("Morning Commute").join(filename);
@@ -235,7 +233,7 @@ mod tests {
     #[tokio::test]
     async fn test_remove_episode_deletes_file() {
         let temp = TempDir::new().expect("Failed to create temp dir");
-        let manager = PlaylistFileManager::new(temp.path().join("playlists"));
+        let manager = PlaylistFileManager::new(temp.path().join("Playlists"));
         let audio_dir = manager.playlist_audio_dir("Delete Test");
         fs::create_dir_all(&audio_dir)
             .await
@@ -255,7 +253,7 @@ mod tests {
     #[tokio::test]
     async fn test_rename_for_reorder() {
         let temp = TempDir::new().expect("Failed to create temp dir");
-        let manager = PlaylistFileManager::new(temp.path().join("playlists"));
+        let manager = PlaylistFileManager::new(temp.path().join("Playlists"));
         let audio_dir = manager.playlist_audio_dir("Reorder Test");
         fs::create_dir_all(&audio_dir)
             .await
@@ -287,7 +285,7 @@ mod tests {
     #[tokio::test]
     async fn test_cleanup_orphaned_files() {
         let temp = TempDir::new().expect("Failed to create temp dir");
-        let manager = PlaylistFileManager::new(temp.path().join("playlists"));
+        let manager = PlaylistFileManager::new(temp.path().join("Playlists"));
         let audio_dir = manager.playlist_audio_dir("Cleanup Test");
         fs::create_dir_all(&audio_dir)
             .await
@@ -313,7 +311,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_playlist_size() {
         let temp = TempDir::new().expect("Failed to create temp dir");
-        let manager = PlaylistFileManager::new(temp.path().join("playlists"));
+        let manager = PlaylistFileManager::new(temp.path().join("Playlists"));
         let audio_dir = manager.playlist_audio_dir("Size Test");
         fs::create_dir_all(&audio_dir)
             .await

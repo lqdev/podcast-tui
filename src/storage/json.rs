@@ -47,7 +47,7 @@ impl JsonStorage {
         let data_dir = project_dirs.data_dir().to_path_buf();
         let podcasts_dir = data_dir.join("podcasts");
         let episodes_dir = data_dir.join("episodes");
-        let playlists_dir = data_dir.join("playlists");
+        let playlists_dir = data_dir.join("Playlists");
 
         Ok(Self {
             data_dir,
@@ -61,7 +61,7 @@ impl JsonStorage {
     pub fn with_data_dir(data_dir: PathBuf) -> Self {
         let podcasts_dir = data_dir.join("podcasts");
         let episodes_dir = data_dir.join("episodes");
-        let playlists_dir = data_dir.join("playlists");
+        let playlists_dir = data_dir.join("Playlists");
 
         Self {
             data_dir,
@@ -529,6 +529,27 @@ impl Storage for JsonStorage {
     }
 
     async fn initialize(&self) -> Result<(), Self::Error> {
+        let legacy_playlists_dir = self.data_dir.join("playlists");
+        if legacy_playlists_dir.exists() && !self.playlists_dir.exists() {
+            fs::rename(&legacy_playlists_dir, &self.playlists_dir)
+                .await
+                .map_err(|e| {
+                    StorageError::file_operation(
+                        "rename",
+                        &legacy_playlists_dir,
+                        std::io::Error::new(
+                            e.kind(),
+                            format!(
+                                "{} -> {} ({})",
+                                legacy_playlists_dir.display(),
+                                self.playlists_dir.display(),
+                                e
+                            ),
+                        ),
+                    )
+                })?;
+        }
+
         // Create data directories
         for dir in [
             &self.data_dir,

@@ -185,12 +185,7 @@ impl TodayGenerator {
 
             let filename = match self
                 .file_manager
-                .copy_episode_to_playlist(
-                    &source_path,
-                    &playlist.name,
-                    playlist.episodes.len() + 1,
-                    &episode.title,
-                )
+                .copy_episode_to_playlist(&source_path, &playlist.name, playlist.episodes.len() + 1)
                 .await
             {
                 Ok(name) => name,
@@ -297,7 +292,7 @@ mod tests {
         let generator = TodayGenerator::new(
             storage.clone(),
             download_manager,
-            data_dir.join("playlists"),
+            data_dir.join("Playlists"),
         );
 
         TestContext {

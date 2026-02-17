@@ -112,7 +112,7 @@ impl UIApp {
         storage: Arc<JsonStorage>,
         app_event_tx: mpsc::UnboundedSender<AppEvent>,
     ) -> UIResult<Self> {
-        let playlists_dir = storage.data_dir.join("playlists");
+        let playlists_dir = storage.data_dir.join("Playlists");
         let playlist_manager = Arc::new(PlaylistManager::new(
             storage.clone(),
             download_manager.clone(),
@@ -167,7 +167,7 @@ impl UIApp {
         app_event_tx: mpsc::UnboundedSender<AppEvent>,
         status_tx: mpsc::UnboundedSender<crate::InitStatus>,
     ) -> UIResult<Self> {
-        let playlists_dir = storage.data_dir.join("playlists");
+        let playlists_dir = storage.data_dir.join("Playlists");
         let playlist_manager = Arc::new(PlaylistManager::new(
             storage.clone(),
             download_manager.clone(),
@@ -2904,7 +2904,7 @@ impl UIApp {
         let download_manager = self.download_manager.clone();
         let app_event_tx = self.app_event_tx.clone();
         let playlists_dir = if self.config.downloads.sync_include_playlists {
-            Some(self._storage.data_dir.join("playlists"))
+            Some(self._storage.data_dir.join("Playlists"))
         } else {
             None
         };

@@ -150,7 +150,7 @@ impl PlaylistManager {
         let order = playlist.episodes.len() + 1;
         let filename = self
             .file_manager
-            .copy_episode_to_playlist(&source_path, &playlist.name, order, &episode.title)
+            .copy_episode_to_playlist(&source_path, &playlist.name, order)
             .await?;
 
         let playlist_episode = PlaylistEpisode {
@@ -389,7 +389,7 @@ mod tests {
         let manager = PlaylistManager::new(
             storage.clone(),
             download_manager,
-            data_dir.join("playlists"),
+            data_dir.join("Playlists"),
         );
 
         TestContext {

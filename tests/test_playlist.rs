@@ -47,7 +47,7 @@ async fn setup() -> TestSetup {
         .expect("Failed to create download manager"),
     );
 
-    let playlists_dir = data_dir.join("playlists");
+    let playlists_dir = data_dir.join("Playlists");
     let playlist_manager = PlaylistManager::new(
         storage.clone(),
         download_manager.clone(),
@@ -135,7 +135,7 @@ async fn test_create_playlist_and_add_episode() {
 
     let audio_dir = setup
         .data_dir
-        .join("playlists")
+        .join("Playlists")
         .join("Morning Commute")
         .join("audio");
     assert!(audio_dir.exists());
@@ -200,7 +200,7 @@ async fn test_sync_with_playlists_creates_sibling_device_dirs() {
 
     let playlist_audio = setup
         .data_dir
-        .join("playlists")
+        .join("Playlists")
         .join("Morning Commute")
         .join("audio");
     fs::create_dir_all(&playlist_audio)
@@ -214,7 +214,7 @@ async fn test_sync_with_playlists_creates_sibling_device_dirs() {
         .download_manager
         .sync_to_device(
             device_dir.clone(),
-            Some(setup.data_dir.join("playlists")),
+            Some(setup.data_dir.join("Playlists")),
             false,
             false,
         )

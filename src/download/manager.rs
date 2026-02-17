@@ -1626,7 +1626,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let downloads_dir = temp_dir.path().join("downloads");
-        let playlists_dir = temp_dir.path().join("playlists");
+        let playlists_dir = temp_dir.path().join("Playlists");
         fs::create_dir_all(&downloads_dir).await.unwrap();
         fs::create_dir_all(&playlists_dir).await.unwrap();
 
@@ -1670,7 +1670,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let downloads_dir = temp_dir.path().join("downloads");
-        let playlists_dir = temp_dir.path().join("playlists");
+        let playlists_dir = temp_dir.path().join("Playlists");
         fs::create_dir_all(&downloads_dir).await.unwrap();
         fs::create_dir_all(playlists_dir.join("Empty Playlist"))
             .await
@@ -1698,7 +1698,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let downloads_dir = temp_dir.path().join("downloads");
-        let playlists_dir = temp_dir.path().join("playlists");
+        let playlists_dir = temp_dir.path().join("Playlists");
         fs::create_dir_all(&downloads_dir).await.unwrap();
         fs::create_dir_all(&playlists_dir).await.unwrap();
 
@@ -1734,7 +1734,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let downloads_dir = temp_dir.path().join("downloads");
-        let playlists_dir = temp_dir.path().join("playlists");
+        let playlists_dir = temp_dir.path().join("Playlists");
         fs::create_dir_all(&downloads_dir).await.unwrap();
         fs::create_dir_all(&playlists_dir).await.unwrap();
 

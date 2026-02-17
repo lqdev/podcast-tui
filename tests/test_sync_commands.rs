@@ -47,7 +47,7 @@ async fn test_sync_to_device_copies_files() {
     // Test sync directly (simulating what the command would trigger)
     let device_path = device_dir.clone();
     let result = download_manager
-        .sync_to_device(device_path.clone(), false, false)
+        .sync_to_device(device_path.clone(), None, false, false)
         .await;
 
     assert!(result.is_ok(), "Sync should succeed");
@@ -56,7 +56,7 @@ async fn test_sync_to_device_copies_files() {
     assert_eq!(report.errors.len(), 0, "Should have no errors");
 
     // Verify file was copied
-    let device_podcast_dir = device_dir.join("Test Podcast");
+    let device_podcast_dir = device_dir.join("Podcasts").join("Test Podcast");
     assert!(
         device_podcast_dir.exists(),
         "Podcast directory should exist on device"
@@ -104,7 +104,7 @@ async fn test_sync_dry_run() {
     // Test dry run sync
     let device_path = device_dir.clone();
     let result = download_manager
-        .sync_to_device(device_path.clone(), false, true)
+        .sync_to_device(device_path.clone(), None, false, true)
         .await;
 
     assert!(result.is_ok(), "Dry run sync should succeed");
@@ -113,7 +113,7 @@ async fn test_sync_dry_run() {
     assert_eq!(report.errors.len(), 0, "Should have no errors");
 
     // Verify file was NOT copied (dry run)
-    let device_podcast_dir = device_dir.join("Test Podcast");
+    let device_podcast_dir = device_dir.join("Podcasts").join("Test Podcast");
     assert!(
         !device_podcast_dir.exists(),
         "Podcast directory should NOT exist on device after dry run"

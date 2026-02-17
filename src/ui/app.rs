@@ -2253,6 +2253,11 @@ impl UIApp {
     ) {
         let download_manager = self.download_manager.clone();
         let app_event_tx = self.app_event_tx.clone();
+        let playlists_dir = if self.config.downloads.sync_include_playlists {
+            Some(self._storage.data_dir.join("playlists"))
+        } else {
+            None
+        };
 
         // Expand tilde and convert to PathBuf
         let expanded_path = shellexpand::tilde(&device_path_str).to_string();
@@ -2274,7 +2279,7 @@ impl UIApp {
 
         tokio::spawn(async move {
             match download_manager
-                .sync_to_device(device_path.clone(), delete_orphans, dry_run)
+                .sync_to_device(device_path.clone(), playlists_dir, delete_orphans, dry_run)
                 .await
             {
                 Ok(report) => {

@@ -193,7 +193,7 @@ These keybindings are designed to work reliably across different terminal emulat
 
 **Note**: Some terminal emulators may intercept certain key combinations. If a keybinding doesn't work, try the alternative binding or adjust your terminal emulator settings.
 
-## Future Playback Controls (Sprint 4)
+## Future Playback Controls (Not Yet Implemented)
 
 The following playback controls will be added when audio playback is implemented:
 
@@ -205,6 +205,5 @@ The following playback controls will be added when audio playback is implemented
 
 ---
 
-**Last Updated**: October 2025  
-**Version**: 1.0.0-mvp (in development)  
-**Status**: Sprint 3 Complete
+**Last Updated**: February 2026  
+**Version**: 1.6.0

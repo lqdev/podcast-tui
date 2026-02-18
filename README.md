@@ -1,70 +1,62 @@
 # Podcast TUI
 
-A cross-platform terminal u✅ **Completed Features:**
-- ✅ **RSS Subscription Management** - Subscribe to podcasts via RSS feeds
-- ✅ **OPML Import/Export** - Import/export subscriptions with duplicate detection ([docs](docs/OPML_SUPPORT.md))
-- ✅ **Episode Management** - Browse and manage episodesinterface for podcast management built with Rust.
+A cross-platform terminal user interface for podcast management built with Rust.
 
-![Build Status](https://github.com/yourusername/podcast-tui/workflows/CI/badge.svg)
-![License](https://img.shiel### Architecture
-The application follows a modular architecture with clear separation of concerns:
-
-- **Storage Layer** - Abstracted JSON-based persistence
-- **Domain Logic** - Podcast, episode, and playlist management
-- **UI Layer** - Terminal interface using Ratatui with buffer-based UI
-- **Audio System** - Cross-platform playback with Rodioadge/license-MIT-blue.svg)
+![Build Status](https://github.com/lqdev/podcast-tui/workflows/CI/badge.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Rust Version](https://img.shields.io/badge/rust-1.75+-red.svg)
-![Development Status](https://img.shields.io/badge/status-Sprint%203%20Complete-blue)
-![Progress](https://img.shields.io/badge/MVP%20Progress-37.5%25-yellow)
+![Version](https://img.shields.io/badge/version-1.6.0-green)
+![Development Status](https://img.shields.io/badge/status-Active%20Development-blue)
 
 > 📚 **Documentation:** For comprehensive architecture and design patterns, see [**ARCHITECTURE.md**](docs/ARCHITECTURE.md)
 
-## 📊 Current Status (October 2025)
+## 📊 Current Status (February 2026)
 
-**🎉 Sprint 3 Complete!** The application has completed its first 3 sprints (37.5% of MVP):
+**v1.6.0** — The application has a fully working feature set for podcast subscription management, downloading, device sync, and playlist management. Audio playback is not yet implemented.
 
 ✅ **Working Features:**
 - RSS feed subscription management with OPML import/export
 - Episode browsing with comprehensive metadata
-- Parallel episode downloads (2-3 concurrent, configurable)
+- Parallel episode downloads (configurable concurrent, default 3)
+- MP3 metadata embedding (ID3 tags, artwork, track numbers, readable filenames)
+- Device sync to MP3 players/USB drives with metadata-based comparison
+- Playlist management (user playlists + auto-generated "Today" playlist)
+- Search & filter by text, status, date range
+- Download cleanup (auto on startup + manual `:clean-older-than`)
 - Intuitive keyboard navigation and buffer management
 - Multi-theme support (dark, light, high-contrast, solarized)
 - Cross-platform builds (Windows x64/ARM64, Linux x64/ARM64)
 
-🚧 **In Progress (Sprint 4 - Next Up):**
-- Audio playback with rodio
-- Playback controls and progress tracking
-- Chapter navigation
+⏳ **Not Yet Implemented:**
+- Audio playback (rodio integration pending)
+- Episode notes
+- Statistics tracking
 
-📋 **Planned (Sprints 5-7):**
-- Playlists, episode notes, search & filtering
-- Statistics tracking and reporting
-- Final polish and documentation
-
-**⚠️ Audio playback is not yet implemented.** The current release is suitable for managing subscriptions and downloading episodes.
+**⚠️ Audio playback is not yet implemented.** The current release is suitable for managing subscriptions, downloading episodes, syncing to devices, and managing playlists.
 
 ## 🎧 Features
 
-### MVP Release (v1.0.0-mvp) - In Progress
+### MVP Release (v1.6.0)
 
 **✅ Completed Features:**
 - ✅ **RSS Subscription Management** - Subscribe to podcasts via RSS feeds
 - ✅ **OPML Import/Export** - Non-destructive import and export of subscriptions  
 - ✅ **Episode Management** - Browse and manage episodes
 - ✅ **Download System** - Parallel episode downloads with progress tracking and bulk cleanup
+- ✅ **MP3 Metadata** - ID3 tags, artwork embedding, track numbers, readable folder names
 - ✅ **Device Sync** - Sync downloads to MP3 players with metadata-based comparison
 - ✅ **Keyboard Navigation** - Intuitive keybindings for efficient navigation
 - ✅ **Command Auto-completion** - Intelligent command completion in minibuffer
 - ✅ **Buffer Management** - Multiple buffers for different views
 - ✅ **Playlist Support** - User playlists plus auto-generated `Today` (last 24h) playlist
+- ✅ **Search & Filter** - Text search, status filter, date range filter
 - ✅ **Theme System** - Multiple themes (dark, light, high-contrast, solarized)
 - ✅ **Cross-platform Build** - Windows and Linux build support
 
-**🚧 In Progress / Planned:**
+**⏳ In Progress / Planned:**
 - ⏳ **Audio Playback** - Basic playback controls (not yet implemented)
 - ⏳ **Episode Notes** - Add personal notes to episodes (not yet implemented)
 - ⏳ **Statistics Tracking** - Listen time and download statistics (not yet implemented)
-- ⏳ **Search & Filtering** - Episode search and filtering (not yet implemented)
 
 ## 🚀 Quick Start
 
@@ -111,7 +103,7 @@ cd podcast-tui-vX.X.X-linux-x86_64
 
 #### From Source
 ```bash
-git clone https://github.com/yourusername/podcast-tui.git
+git clone https://github.com/lqdev/podcast-tui.git
 cd podcast-tui
 cargo build --release
 ./target/release/podcast-tui
@@ -190,9 +182,9 @@ See [assets/README.md](assets/README.md) for more details about the icon design 
 - `Ctrl+r` - Hard refresh (re-parse all episodes)
 
 ### Episode Management  
-- `Enter` - Play selected episode (when playback implemented)
-- `Shift+D` - Download episode (works in both episode list and episode detail buffers)
-- `Shift+X` - Delete downloaded file for selected episode
+- `Enter` - Open episode detail / navigate into playlist
+- `Shift+D` - Download episode (works in episode list and episode detail)
+- `Shift+X` or `X` - Delete downloaded file for selected episode
 - `p` - Add selected episode to a playlist
 - `Ctrl+x` - Delete ALL downloaded episodes and clean up
 - `:clean-older-than <duration>` - Delete downloads older than duration (e.g., `7d`, `2w`, `1m`)
@@ -215,6 +207,12 @@ See [assets/README.md](assets/README.md) for more details about the icon design 
 - `Ctrl+k` - Close current buffer
 - `Ctrl+l` - List all buffers
 
+### Search & Filter Commands
+- `/` - Open search (filter by text, matches title + description)
+- `:filter-status <new|downloaded|played|downloading|failed>` - Filter by status
+- `:filter-date <today|7d|2w|1m>` - Filter by date range
+- `:clear-filters` - Clear all active filters
+
 ### Application
 - `F1` - Show help
 - `h` or `?` - Show help
@@ -225,7 +223,7 @@ See [assets/README.md](assets/README.md) for more details about the icon design 
 
 ### Future Playback Controls (Not Yet Implemented)
 - `Space` - Play/pause
-- Audio controls coming in Sprint 4
+- Audio controls coming in a future sprint
 
 See [complete keybinding reference](docs/KEYBINDINGS.md) for all shortcuts.
 
@@ -246,7 +244,14 @@ Configuration is stored in JSON format at:
     "sync_delete_orphans": true,
     "sync_preserve_structure": true,
     "sync_dry_run": false,
-    "sync_include_playlists": true
+    "sync_include_playlists": true,
+    "use_readable_folders": true,
+    "embed_id3_metadata": true,
+    "assign_track_numbers": true,
+    "download_artwork": true,
+    "include_episode_numbers": true,
+    "include_dates": false,
+    "max_filename_length": 100
   },
   "playlist": {
     "today_refresh_policy": "daily",
@@ -257,14 +262,10 @@ Configuration is stored in JSON format at:
     "volume": 0.8,
     "seek_seconds": 30
   },
-  "keybindings": {
-    "play_pause": "SPC",
-    "next_episode": "n",
-    "prev_episode": "p"
-  },
   "ui": {
-    "theme": "default",
-    "show_progress_bar": true
+    "theme": "dark",
+    "show_progress_bar": true,
+    "whats_new_episode_limit": 50
   }
 }
 ```
@@ -369,62 +370,57 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 
 ## 📋 Roadmap
 
-### MVP (Current Focus)
+### Completed
 
-**Completed (Sprints 0-3):**
-- [x] **Sprint 0: Project Setup** - Rust project structure, dependencies, and tooling
-- [x] **Sprint 0: Storage Layer** - JSON-based storage with abstraction trait
-- [x] **Sprint 0: Data Models** - Podcast, Episode, and configuration models with tests
-- [x] **Sprint 1: Core UI Framework** - Complete Emacs-style TUI with buffers and keybindings
-- [x] **Sprint 1: Theme System** - Multiple themes with dynamic switching
-- [x] **Sprint 1: Buffer Management** - Emacs-style buffer system with switching
-- [x] **Sprint 2: RSS Subscription Management** - Subscribe to podcasts via RSS feeds  
-- [x] **Sprint 2: OPML Import/Export** - Non-destructive import and export of subscriptions
-- [x] **Sprint 2: Episode Parsing** - RSS feed parsing and episode extraction
-- [x] **Sprint 3: Download System** - Parallel episode downloads with progress tracking
-- [x] **Sprint 3: Episode Management UI** - Browse and manage episodes
-- [x] **Sprint 3: File Organization** - Download directory organization and cleanup
+- [x] **Project Setup** - Rust project structure, dependencies, and tooling
+- [x] **Storage Layer** - JSON-based storage with abstraction trait
+- [x] **Data Models** - Podcast, Episode, and configuration models
+- [x] **Core UI Framework** - TUI with Emacs-style buffers and keybindings
+- [x] **Theme System** - Multiple themes with dynamic switching
+- [x] **RSS Subscription Management** - Subscribe to podcasts via RSS feeds
+- [x] **OPML Import/Export** - Non-destructive import and export of subscriptions
+- [x] **Episode Parsing** - RSS feed parsing and episode extraction
+- [x] **Download System** - Parallel episode downloads with progress tracking
+- [x] **Episode Management UI** - Browse and manage episodes
+- [x] **Download Cleanup** - Auto-cleanup on startup + manual `:clean-older-than`
+- [x] **Application Icon** - Custom cassette+RSS icon, embedded in Windows exe
+- [x] **Device Sync** - Metadata-based sync to MP3 players/USB devices
+- [x] **MP3 Metadata** - ID3 tags, artwork, track numbers, readable filenames
+- [x] **Search & Filter** - Text search, status filter, date range filter
+- [x] **Playlist Management** - User playlists + auto-generated "Today" playlist
+- [x] **Winget Publishing** - Available on Windows Package Manager
 
-**In Progress (Sprints 4-7):**
-- [ ] **Sprint 4: Audio Playback** - Basic playback controls with rodio
-- [ ] **Sprint 5: Playlist Creation** - Create and manage custom episode playlists
-- [ ] **Sprint 5: Episode Notes** - Add personal notes to episodes
-- [ ] **Sprint 5: Search & Filtering** - Episode search and filtering
-- [ ] **Sprint 6: Statistics Tracking** - Listen time and download statistics
-- [ ] **Sprint 7: Cross-platform Testing** - Windows and Linux compatibility verification
-- [ ] **Sprint 7: Polish & Documentation** - Final polish and complete documentation
+### In Progress / Planned
 
-### Post-MVP (v1.1+)
+- [ ] **Audio Playback** - Basic playback controls with rodio
+- [ ] **Episode Notes** - Add personal notes to episodes
+- [ ] **Statistics Tracking** - Listen time and download statistics
+- [ ] **Duration Filter** - Filter episodes by duration (deferred pending RSS duration data)
+
+### Post-MVP (v2.0+)
 - [ ] SQLite storage backend option
-- [ ] Advanced playlist features (smart playlists)
+- [ ] Advanced smart playlists
 - [ ] Plugin architecture
-- [ ] Enhanced statistics and reporting
 - [ ] Cloud synchronization (optional)
-- [ ] Web interface companion
-
-See [full roadmap](docs/ROADMAP.md) for detailed planning.
 
 ## 🐛 Known Issues
 
-**Current Development Status:**
-- ⚠️ **Audio playback not yet implemented** - Sprint 4 feature (rodio integration pending)
-- ⚠️ **Playlists not yet implemented** - Sprint 5 feature
-- ⚠️ **Episode notes not yet implemented** - Sprint 5 feature
-- ⚠️ **Statistics tracking not yet implemented** - Sprint 6 feature
-- ⚠️ **Search/filtering limited** - Advanced features pending Sprint 5
+**Not Yet Implemented:**
+- ⚠️ **Audio playback** - rodio integration pending
+- ⚠️ **Episode notes** - planned for a future release
+- ⚠️ **Statistics tracking** - planned for a future release
+- ⚠️ **Duration filter** - deferred until episode duration is reliably populated from RSS feeds
 
 **Build Requirements:**
 - Windows ARM64 builds require LLVM/Clang (see scripts/INSTALL-LLVM.md)
 - Windows x64 builds require MSVC Build Tools
-- The `ring` dependency (used by reqwest) has specific compiler requirements
+- Linux requires `libasound2-dev` and `pkg-config`
 
 **Current Limitations:**
-- Download concurrency configurable (default 2-3)
-- RSS feed parsing works with most standard feeds
+- RSS feed parsing works with most standard feeds; some non-standard audio URL formats may not parse correctly
 - Terminal compatibility tested on Windows Terminal, GNOME Terminal, and similar
-- Some feeds with non-standard audio URL formats may not parse correctly
 
-See [GitHub Issues](https://github.com/yourusername/podcast-tui/issues) for current bugs and feature requests.
+See [GitHub Issues](https://github.com/lqdev/podcast-tui/issues) for current bugs and feature requests.
 
 ## 📜 License
 
@@ -439,8 +435,6 @@ Licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
-**Status**: 🚧 Active Development (Sprint 3 Complete - 37.5% of MVP)  
-**Completed**: Sprints 0-3 (Foundation, UI, RSS/Podcasts, Downloads)  
-**Next Up**: Sprint 4 (Audio Playback)  
-**Maintainer**: [@yourusername](https://github.com/yourusername)  
-**Version**: 1.0.0-mvp (in development)
+**Status**: 🚀 Active Development (v1.6.0)  
+**Maintainer**: [@lqdev](https://github.com/lqdev)  
+**Version**: 1.6.0

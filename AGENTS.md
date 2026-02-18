@@ -294,32 +294,77 @@ mod tests {
 ```
 podcast-tui/
 ├── src/
-│   ├── main.rs              # Application entry point
-│   ├── constants.rs         # Centralized configuration constants
+│   ├── main.rs              # CLI entry point (clap argument parsing)
+│   ├── app.rs               # Application state and startup
+│   ├── config.rs            # Config structs (Audio, Download, Playlist, UI, Storage)
+│   ├── constants.rs         # Centralized constants (network, downloads, ui, storage, etc.)
+│   ├── lib.rs               # Library root
 │   ├── storage/             # Data persistence abstraction
-│   │   ├── mod.rs          # Storage trait definition
-│   │   └── json.rs         # JSON storage implementation
+│   │   ├── mod.rs           # Module root
+│   │   ├── traits.rs        # Storage trait definition
+│   │   ├── json.rs          # JSON storage implementation
+│   │   └── models.rs        # Shared storage models
 │   ├── podcast/             # Domain models and RSS logic
-│   │   ├── models.rs       # Podcast, Episode data models
-│   │   └── feed.rs         # RSS feed parsing
-│   ├── download/            # Download management
-│   ├── ui/                  # Terminal UI
-│   │   ├── app.rs          # Main application state
-│   │   ├── buffers/        # UI buffers (podcast list, episodes, etc.)
-│   │   └── components/     # Reusable UI components
-│   └── utils/               # Shared utilities
-├── tests/                   # Integration tests
-├── examples/                # Example code
+│   │   ├── models.rs        # Podcast, Episode data models
+│   │   ├── feed.rs          # RSS feed parsing (feed-rs)
+│   │   ├── opml.rs          # OPML import/export
+│   │   ├── subscription.rs  # Subscription management
+│   │   └── mod.rs
+│   ├── download/            # Download management + device sync + cleanup
+│   │   ├── manager.rs       # DownloadManager (downloads, sync, cleanup)
+│   │   └── mod.rs
+│   ├── playlist/            # Playlist management
+│   │   ├── models.rs        # Playlist, PlaylistType, AutoPlaylistKind, RefreshPolicy
+│   │   ├── manager.rs       # PlaylistManager (CRUD, ordering)
+│   │   ├── file_manager.rs  # Audio file copying for device compatibility
+│   │   ├── auto_generator.rs # Today auto-playlist generation
+│   │   └── mod.rs
+│   ├── ui/                  # Terminal UI (ratatui + crossterm)
+│   │   ├── app.rs           # UIApp main loop and event dispatch
+│   │   ├── mod.rs           # UI module root
+│   │   ├── events.rs        # Event types and handling
+│   │   ├── keybindings.rs   # KeyChord binding registry
+│   │   ├── themes.rs        # Theme definitions (dark/light/high-contrast/solarized)
+│   │   ├── filters.rs       # EpisodeFilter (text, status, date range)
+│   │   ├── buffers/         # 12 buffer implementations
+│   │   │   ├── mod.rs           # Buffer trait + BufferManager
+│   │   │   ├── podcast_list.rs  # Podcast subscription list
+│   │   │   ├── episode_list.rs  # Episode list with filter support
+│   │   │   ├── episode_detail.rs # Single episode view
+│   │   │   ├── downloads.rs     # Active downloads progress
+│   │   │   ├── help.rs          # Help keybinding reference
+│   │   │   ├── buffer_list.rs   # Buffer switcher overlay
+│   │   │   ├── playlist_list.rs # Playlist management view
+│   │   │   ├── playlist_detail.rs # Single playlist view
+│   │   │   ├── playlist_picker.rs # Add-to-playlist picker overlay
+│   │   │   ├── sync.rs          # Device sync history view
+│   │   │   └── whats_new.rs     # Rolling new episodes view
+│   │   └── components/      # Reusable UI components
+│   └── utils/               # Shared utilities (filesystem, text, validation)
+├── tests/                   # Integration tests (6 files)
+│   ├── test_episode_detail_feeds.rs
+│   ├── test_opml_live_url.rs
+│   ├── test_opml_local_file.rs
+│   ├── test_playlist.rs
+│   ├── test_sync_commands.rs
+│   └── unsubscribe_integration_test.rs
 ├── docs/                    # Documentation
-│   ├── ARCHITECTURE.md     # System architecture
-│   ├── TESTING.md          # Testing strategy
-│   └── archive/            # Historical documentation
+│   ├── ARCHITECTURE.md      # System architecture
+│   ├── TESTING.md           # Testing strategy
+│   ├── KEYBINDINGS.md       # Complete keybinding reference
+│   ├── BUILD_SYSTEM.md      # Cross-platform build instructions
+│   ├── STORAGE_DESIGN.md    # Storage abstraction design
+│   ├── OPML_SUPPORT.md      # OPML import/export
+│   ├── SEARCH_AND_FILTER.md # Search/filter design (incl. Design Decision #13)
+│   ├── WINGET_PUBLISHING.md # Windows Package Manager publishing
+│   └── archive/             # Historical documentation
 ├── scripts/                 # Build and automation scripts
-├── Cargo.toml              # Rust project configuration
-├── .cargo/config.toml      # Cargo build settings
+├── assets/                  # Application icons (SVG, PNG, ICO)
+├── manifests/               # Winget package manifests
+├── Cargo.toml               # Rust project configuration
 └── .github/
-    ├── workflows/          # CI/CD workflows
-    └── copilot-instructions.md  # Detailed code guidelines
+    ├── workflows/           # CI/CD workflows
+    └── copilot-instructions.md  # Lean code style supplement
 ```
 
 ---
@@ -450,11 +495,14 @@ src/podcast/models.rs
     #[cfg(test)]
     mod tests { }
 
-# Integration tests: Separate files
+# Integration tests: Separate files in tests/
 tests/
-    test_opml_local_file.rs
-    test_episode_detail_feeds.rs
-    unsubscribe_integration_test.rs
+    test_episode_detail_feeds.rs       # Feed parsing end-to-end
+    test_opml_live_url.rs              # OPML import from live URLs
+    test_opml_local_file.rs            # OPML import from local files
+    test_playlist.rs                   # Playlist CRUD and sync workflows
+    test_sync_commands.rs              # Device sync command integration
+    unsubscribe_integration_test.rs    # Subscribe/unsubscribe workflow
 ```
 
 ### Running Specific Tests
@@ -530,19 +578,30 @@ git diff --name-only | xargs -I {} cargo clippy --quiet -- -D warnings
 
 ### Core Dependencies
 
-- `ratatui` - TUI framework
-- `crossterm` - Cross-platform terminal manipulation
-- `tokio` - Async runtime
-- `reqwest` - HTTP client
-- `feed-rs` - RSS parsing
-- `rodio` - Audio playback
+- `ratatui 0.29` - TUI framework
+- `crossterm 0.29` - Cross-platform terminal manipulation
+- `tokio` (full) - Async runtime
+- `reqwest 0.12` (rustls-tls, stream, json) - HTTP client
+- `feed-rs 2.0` - RSS/Atom feed parsing
+- `rodio 0.21` - Audio playback (linked but not yet wired up)
 - `serde` / `serde_json` - Serialization
+- `quick-xml 0.31` - XML parsing (OPML)
+- `regex 1.10` - Pattern matching
+- `clap 4.0` - CLI argument parsing
+- `anyhow 1.0` - Error context chaining
+- `thiserror 2.0` - Custom error types
+- `async-trait 0.1` - Async trait methods
+- `uuid 1.0` (v4 + serde) - Unique identifiers
+- `chrono 0.4` (serde) - Date/time handling
+- `directories 5.0` - Platform-appropriate config/data paths
+- `id3 1.9` - MP3 ID3 tag reading/writing
+- `image 0.24` - Artwork image processing
 
 ### Development Dependencies
 
-- `mockall` - Mocking framework for tests
-- `tokio-test` - Testing utilities for async code
-- `tempfile` - Temporary directories for tests
+- `mockall 0.11` - Mocking framework for tests
+- `tokio-test 0.4` - Testing utilities for async code
+- `tempfile 3.0` - Temporary directories for tests
 
 ### Adding Dependencies
 
@@ -561,33 +620,53 @@ cargo add dependency-name --features feature1,feature2
 
 ## 🎯 Current Development Status
 
-**Version**: 1.0.0-mvp (in development)  
-**Progress**: 37.5% complete (3/8 sprints done)
+**Version**: 1.6.0  
+**Status**: Active Development (February 2026)
 
-### Completed (Sprints 0-3)
+### Completed Features
 - ✅ Project setup and foundation
-- ✅ Storage layer with JSON implementation
-- ✅ Core UI framework with buffer management
-- ✅ RSS subscription management
-- ✅ OPML import/export
-- ✅ Episode downloading with progress tracking
+- ✅ Storage layer with JSON implementation (trait-based abstraction)
+- ✅ Core UI framework with Emacs-style buffer management
+- ✅ RSS subscription management (subscribe/unsubscribe/refresh/hard-refresh)
+- ✅ OPML import/export (non-destructive, local files + URLs)
+- ✅ Episode downloading with parallel progress tracking
+- ✅ MP3 metadata (ID3 tags, artwork embedding, track numbers, readable filenames)
+- ✅ Device sync to MP3 players/USB drives (metadata-based comparison, dry-run, orphan deletion)
+- ✅ Download cleanup (auto on startup + manual `:clean-older-than`)
+- ✅ Search & filter (text, status, date range — `src/ui/filters.rs`)
+- ✅ Playlists (user playlists + auto-generated `Today` rolling 24h playlist)
+- ✅ Theme system (dark/light/high-contrast/solarized)
+- ✅ What's New buffer (rolling recent episodes across all podcasts)
+- ✅ Winget publishing (Windows Package Manager)
 
-### In Progress (Sprint 4)
-- ⏳ Audio playback with rodio
-- ⏳ Playback controls and chapter navigation
-
-### Upcoming (Sprints 5-7)
-- Playlist creation and management
-- Episode notes
-- Search and filtering
-- Statistics tracking
-- Final polish and documentation
-
-See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for detailed sprint information.
+### Not Yet Implemented
+- ⏳ Audio playback (rodio is linked, playback not yet wired up)
+- ⏳ Episode notes
+- ⏳ Statistics tracking
+- ⏳ Duration filter (deferred — see `docs/SEARCH_AND_FILTER.md` Design Decision #13)
 
 ---
 
-## 🔗 Helpful Resources
+## 🗺️ Feature Map (Code → Functionality)
+
+| Feature | Key Files | Commands / Keys |
+|---------|-----------|-----------------|
+| Subscribe/Unsubscribe | `src/podcast/subscription.rs`, `src/ui/buffers/podcast_list.rs` | `a` add, `d` delete, `r` refresh, `R` refresh all, `Ctrl+r` hard refresh |
+| Episode List | `src/ui/buffers/episode_list.rs`, `src/ui/filters.rs` | Arrow keys navigate, `Enter` open detail |
+| Downloads | `src/download/manager.rs`, `src/ui/buffers/downloads.rs` | `Shift+D` download, `F4` downloads buffer |
+| Device Sync | `src/download/manager.rs` (sync methods) | `:sync [path]`, `:sync-dry-run [path]`, `F4`→sync buffer |
+| Download Cleanup | `src/download/manager.rs` (`cleanup_old_downloads*`) | `:clean-older-than <dur>`, `:cleanup <dur>` |
+| Search & Filter | `src/ui/filters.rs`, `src/ui/buffers/episode_list.rs` | `/` search, `:filter-status`, `:filter-date`, `:clear-filters` |
+| Playlists | `src/playlist/` (5 files), `src/ui/buffers/playlist_*.rs` | `c` create, `F7` list, `p` add episode, `:playlist-*` commands |
+| OPML | `src/podcast/opml.rs` | `Shift+A` import, `Shift+E` export, `:import-opml`, `:export-opml` |
+| Themes | `src/ui/themes.rs` | `:theme <dark|light|high-contrast|solarized>` |
+| Config | `src/config.rs` | `~/.config/podcast-tui/config.json` (Linux) |
+| Constants | `src/constants.rs` | All default values centralized here |
+| Buffer Mgmt | `src/ui/buffers/mod.rs` | `Tab`/`Shift+Tab`, `F2-F7`, `Ctrl+b` list, `Ctrl+k` close |
+
+---
+
+
 
 ### Official Documentation
 - [Rust Book](https://doc.rust-lang.org/book/)
@@ -633,5 +712,6 @@ See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for detailed spri
 
 ---
 
-**Last Updated**: October 2025  
+**Last Updated**: February 2026  
+**Version**: 1.6.0
 **For Questions**: See [CONTRIBUTING.md](CONTRIBUTING.md) or open an issue on GitHub

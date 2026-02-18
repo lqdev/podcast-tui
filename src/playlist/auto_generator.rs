@@ -6,6 +6,7 @@ use crate::playlist::{
 use crate::storage::{JsonStorage, Storage};
 use chrono::{Duration, Utc};
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -45,6 +46,22 @@ impl TodayGenerator {
                 _ => true,
             },
         }
+    }
+
+    fn filename_matches_source_stem(filename: &str, source_path: &Path) -> bool {
+        let current_stem = Path::new(filename)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let normalized_stem = current_stem
+            .split_once('-')
+            .map(|(_, tail)| tail)
+            .unwrap_or(current_stem.as_str());
+        let source_stem = source_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        !source_stem.is_empty() && normalized_stem == source_stem
     }
 
     pub async fn ensure_today_playlist_exists(
@@ -211,6 +228,46 @@ impl TodayGenerator {
         });
         for (idx, episode) in playlist.episodes.iter_mut().enumerate() {
             episode.order = idx + 1;
+        }
+
+        for episode in &mut playlist.episodes {
+            if !existing_ids.contains(&episode.episode_id) {
+                continue;
+            }
+
+            let stored_episode = match self
+                .storage
+                .load_episode(&episode.podcast_id, &episode.episode_id)
+                .await
+            {
+                Ok(stored_episode) => stored_episode,
+                Err(_) => continue,
+            };
+
+            episode.episode_title = Some(stored_episode.title.clone());
+            let Some(source_path) = stored_episode.local_path else {
+                continue;
+            };
+            if !source_path.exists() {
+                continue;
+            }
+
+            let needs_recopy = match &episode.filename {
+                Some(filename) => !Self::filename_matches_source_stem(filename, &source_path),
+                None => true,
+            };
+            if !needs_recopy {
+                continue;
+            }
+
+            if let Ok(filename) = self
+                .file_manager
+                .copy_episode_to_playlist(&source_path, &playlist.name, episode.order)
+                .await
+            {
+                episode.filename = Some(filename);
+                episode.file_synced = true;
+            }
         }
 
         let renamed = self
@@ -477,6 +534,73 @@ mod tests {
             .episodes
             .iter()
             .any(|e| e.episode_id == episode_id));
+    }
+
+    #[tokio::test]
+    async fn test_refresh_normalizes_retained_filename_to_source_stem() {
+        let ctx = create_context().await;
+        let (podcast_id, episode_id) = seed_episode(
+            &ctx.storage,
+            ctx.tmp.path(),
+            "retained-episode",
+            Utc::now() - Duration::hours(2),
+            true,
+        )
+        .await;
+
+        let today = ctx
+            .generator
+            .ensure_today_playlist_exists(RefreshPolicy::Daily)
+            .await
+            .expect("Failed to create today playlist");
+        let mut loaded = ctx
+            .storage
+            .load_playlist(&today.id)
+            .await
+            .expect("Failed to load today");
+
+        let audio_dir = ctx.tmp.path().join("data").join("Playlists").join("Today").join("audio");
+        tokio::fs::create_dir_all(&audio_dir)
+            .await
+            .expect("Failed to create playlist audio dir");
+        let stale_filename = "001-old-name.mp3".to_string();
+        tokio::fs::write(audio_dir.join(&stale_filename), b"stale")
+            .await
+            .expect("Failed to write stale file");
+
+        loaded.episodes.push(PlaylistEpisode {
+            podcast_id,
+            episode_id: episode_id.clone(),
+            episode_title: None,
+            added_at: Utc::now(),
+            order: 1,
+            file_synced: true,
+            filename: Some(stale_filename.clone()),
+        });
+        ctx.storage
+            .save_playlist(&loaded)
+            .await
+            .expect("Failed to seed today playlist");
+
+        let result = ctx.generator.refresh().await.expect("Refresh failed");
+        let refreshed = result
+            .playlist
+            .episodes
+            .iter()
+            .find(|e| e.episode_id == episode_id)
+            .expect("Retained episode missing");
+
+        let refreshed_filename = refreshed
+            .filename
+            .clone()
+            .expect("Retained episode filename missing");
+        assert!(refreshed_filename.starts_with("001-"));
+        assert!(refreshed_filename.contains("retained-episode"));
+        assert_eq!(
+            refreshed.episode_title.as_deref(),
+            Some("retained-episode")
+        );
+        assert!(!audio_dir.join(stale_filename).exists());
     }
 
     #[tokio::test]

@@ -1142,18 +1142,18 @@ impl UIApp {
                             self.show_message(format!("Loading episodes for: {}", podcast_name));
                         }
                         UIAction::OpenEpisodeDetail { episode } => {
-                            // Create episode detail buffer
-                            self.buffer_manager
-                                .create_episode_detail_buffer(episode.clone());
-
-                            // Get the buffer ID and switch to it
-                            let episode_buffer_id = format!("episode-detail-{}", episode.id);
-                            let _ = self.buffer_manager.switch_to_buffer(&episode_buffer_id);
-                            self.update_status_bar();
-
-                            // Refresh any open buffer list buffers
-                            self.refresh_buffer_list_if_open();
+                            self.open_episode_detail_buffer(episode);
                         }
+                        UIAction::OpenEpisodeDetailById {
+                            podcast_id,
+                            episode_id,
+                        } => match self._storage.load_episode(&podcast_id, &episode_id).await {
+                            Ok(episode) => self.open_episode_detail_buffer(episode),
+                            Err(e) => self.show_error(format!(
+                                "Failed to open playlist episode detail: {}",
+                                e
+                            )),
+                        },
                         UIAction::OpenPlaylistDetail {
                             playlist_id,
                             playlist_name,
@@ -2411,6 +2411,14 @@ impl UIApp {
         if let Some(buffer_name) = self.buffer_manager.current_buffer_name() {
             self.status_bar.set_buffer_name(buffer_name);
         }
+    }
+
+    fn open_episode_detail_buffer(&mut self, episode: crate::podcast::Episode) {
+        self.buffer_manager.create_episode_detail_buffer(episode.clone());
+        let episode_buffer_id = format!("episode-detail-{}", episode.id);
+        let _ = self.buffer_manager.switch_to_buffer(&episode_buffer_id);
+        self.update_status_bar();
+        self.refresh_buffer_list_if_open();
     }
 
     /// Trigger async podcast addition
@@ -4074,5 +4082,183 @@ mod tests {
         let result = app.set_theme_direct("invalid-theme");
         assert!(result.is_ok());
         assert!(result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_playlist_detail_select_item_opens_episode_detail() {
+        use crate::config::DownloadConfig;
+        use crate::playlist::{Playlist, PlaylistEpisode, PlaylistId, PlaylistType};
+        use crate::podcast::{Episode, Podcast};
+        use crate::storage::JsonStorage;
+        use chrono::Utc;
+        use tempfile::TempDir;
+
+        let config = Config::default();
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_dir.path().to_path_buf(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
+        let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager,
+            storage.clone(),
+            app_event_tx,
+        )
+        .unwrap();
+        app.initialize().await.unwrap();
+
+        let mut podcast = Podcast::new(
+            "Test Podcast".to_string(),
+            "https://example.com/feed.xml".to_string(),
+        );
+        let podcast_id = podcast.id.clone();
+        storage.save_podcast(&podcast).await.unwrap();
+
+        let episode = Episode::new(
+            podcast_id.clone(),
+            "Episode 1".to_string(),
+            "https://example.com/ep1.mp3".to_string(),
+            Utc::now(),
+        );
+        let episode_id = episode.id.clone();
+        podcast.add_episode(episode_id.clone());
+        storage.save_episode(&podcast_id, &episode).await.unwrap();
+        storage.save_podcast(&podcast).await.unwrap();
+
+        let playlist_id = PlaylistId::new();
+        let playlist_name = "Test Playlist".to_string();
+        let detail_id = format!("playlist-{}", playlist_name.replace(' ', "-").to_lowercase());
+        let playlist_manager = app.playlist_manager.clone();
+        app.buffer_manager.create_playlist_detail_buffer(
+            playlist_id.clone(),
+            playlist_name.clone(),
+            PlaylistType::User,
+            playlist_manager,
+        );
+        if let Some(detail_buffer) = app
+            .buffer_manager
+            .get_playlist_detail_buffer_mut_by_id(&detail_id)
+        {
+            detail_buffer.set_playlist(Playlist {
+                id: playlist_id,
+                name: playlist_name,
+                description: None,
+                playlist_type: PlaylistType::User,
+                episodes: vec![PlaylistEpisode {
+                    podcast_id: podcast_id.clone(),
+                    episode_id: episode_id.clone(),
+                    episode_title: Some("Episode 1".to_string()),
+                    added_at: Utc::now(),
+                    order: 1,
+                    file_synced: false,
+                    filename: None,
+                }],
+                created: Utc::now(),
+                last_updated: Utc::now(),
+            });
+        }
+        app.buffer_manager.switch_to_buffer(&detail_id).unwrap();
+
+        let result = app.handle_action(UIAction::SelectItem).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            app.buffer_manager.current_buffer_id(),
+            Some(format!("episode-detail-{}", episode_id))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_playlist_detail_select_item_with_missing_episode_shows_error() {
+        use crate::config::DownloadConfig;
+        use crate::playlist::{Playlist, PlaylistEpisode, PlaylistId, PlaylistType};
+        use crate::podcast::Podcast;
+        use crate::storage::JsonStorage;
+        use chrono::Utc;
+        use tempfile::TempDir;
+
+        let config = Config::default();
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_dir.path().to_path_buf(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
+        let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager,
+            storage.clone(),
+            app_event_tx,
+        )
+        .unwrap();
+        app.initialize().await.unwrap();
+
+        let podcast = Podcast::new(
+            "Test Podcast".to_string(),
+            "https://example.com/feed.xml".to_string(),
+        );
+        let podcast_id = podcast.id.clone();
+        storage.save_podcast(&podcast).await.unwrap();
+        let missing_episode_id = crate::storage::EpisodeId::new();
+
+        let playlist_id = PlaylistId::new();
+        let playlist_name = "Broken Playlist".to_string();
+        let detail_id = format!("playlist-{}", playlist_name.replace(' ', "-").to_lowercase());
+        let playlist_manager = app.playlist_manager.clone();
+        app.buffer_manager.create_playlist_detail_buffer(
+            playlist_id.clone(),
+            playlist_name.clone(),
+            PlaylistType::User,
+            playlist_manager,
+        );
+        if let Some(detail_buffer) = app
+            .buffer_manager
+            .get_playlist_detail_buffer_mut_by_id(&detail_id)
+        {
+            detail_buffer.set_playlist(Playlist {
+                id: playlist_id,
+                name: playlist_name,
+                description: None,
+                playlist_type: PlaylistType::User,
+                episodes: vec![PlaylistEpisode {
+                    podcast_id,
+                    episode_id: missing_episode_id,
+                    episode_title: Some("Missing".to_string()),
+                    added_at: Utc::now(),
+                    order: 1,
+                    file_synced: false,
+                    filename: None,
+                }],
+                created: Utc::now(),
+                last_updated: Utc::now(),
+            });
+        }
+        app.buffer_manager.switch_to_buffer(&detail_id).unwrap();
+
+        let result = app.handle_action(UIAction::SelectItem).await;
+        assert!(result.is_ok());
+        assert_eq!(app.buffer_manager.current_buffer_id(), Some(detail_id));
+        assert!(app.minibuffer.is_visible());
     }
 }

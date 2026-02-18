@@ -124,6 +124,11 @@ pub enum UIAction {
     OpenEpisodeDetail {
         episode: crate::podcast::Episode,
     },
+    /// Open episode detail by IDs (used by playlist entries)
+    OpenEpisodeDetailById {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+    },
     /// Trigger async downloads refresh
     TriggerRefreshDownloads,
     RefreshPodcast,

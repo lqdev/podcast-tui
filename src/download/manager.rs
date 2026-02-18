@@ -1033,7 +1033,7 @@ impl<S: Storage> DownloadManager<S> {
     /// # Arguments
     /// * `device_path` - Path to the device/directory to sync to
     /// * `playlists_dir` - Optional playlists data directory to include in sync
-    /// * `delete_orphans` - Whether to delete files on device not present on PC
+    /// * `delete_orphans` - Whether to delete files in managed sync dirs not present on PC
     /// * `dry_run` - If true, only report what would be done without making changes
     /// * `hard_sync` - If true, wipe managed device directories before copy
     ///
@@ -1129,11 +1129,27 @@ impl<S: Storage> DownloadManager<S> {
             }
         }
 
-        // Step 2: Build a map of all files on the device
+        // Step 2: Build a map of managed files already on the device.
+        // We intentionally scope this to managed sync roots so regular sync doesn't
+        // touch unrelated user media elsewhere on the device.
         let mut device_files: std::collections::HashMap<PathBuf, (PathBuf, u64)> =
             std::collections::HashMap::new();
 
-        self.scan_directory(&device_path, &mut device_files).await?;
+        self.scan_directory_with_prefix(
+            &device_path.join("Podcasts"),
+            Path::new("Podcasts"),
+            &mut device_files,
+        )
+        .await?;
+
+        if playlists_dir.is_some() {
+            self.scan_directory_with_prefix(
+                &device_path.join("Playlists"),
+                Path::new("Playlists"),
+                &mut device_files,
+            )
+            .await?;
+        }
 
         // Step 3: Determine what needs to be copied (new or changed files)
         for (relative_path, (source_path, source_size)) in &pc_files {
@@ -1206,9 +1222,19 @@ impl<S: Storage> DownloadManager<S> {
                 }
             }
 
-            // Clean up empty directories on device (only if not dry run)
+            // Clean up empty directories in managed roots (only if not dry run)
             if !dry_run {
-                let _ = self.cleanup_empty_directories_in(&device_path).await;
+                let podcasts_root = device_path.join("Podcasts");
+                if podcasts_root.exists() {
+                    let _ = self.cleanup_empty_directories_in(&podcasts_root).await;
+                }
+
+                if playlists_dir.is_some() {
+                    let playlists_root = device_path.join("Playlists");
+                    if playlists_root.exists() {
+                        let _ = self.cleanup_empty_directories_in(&playlists_root).await;
+                    }
+                }
             }
         }
 
@@ -1265,16 +1291,6 @@ impl<S: Storage> DownloadManager<S> {
 
             Ok(())
         })
-    }
-
-    /// Wrapper for scan_directory_impl that uses the same path for root and current
-    fn scan_directory<'a>(
-        &'a self,
-        base_path: &'a Path,
-        files: &'a mut std::collections::HashMap<PathBuf, (PathBuf, u64)>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SyncError>> + 'a + Send>>
-    {
-        Box::pin(async move { self.scan_directory_impl(base_path, base_path, files).await })
     }
 
     /// Scan a directory and prefix all discovered relative paths.
@@ -1619,6 +1635,55 @@ mod tests {
         assert_eq!(report.errors.len(), 0);
         assert!(report.is_success());
         assert!(!orphan_file.exists());
+    }
+
+    #[tokio::test]
+    async fn test_sync_to_device_delete_orphans_ignores_unmanaged_dirs() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        // Create test audio file in downloads
+        let podcast_dir = downloads_dir.join("Test Podcast");
+        fs::create_dir_all(&podcast_dir).await.unwrap();
+        let test_file = podcast_dir.join("episode1.mp3");
+        fs::write(&test_file, b"test audio content").await.unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+
+        // Create managed orphan + unmanaged audio file on device
+        let device_path = temp_dir.path().join("device");
+        let managed_orphan = device_path
+            .join("Podcasts")
+            .join("Test Podcast")
+            .join("old_episode.mp3");
+        let unmanaged_audio = device_path.join("Manual").join("keep.mp3");
+        fs::create_dir_all(managed_orphan.parent().unwrap())
+            .await
+            .unwrap();
+        fs::create_dir_all(unmanaged_audio.parent().unwrap())
+            .await
+            .unwrap();
+        fs::write(&managed_orphan, b"old content").await.unwrap();
+        fs::write(&unmanaged_audio, b"user file").await.unwrap();
+
+        // Run sync with delete_orphans=true
+        let report = manager
+            .sync_to_device(device_path.clone(), None, true, false, false)
+            .await
+            .unwrap();
+
+        assert_eq!(report.files_copied.len(), 1);
+        assert_eq!(report.files_deleted.len(), 1);
+        assert_eq!(report.errors.len(), 0);
+        assert!(report
+            .files_deleted
+            .iter()
+            .all(|path| path.starts_with("Podcasts")));
+        assert!(!managed_orphan.exists());
+        assert!(unmanaged_audio.exists());
     }
 
     #[tokio::test]

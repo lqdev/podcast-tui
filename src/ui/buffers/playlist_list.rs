@@ -160,7 +160,7 @@ impl UIComponent for PlaylistListBuffer {
                         playlist_id: playlist.id.clone(),
                     }
                 } else {
-                    UIAction::ShowError("No playlist selected".to_string())
+                    UIAction::ShowMessage("No playlist selected".to_string())
                 }
             }
             UIAction::Refresh => UIAction::RefreshAutoPlaylists,

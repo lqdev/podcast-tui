@@ -171,7 +171,7 @@ impl UIComponent for PlaylistDetailBuffer {
                         episode_id: episode.episode_id.clone(),
                     }
                 } else {
-                    UIAction::ShowError("No episode selected".to_string())
+                    UIAction::ShowMessage("No episode selected".to_string())
                 }
             }
             UIAction::MoveEpisodeUp => {

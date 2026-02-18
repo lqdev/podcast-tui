@@ -290,7 +290,7 @@ impl UIApp {
                                     }
                                 }
                                 Err(e) => {
-                                    self.show_error(format!("Event handling error: {}", e));
+                                    self.show_error(format!("Could not process input event: {}", e));
                                 }
                             }
                         }
@@ -302,7 +302,10 @@ impl UIApp {
                     match app_event {
                         Some(event) => {
                             if let Err(e) = self.handle_app_event(event).await {
-                                self.show_error(format!("App event handling error: {}", e));
+                                self.show_error(format!(
+                                    "Could not process background event: {}",
+                                    e
+                                ));
                             }
                         }
                         None => {} // Channel closed, continue
@@ -341,7 +344,7 @@ impl UIApp {
     async fn initialize(&mut self) -> UIResult<()> {
         // Clean up any stuck downloads on startup
         if let Err(e) = self.download_manager.cleanup_stuck_downloads().await {
-            self.show_error(format!("Failed to cleanup stuck downloads: {}", e));
+            self.show_error(format!("Could not clean up stuck downloads: {}", e));
         }
 
         // Auto-cleanup old downloads on startup if configured
@@ -356,7 +359,7 @@ impl UIApp {
                         ));
                     }
                     Err(e) => {
-                        self.show_error(format!("Auto-cleanup failed: {}", e));
+                        self.show_error(format!("Could not complete auto-cleanup: {}", e));
                     }
                 }
             }
@@ -458,7 +461,7 @@ impl UIApp {
                     .find_buffer_id_by_name(&name)
                     .unwrap_or_else(|| name.clone());
                 if let Err(_) = self.buffer_manager.switch_to_buffer(&buffer_id) {
-                    self.show_error(format!("Failed to switch to buffer: {}", name));
+                    self.show_error(format!("Could not switch to buffer: {}", name));
                 }
                 self.update_status_bar();
                 Ok(true)
@@ -689,7 +692,7 @@ impl UIApp {
                         let _ = self.buffer_manager.switch_to_buffer(&detail_id);
                         self.update_status_bar();
                     }
-                    Err(e) => self.show_error(format!("Failed to open playlist: {}", e)),
+                    Err(e) => self.show_error(format!("Could not open playlist: {}", e)),
                 }
                 Ok(true)
             }
@@ -741,7 +744,7 @@ impl UIApp {
                                     self.update_status_bar();
                                 }
                             }
-                            Err(e) => self.show_error(format!("Failed to list playlists: {}", e)),
+                            Err(e) => self.show_error(format!("Could not list playlists: {}", e)),
                         }
                     } else {
                         self.show_error("No episode selected".to_string());
@@ -1071,7 +1074,7 @@ impl UIApp {
                             // Handle buffer switching from buffer list
                             if let Err(_) = self.buffer_manager.switch_to_buffer(&buffer_id) {
                                 self.show_error(format!(
-                                    "Failed to switch to buffer: {}",
+                                    "Could not switch to buffer: {}",
                                     buffer_id
                                 ));
                             } else {
@@ -1135,10 +1138,9 @@ impl UIApp {
                             episode_id,
                         } => match self._storage.load_episode(&podcast_id, &episode_id).await {
                             Ok(episode) => self.open_episode_detail_buffer(episode),
-                            Err(e) => self.show_error(format!(
-                                "Failed to open playlist episode detail: {}",
-                                e
-                            )),
+                            Err(e) => {
+                                self.show_error(format!("Could not open episode details: {}", e))
+                            }
                         },
                         UIAction::OpenPlaylistDetail {
                             playlist_id,
@@ -1166,7 +1168,7 @@ impl UIApp {
                                 let _ = self.buffer_manager.switch_to_buffer(&detail_id);
                                 self.update_status_bar();
                             }
-                            Err(e) => self.show_error(format!("Failed to open playlist: {}", e)),
+                            Err(e) => self.show_error(format!("Could not open playlist: {}", e)),
                         },
                         UIAction::TriggerDeletePlaylist { playlist_id } => {
                             self.trigger_async_delete_playlist(playlist_id);
@@ -1238,8 +1240,8 @@ impl UIApp {
                 self.trigger_background_refresh(BufferRefreshType::PodcastList);
                 self.show_message(format!("Successfully subscribed to: {}", podcast.title));
             }
-            AppEvent::PodcastSubscriptionFailed { url, error } => {
-                self.show_error(format!("Failed to subscribe to {}: {}", url, error));
+            AppEvent::PodcastSubscriptionFailed { url: _, error } => {
+                self.show_error(format!("Could not subscribe to podcast: {}", error));
             }
             AppEvent::PodcastRefreshed {
                 podcast_id: _,
@@ -1258,7 +1260,7 @@ impl UIApp {
                 podcast_id: _,
                 error,
             } => {
-                self.show_error(format!("Failed to refresh podcast: {}", error));
+                self.show_error(format!("Could not refresh podcast feed: {}", error));
             }
             AppEvent::AllPodcastsRefreshed { total_new_episodes } => {
                 // Trigger background refresh of buffers
@@ -1299,7 +1301,7 @@ impl UIApp {
                 podcast_id: _,
                 error,
             } => {
-                self.show_error(format!("Failed to delete podcast: {}", error));
+                self.show_error(format!("Could not delete podcast: {}", error));
             }
             AppEvent::EpisodesLoaded {
                 podcast_id: _,
@@ -1321,7 +1323,7 @@ impl UIApp {
                 podcast_id: _,
                 error,
             } => {
-                self.show_error(format!("Failed to load episodes: {}", error));
+                self.show_error(format!("Could not load episodes: {}", error));
             }
             AppEvent::EpisodeDownloaded {
                 podcast_id,
@@ -1360,7 +1362,7 @@ impl UIApp {
                 // Trigger background refresh of buffers
                 self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
                 self.trigger_background_refresh(BufferRefreshType::Downloads);
-                self.show_error(format!("Failed to delete episode download: {}", error));
+                self.show_error(format!("Could not delete episode download: {}", error));
             }
             AppEvent::DownloadsRefreshed => {
                 // Trigger background refresh of downloads buffer
@@ -1380,7 +1382,7 @@ impl UIApp {
                 // Still trigger background refresh of buffers in case some deletions succeeded
                 self.trigger_background_refresh(BufferRefreshType::AllEpisodeBuffers);
                 self.trigger_background_refresh(BufferRefreshType::Downloads);
-                self.show_error(format!("Failed to delete all downloads: {}", error));
+                self.show_error(format!("Could not delete all downloads: {}", error));
             }
             AppEvent::OpmlImportStarted { source } => {
                 self.show_message(format!("Starting OPML import from: {}...", source));
@@ -1405,8 +1407,8 @@ impl UIApp {
 
                 self.show_message(summary);
             }
-            AppEvent::OpmlImportFailed { source, error } => {
-                self.show_error(format!("OPML import from {} failed: {}", source, error));
+            AppEvent::OpmlImportFailed { source: _, error } => {
+                self.show_error(format!("Could not import OPML: {}", error));
             }
             AppEvent::OpmlExportStarted { path } => {
                 self.show_message(format!("Starting OPML export to: {}...", path));
@@ -1420,22 +1422,22 @@ impl UIApp {
                     feed_count, path
                 ));
             }
-            AppEvent::OpmlExportFailed { path, error } => {
-                self.show_error(format!("OPML export to {} failed: {}", path, error));
+            AppEvent::OpmlExportFailed { path: _, error } => {
+                self.show_error(format!("Could not export OPML: {}", error));
             }
             AppEvent::PlaylistCreated { playlist } => {
                 self.load_playlists_into_buffer().await;
                 self.show_message(format!("Playlist created: {}", playlist.name));
             }
             AppEvent::PlaylistCreationFailed { name, error } => {
-                self.show_error(format!("Failed to create playlist '{}': {}", name, error));
+                self.show_error(format!("Could not create playlist '{}': {}", name, error));
             }
             AppEvent::PlaylistDeleted { name } => {
                 self.load_playlists_into_buffer().await;
                 self.show_message(format!("Playlist deleted: {}", name));
             }
             AppEvent::PlaylistDeletionFailed { name, error } => {
-                self.show_error(format!("Failed to delete playlist '{}': {}", name, error));
+                self.show_error(format!("Could not delete playlist '{}': {}", name, error));
             }
             AppEvent::EpisodeAddedToPlaylist {
                 playlist_name,
@@ -1468,7 +1470,7 @@ impl UIApp {
                     self.update_status_bar();
                 }
                 self.show_error(format!(
-                    "Failed to add '{}' to playlist '{}': {}",
+                    "Could not add '{}' to playlist '{}': {}",
                     episode_title, playlist_name, error
                 ));
             }
@@ -1489,7 +1491,7 @@ impl UIApp {
                 error,
             } => {
                 self.show_error(format!(
-                    "Failed to remove '{}' from playlist '{}': {}",
+                    "Could not remove '{}' from playlist '{}': {}",
                     episode_title, playlist_name, error
                 ));
             }
@@ -1499,7 +1501,7 @@ impl UIApp {
                 self.show_message(format!("Playlist reordered: {}", name));
             }
             AppEvent::PlaylistReorderFailed { name, error } => {
-                self.show_error(format!("Failed to reorder playlist '{}': {}", name, error));
+                self.show_error(format!("Could not reorder playlist '{}': {}", name, error));
             }
             AppEvent::PlaylistRebuilt {
                 name,
@@ -1515,7 +1517,7 @@ impl UIApp {
                 ));
             }
             AppEvent::PlaylistRebuildFailed { name, error } => {
-                self.show_error(format!("Failed to rebuild playlist '{}': {}", name, error));
+                self.show_error(format!("Could not rebuild playlist '{}': {}", name, error));
             }
             AppEvent::TodayPlaylistRefreshed { added, removed } => {
                 self.load_playlists_into_buffer().await;
@@ -1526,7 +1528,7 @@ impl UIApp {
                 ));
             }
             AppEvent::TodayPlaylistRefreshFailed { error } => {
-                self.show_error(format!("Failed to refresh Today playlist: {}", error));
+                self.show_error(format!("Could not refresh Today playlist: {}", error));
             }
             AppEvent::DeviceSyncStarted {
                 device_path,
@@ -1574,12 +1576,11 @@ impl UIApp {
                 self.load_playlists_into_buffer().await;
                 self.show_message(summary);
             }
-            AppEvent::DeviceSyncFailed { device_path, error } => {
-                self.show_error(format!(
-                    "Device sync to {} failed: {}",
-                    device_path.display(),
-                    error
-                ));
+            AppEvent::DeviceSyncFailed {
+                device_path: _,
+                error,
+            } => {
+                self.show_error(format!("Could not sync device: {}", error));
             }
             AppEvent::DownloadCleanupCompleted {
                 deleted_count,
@@ -1602,7 +1603,7 @@ impl UIApp {
             AppEvent::DownloadCleanupFailed { error } => {
                 self.trigger_background_refresh(BufferRefreshType::AllEpisodeBuffers);
                 self.trigger_background_refresh(BufferRefreshType::Downloads);
-                self.show_error(format!("Download cleanup failed: {}", error));
+                self.show_error(format!("Could not clean up downloads: {}", error));
             }
         }
         Ok(())
@@ -3485,7 +3486,7 @@ impl UIApp {
                 }
             }
             (_, BufferRefreshData::Error { message }) => {
-                self.show_error(format!("Buffer refresh failed: {}", message));
+                self.show_error(format!("Could not refresh buffer: {}", message));
             }
             _ => {
                 // Mismatched buffer type and data, ignore
@@ -3500,7 +3501,7 @@ impl UIApp {
                     buffer.set_playlists(playlists);
                 }
             }
-            Err(e) => self.show_error(format!("Failed to load playlists: {}", e)),
+            Err(e) => self.show_error(format!("Could not load playlists: {}", e)),
         }
     }
 
@@ -3682,7 +3683,7 @@ impl UIApp {
 
             if let Some((buffer_id, buffer_name)) = matching_buffer {
                 if let Err(_) = self.buffer_manager.switch_to_buffer(&buffer_id) {
-                    self.show_error(format!("Failed to switch to buffer: {}", buffer_name));
+                    self.show_error(format!("Could not switch to buffer: {}", buffer_name));
                 } else {
                     self.update_status_bar();
                     self.show_message(format!("Switched to buffer: {}", buffer_name));

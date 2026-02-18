@@ -14,7 +14,7 @@ use ratatui::{
 
 use crate::{
     podcast::Episode,
-    storage::PodcastId,
+    storage::{EpisodeId, PodcastId},
     ui::{
         buffers::{Buffer, BufferId},
         themes::Theme,
@@ -54,6 +54,16 @@ impl EpisodeDetailBuffer {
     /// Set the theme for this buffer
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
+    }
+
+    /// Get the podcast ID for this episode.
+    pub fn podcast_id(&self) -> &PodcastId {
+        &self.podcast_id
+    }
+
+    /// Get the episode ID being shown in this buffer.
+    pub fn episode_id(&self) -> &EpisodeId {
+        &self.episode.id
     }
 
     /// Generate content lines for display
@@ -464,6 +474,22 @@ mod tests {
             }
             _ => panic!("Expected TriggerDownload action"),
         }
+    }
+
+    #[test]
+    fn test_episode_identifiers_accessors() {
+        let episode = Episode::new(
+            PodcastId::new(),
+            "Test Episode".to_string(),
+            "https://example.com/audio.mp3".to_string(),
+            Utc::now(),
+        );
+        let expected_podcast_id = episode.podcast_id.clone();
+        let expected_episode_id = episode.id.clone();
+        let buffer = EpisodeDetailBuffer::new(episode);
+
+        assert_eq!(buffer.podcast_id(), &expected_podcast_id);
+        assert_eq!(buffer.episode_id(), &expected_episode_id);
     }
 
     #[test]

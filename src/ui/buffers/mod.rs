@@ -428,6 +428,16 @@ impl BufferManager {
             .and_then(|buffer| buffer.as_any_mut().downcast_mut())
     }
 
+    /// Get mutable reference to an episode detail buffer by ID.
+    pub fn get_episode_detail_buffer_mut_by_id(
+        &mut self,
+        buffer_id: &str,
+    ) -> Option<&mut crate::ui::buffers::episode_detail::EpisodeDetailBuffer> {
+        let buffer_id = buffer_id.to_string();
+        self.get_buffer(&buffer_id)
+            .and_then(|buffer| buffer.as_any_mut().downcast_mut())
+    }
+
     /// Create episode list buffer for a podcast
     pub fn create_episode_list_buffer(
         &mut self,

@@ -116,6 +116,14 @@ impl Buffer for PlaylistDetailBuffer {
         format!("Playlist: {}", self.playlist_name)
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "Playlist Detail Commands:".to_string(),

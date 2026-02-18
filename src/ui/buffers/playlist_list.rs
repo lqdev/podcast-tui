@@ -98,6 +98,14 @@ impl Buffer for PlaylistListBuffer {
         "Playlists".to_string()
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "Playlist Commands:".to_string(),

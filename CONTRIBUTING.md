@@ -13,7 +13,7 @@ Thank you for your interest in contributing to Podcast TUI! This document outlin
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/podcast-tui.git
+   git clone https://github.com/lqdev/podcast-tui.git
    cd podcast-tui
    ```
 
@@ -35,7 +35,7 @@ Thank you for your interest in contributing to Podcast TUI! This document outlin
 - `main` - Stable, releasable code
 - `develop` - Integration branch for features
 - `feature/description` - Feature development branches
-- `sprint/X` - Sprint-specific branches for coordinated development
+- `sprint/X` - Sprint-specific branches for coordinated development (historical)
 
 ### Commit Messages
 Follow conventional commit format:
@@ -180,9 +180,8 @@ The project follows a clear module structure documented in [docs/ARCHITECTURE.md
 - No critical or high-severity bugs
 
 ### Version Numbers
-- MVP: `1.0.0-mvp`
-- Pre-releases: `1.0.0-beta.1`, `1.0.0-rc.1`
-- Stable releases: `1.0.0`, `1.1.0`, `2.0.0`
+- Release format: `X.Y.Z` or `X.Y.Z-mvp` (historical)
+- Examples: `1.6.0`, `1.5.0-mvp`, `1.4.0-mvp`
 
 ### Release Checklist
 - [ ] All tests passing
@@ -268,14 +267,14 @@ A: Create a new module in `src/ui/buffers/` following the pattern in existing bu
 **Q: How do I test cross-platform compatibility?**
 A: Use the DevContainer for Linux testing. For Windows, test in Windows Terminal and PowerShell. See [docs/BUILD_SYSTEM.md](docs/BUILD_SYSTEM.md) for platform-specific build instructions.
 
-**Q: What's the MVP scope?**
-A: See the [PRD](docs/PRD.md) for detailed scope. Focus on core functionality over advanced features. Current progress: 37.5% (3/8 sprints complete).
+**Q: What's the current feature set?**
+A: See the [README](../README.md) for the current feature list. As of v1.6.0: subscriptions, downloads, device sync, playlists, search & filter are all complete. Audio playback is not yet implemented.
 
 **Q: Where are magic numbers defined?**
 A: All configuration defaults are centralized in `src/constants.rs` organized by category (network, downloads, ui, storage, audio, etc.). Never use hard-coded values.
 
 **Q: What documentation should I read first?**
-A: Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system design, then [.github/copilot-instructions.md](.github/copilot-instructions.md) for code patterns, and [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for sprint status.
+A: Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system design, then [.github/copilot-instructions.md](.github/copilot-instructions.md) for code patterns. For keybindings see [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md).
 
 **Q: How should I write tests for my changes?**
 A: Follow the comprehensive testing guidelines in [docs/TESTING.md](docs/TESTING.md), which covers unit tests, integration tests, mocking patterns, and test organization.

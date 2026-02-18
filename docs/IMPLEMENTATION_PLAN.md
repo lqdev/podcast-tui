@@ -12,18 +12,18 @@
 ```toml
 [dependencies]
 # UI Framework
-ratatui = "0.24"
-crossterm = "0.27"
+ratatui = "0.29"
+crossterm = "0.29"
 
 # Async Runtime
 tokio = { version = "1.0", features = ["full"] }
 
 # HTTP and RSS
-reqwest = { version = "0.11", features = ["json", "stream"] }
-feed-rs = "1.3"
+reqwest = { version = "0.12", features = ["rustls-tls", "stream", "json"] }
+feed-rs = "2.0"
 
-# Audio
-rodio = "0.17"
+# Audio (linked, playback not yet wired)
+rodio = "0.21"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -34,7 +34,21 @@ clap = { version = "4.0", features = ["derive"] }
 
 # Error Handling
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
+async-trait = "0.1"
+
+# Identifiers & Time
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+directories = "5.0"
+
+# Media metadata
+id3 = "1.9"
+image = "0.24"
+
+# Text & XML
+quick-xml = "0.31"
+regex = "1.10"
 
 [dev-dependencies]
 mockall = "0.11"
@@ -257,137 +271,59 @@ src/
 - [x] File organization and management
 - [x] Full integration between subscriptions, episodes, and downloads
 
-### Sprint 4: Playback System (Week 5)  
-**Goal**: Implement basic audio playback functionality
+### Post-Sprint 3: Shipped Features (out-of-band sprints)
 
-#### Day 1-2: Audio Backend
-- [ ] Integrate rodio for cross-platform audio
-- [ ] Basic playback controls (play/pause/stop)
-- [ ] Volume control implementation
-- [ ] Audio file format support
+The following were shipped between the original sprint plan and the current state:
 
-#### Day 3-4: Playback UI
-- [ ] Playback status display
-- [ ] Progress bar for currently playing episode
-- [ ] Playback controls in episode view
-- [ ] Currently playing indicator
+#### ✅ Application Icon
+- Custom SVG/PNG/ICO icon (cassette + RSS symbol)
+- Embedded in Windows exe via `build.rs` + `winres`
+- Linux desktop entry + `install-icon-linux.sh`
 
-#### Day 5-6: Advanced Controls
-- [ ] Seek functionality (forward/backward 30s)
-- [ ] Chapter navigation support
-- [ ] Playback queue/next episode functionality
-- [ ] External player integration option
+#### ✅ Device Sync (v1.4.0-mvp)
+- `DownloadManager` sync methods — metadata-based comparison (filename + size)
+- Dry-run mode, orphan deletion, structure preservation
+- New `Sync` buffer with operation history
+- `:sync [path]`, `:sync-dry-run [path]` commands
+- 7 unit tests
 
-#### Day 7: Polish
-- [ ] Playback error handling
-- [ ] Resume playback from last position
-- [ ] Keyboard shortcuts for playback control
-- [ ] Integration with episode status tracking
+#### ✅ Download Cleanup (v1.5.0-mvp)
+- Auto-cleanup on startup (`cleanup_after_days` config)
+- `:clean-older-than <duration>` command (h/d/w/m suffixes)
+- `parse_cleanup_duration()` + `format_cleanup_duration()` utilities
+- 11 unit tests
 
-**Deliverables**:
-- [ ] Working audio playback system
-- [ ] UI integration for playback controls
-- [ ] Chapter support where available
-- [ ] External player fallback option
+#### ✅ Search & Filter (v1.6.0)
+- `src/ui/filters.rs`: `EpisodeFilter`, `EpisodeStatus`, `DateRange`
+- `/` text search, `:filter-status`, `:filter-date`, `:clear-filters`
+- AND-combined filter logic
+- Duration filter deferred (Design Decision #13 in `docs/rfcs/RFC-001-search-and-filter.md`)
 
-### Sprint 5: Enhanced Features (Week 6)
-**Goal**: Implement notes, filtering, and playlist functionality
+#### ✅ Playlist Management (post-v1.6.0 / Unreleased)
+- `src/playlist/` module (5 files)
+- User playlists + `Today` auto-playlist (rolling 24h, configurable refresh policy)
+- 4 new UI buffers: playlist_list, playlist_detail, playlist_picker, sync
+- `p` add to playlist, `c` create, `F7` open, `:playlist-*` commands
+- Audio file copying for device compatibility
 
-#### Day 1-2: Episode Notes
+### Current / Upcoming Work
+
+#### ⏳ Audio Playback
+- [ ] Wire up `rodio` for playback (dependency already present)
+- [ ] Playback controls (play/pause/stop/seek)
+- [ ] Volume control
+- [ ] Progress display for currently playing episode
+- [ ] Resume from last position
+
+#### ⏳ Episode Notes
 - [ ] Note data models and storage
-- [ ] Note editing UI (simple text input)
-- [ ] Note display in episode details
-- [ ] Note search functionality
+- [ ] Note editing UI in episode detail
+- [ ] Note display
 
-#### Day 3-4: Filtering and Search
-- [ ] Episode filtering by status (downloaded/played)
-- [ ] Date range filtering
-- [ ] Duration-based filtering  
-- [ ] Basic text search across episodes
-
-#### Day 5-6: Playlist Management
-- [ ] Playlist data models and storage
-- [ ] Create/delete playlist functionality
-- [ ] Add/remove episodes from playlists
-- [ ] Playlist UI buffer
-
-#### Day 7: Integration
-- [ ] Playlist playback functionality
-- [ ] Filter integration with episode lists
-- [ ] Search result display and navigation
-- [ ] Playlist management shortcuts
-
-**Deliverables**:
-- [ ] Episode notes functionality
-- [ ] Comprehensive filtering system
-- [ ] Basic playlist creation and management
-- [ ] Search capabilities across content
-
-### Sprint 6: Statistics and Cleanup (Week 7)
-**Goal**: Implement statistics tracking and episode cleanup
-
-#### Day 1-2: Statistics Collection
+#### ⏳ Statistics Tracking
 - [ ] Listening time tracking
 - [ ] Play count statistics
-- [ ] Download statistics
-- [ ] Statistics data models and storage
-
-#### Day 3-4: Statistics UI
 - [ ] Statistics display buffer
-- [ ] Most played podcasts/episodes
-- [ ] Storage usage information
-- [ ] Listening habits insights
-
-#### Day 5-6: Episode Cleanup
-- [ ] Automatic cleanup based on age/status
-- [ ] Manual episode deletion
-- [ ] Cleanup configuration options
-- [ ] Storage space management
-
-#### Day 7: Advanced Features
-- [ ] Transcript display (when available)
-- [ ] Chapter information display
-- [ ] Metadata viewing and basic editing
-- [ ] Export functionality improvements
-
-**Deliverables**:
-- [ ] Statistics tracking and display
-- [ ] Episode cleanup functionality  
-- [ ] Transcript support
-- [ ] Enhanced metadata handling
-
-### Sprint 7: Polish and Cross-Platform (Week 8)
-**Goal**: Final polish, testing, and cross-platform validation
-
-#### Day 1-2: Cross-Platform Testing
-- [ ] Windows compatibility testing and fixes
-- [ ] Linux distribution testing
-- [ ] Terminal emulator compatibility
-- [ ] Audio system testing across platforms
-
-#### Day 3-4: Performance Optimization
-- [ ] Startup time optimization
-- [ ] Memory usage profiling and optimization
-- [ ] UI responsiveness improvements
-- [ ] Large library performance testing
-
-#### Day 5-6: Documentation and UX
-- [ ] Complete help system
-- [ ] User documentation
-- [ ] Keyboard shortcut reference
-- [ ] Installation and setup guide
-
-#### Day 7: Release Preparation
-- [ ] Final bug fixes and testing
-- [ ] Release build optimization
-- [ ] Package preparation
-- [ ] MVP feature completeness verification
-
-**Deliverables**:
-- [ ] Fully cross-platform compatible application
-- [ ] Complete documentation
-- [ ] Performance-optimized build
-- [ ] MVP ready for release
 
 ## Testing Strategy
 

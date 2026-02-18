@@ -1,8 +1,8 @@
 # Testing Documentation - Podcast TUI
 
-**Version**: 1.0  
-**Last Updated**: October 7, 2025  
-**Status**: Testing Strategy Document
+**Version**: 1.1  
+**Last Updated**: February 2026  
+**Status**: Living Document
 
 ---
 
@@ -23,30 +23,30 @@ Following the project's MVP-focused approach:
 ## 🎯 Testing Goals
 
 ### Current Status
-- ✅ **73 unit tests** passing (storage, models, utilities)
-- ✅ **2 integration tests** (OPML import workflows)
-- ⚠️ **Coverage**: Estimated 60-70% (storage and core logic well-covered)
+- ✅ **Unit tests** passing (storage, models, download manager, utilities, filters)
+- ✅ **6 integration tests** (OPML, episode detail feeds, unsubscribe, playlist, sync commands)
+- ⚠️ **Coverage**: Estimated 65-75% (storage and core logic well-covered; UI buffers lower)
 - ⏳ **Target**: 80%+ coverage for production code
 
 ### Priority Areas for Additional Testing
 
-**High Priority** (Sprint 5):
-1. OPML edge cases (malformed XML, invalid URLs, large files)
-2. Episode validation (feed parsing edge cases)
-3. Download manager error scenarios
-4. UI buffer state management
+**High Priority:**
+1. Playlist edge cases (duplicate adds, ordering, Today refresh)
+2. Device sync edge cases (orphan deletion, dry-run mode, path override)
+3. Episode filter combinations (multi-filter AND logic)
+4. Download cleanup duration parsing edge cases
 
-**Medium Priority** (Sprint 6):
-5. Property-based testing for validation logic
+**Medium Priority:**
+5. UI buffer state management (filter persistence across buffer switches)
 6. Concurrent download edge cases
-7. File system error handling
-8. Configuration loading/saving
+7. Configuration loading/saving with all new fields
+8. ID3 metadata embedding edge cases
 
-**Low Priority** (Post-MVP):
+**Low Priority (Post-MVP):**
 9. Performance benchmarking
-10. Fuzzing for parser robustness
+10. Fuzzing for RSS parser robustness
 11. UI rendering tests
-12. Cross-platform compatibility tests
+12. Cross-platform compatibility matrix tests
 
 ---
 
@@ -64,9 +64,10 @@ Following the project's MVP-focused approach:
 - ✅ Utility functions (`src/utils/*.rs`)
 - ✅ Configuration loading (`src/config.rs`)
 - ✅ Constants validation (`src/constants.rs`)
-- ⏳ Feed parsing edge cases
-- ⏳ Download error scenarios
-- ⏳ Buffer state transitions
+- ✅ Download cleanup duration parsing (`src/utils/`)
+- ✅ Download manager cleanup logic (`src/download/manager.rs`)
+- ⏳ Episode filter logic (`src/ui/filters.rs`)
+- ⏳ Playlist auto-generator (`src/playlist/auto_generator.rs`)
 
 **Example Structure**:
 ```rust
@@ -109,10 +110,13 @@ mod tests {
 
 **Location**: `tests/` directory (separate from `src/`)
 
-**Current Tests**:
+**Current Tests** (6 integration test files):
 - ✅ `test_opml_local_file.rs` - OPML file import workflow
-- ✅ `test_opml_live_url.rs` - OPML URL import workflow (⚠️ 1 known failure)
+- ✅ `test_opml_live_url.rs` - OPML URL import workflow
+- ✅ `test_episode_detail_feeds.rs` - Feed parsing end-to-end
 - ✅ `unsubscribe_integration_test.rs` - Unsubscribe workflow
+- ✅ `test_playlist.rs` - Playlist CRUD and sync workflows
+- ✅ `test_sync_commands.rs` - Device sync command integration
 
 **Planned Integration Tests**:
 

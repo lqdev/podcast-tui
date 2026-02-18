@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - Device Sync + Application Icon + Download Cleanup
+## [Unreleased] - Playlist Enhancements (post-v1.6.0)
 
 ### Added
 
@@ -26,7 +26,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - New config option: `downloads.sync_include_playlists` (default: `true`)
 - **Configuration**: Added `playlist` config section for refresh policy and playlist download behavior
 
-**Download Cleanup — Auto-Cleanup on Startup and Manual Command - February 2026**
+---
+
+## [1.6.0] - 2025-11-XX
+
+### Added
+
+**Search & Filter — November 2025**
+- **Text Search**: `/` key opens search bar; case-insensitive match against episode title and description
+- **Status Filter**: `:filter-status <status>` — filter episodes by `new`, `downloaded`, `played`, `downloading`, or `failed`
+- **Date Range Filter**: `:filter-date <range>` — filter by `today`, `7d` (last 7 days), `2w` (2 weeks), `1m` (1 month)
+- **Clear Filters**: `:clear-filters` removes all active filters and restores full episode list
+- **Filter Logic**: All active filters are combined with AND semantics (episode must match all)
+- **Tab Completion**: All filter commands support tab completion in the minibuffer
+- **EpisodeFilter Model**: New `src/ui/filters.rs` with `EpisodeFilter`, `EpisodeStatus`, `DateRange` types
+- **Duration Filter**: Architecture support present; deferred pending RSS duration data (Design Decision #13)
+
+**Winget Publishing — November 2025**
+- Added winget manifest files for Windows Package Manager publication
+- `winget install lqdev.PodcastTUI` now available
+- Added `docs/WINGET_PUBLISHING.md` with publishing workflow documentation
+
+---
+
+## [1.5.0-mvp] - 2025-10-XX
+
+### Added
+
+**Download Cleanup — Auto-Cleanup on Startup and Manual Command**
 - **Auto-cleanup on Startup**: Automatically delete downloaded episodes older than the configured `cleanup_after_days` threshold when the app launches
   - Wires up the previously-dead `cleanup_after_days` config field (default: 30 days)
   - Silent when nothing to clean; shows count when episodes are removed
@@ -48,11 +75,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Help Buffer**: Added DOWNLOAD CLEANUP section with command reference
 - **Documentation**: Updated `docs/KEYBINDINGS.md` with cleanup command reference
 
-### Fixed
-- **Minibuffer prompt race condition**: Commands invoked via `:` command prompt (e.g., `:clean-older-than`, `:delete-all-downloads`) had their confirmation prompts immediately wiped by an unconditional `minibuffer.clear()` — prompts now persist correctly
-- **AllEpisodeBuffers refresh error**: `trigger_background_refresh(AllEpisodeBuffers)` was a stub that always sent an error ("Buffer refresh failed: Use individual episode buffer refresh") — now properly iterates open episode buffers and refreshes each one individually
+---
 
-**Device Sync for MP3 Players - November 2025**
+## [1.4.0-mvp] - 2025-10-XX
+
+### Added
+
+**Device Sync for MP3 Players**
 - **Metadata-Based Device Sync**: Sync downloaded episodes to external MP3 players or USB devices
   - Compare files using metadata only (filename + file size) for fast, reliable sync
   - Runtime device path override - specify sync target when initiating sync
@@ -72,7 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 7 comprehensive unit tests covering all sync scenarios
   - Built for MP3 player compatibility with existing ID3 metadata features
 
-**Application Icon - November 2025**
+### Added
+
+**Application Icon**
 - **Custom Application Icon**: Added icon for easy identification in system UI
   - Created SVG icon combining cassette tape and RSS feed symbols
   - Generated PNG versions in multiple sizes (16x16, 32x32, 48x48, 64x64, 128x128, 256x256)
@@ -349,107 +380,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Next Up: Sprint 2 - RSS & Podcast Functionality**
 
-## [1.0.0-mvp] - TBD
+## [1.3.1-mvp] - 2025-09-XX
+See git log for changes in this release (application icon, cross-platform builds).
 
-Target release date: 8 weeks from project start
+## [1.3.0-mvp] - 2025-09-XX
+See git log for changes in this release.
 
-### Planned Features
-- RSS podcast subscription management
-- Episode browsing and management
-- Parallel episode downloading (2-3 concurrent)
-- Basic audio playback with controls
-- OPML import/export functionality
-- Episode notes and filtering
-- Simple playlist management
-- Cross-platform support (Windows/Linux)
-- Emacs-style keyboard navigation
-- JSON-based configuration and data storage
-- Basic statistics tracking
+## [1.2.0-mvp] - 2025-09-XX
+See git log for changes in this release (background buffer refresh for responsive UI).
+
+## [1.1.0-mvp] - 2025-09-XX
+See git log for changes in this release.
+
+## [1.0.0-mvp] - 2025-09-XX
+Initial MVP release: Core UI framework, RSS subscription management, episode browsing, downloads, OPML import/export.
 
 ---
 
 ## Release Planning
 
-### Sprint Milestones
+### Version History
+All tagged releases and their major features:
+- **v1.6.0**: Search & filter, winget publishing
+- **v1.5.0-mvp**: Download cleanup (auto + manual)
+- **v1.4.0-mvp**: Device sync for MP3 players
+- **v1.3.1-mvp**: Application icon (Windows embedded + Linux desktop entry)
+- **v1.3.0-mvp**: Version fix, background buffer refresh
+- **v1.2.0-mvp**: Background buffer loading for responsive UI
+- **v1.1.0-mvp**: OPML import/export, code quality improvements
+- **v1.0.0-mvp**: Initial MVP release
 
-#### Sprint 0: Foundation (Week 1) - ✅ Complete
-- [x] Project setup and DevContainer
-- [x] Storage abstraction design
-- [x] Basic application structure
-- [x] Documentation framework
+### Breaking Changes Policy
 
-#### Sprint 1: Core UI (Week 2) - ✅ **COMPLETE**
-- [x] Emacs-style navigation implementation
-- [x] Buffer management system
-- [x] Professional UI components (minibuffer, status bar, themes)
-- [x] Help system foundation
-- [x] Main application loop with event handling
-- [x] Command execution system (M-x commands)
-- [x] Multi-theme support with dynamic switching
-
-#### Sprint 2: RSS & Podcasts (Week 3) - ✅ **COMPLETE**
-- [x] RSS feed parsing integration with feed-rs
-- [x] Subscription management (subscribe/unsubscribe/list)
-- [x] Podcast listing UI with status display
-- [x] OPML import/export functionality
-- [x] Feed refresh with smart episode detection
-- [x] Duplicate prevention and deduplication
-
-#### Sprint 3: Episodes & Downloads (Week 4) - ✅ **COMPLETE**
-- [x] Episode management system with full metadata
-- [x] Download queue implementation (concurrent)
-- [x] File organization by podcast
-- [x] Progress tracking UI integration
-- [x] Bulk cleanup and delete functionality
-- [x] Episode status tracking throughout UI
-
-#### Sprint 4: Playback (Week 5) - 📋 **NEXT**
-- [ ] Audio playback integration
-- [ ] Playback controls
-- [ ] Chapter navigation
-- [ ] External player fallback
-
-#### Sprint 5: Enhanced Features (Week 6) - 📋 Planned
-- [ ] Episode notes functionality
-- [ ] Filtering and search
-- [ ] Playlist management
-- [ ] Statistics collection
-
-#### Sprint 6: Statistics & Cleanup (Week 7) - 📋 Planned
-- [ ] Statistics display
-- [ ] Episode cleanup automation
-- [ ] Transcript support
-- [ ] Metadata enhancements
-
-#### Sprint 7: Polish & Release (Week 8) - 📋 Planned
-- [ ] Cross-platform testing
-- [ ] Performance optimization
-- [ ] Documentation completion
-- [ ] MVP release preparation
-
----
-
-## Version History Format
-
-Each release will include:
-- **Added**: New features
-- **Changed**: Changes in existing functionality  
-- **Deprecated**: Soon-to-be removed features
-- **Removed**: Removed features
-- **Fixed**: Bug fixes
-- **Security**: Security improvements
-
-## Breaking Changes Policy
-
-For MVP and 1.x releases:
+For 1.x releases:
 - Configuration format changes will include migration tools
 - Storage format changes will include automatic migration
 - Major breaking changes will increment the major version number
 - Deprecated features will be supported for at least one minor version
-
-## Release Schedule
-
-- **MVP Release**: End of Week 8
-- **Patch Releases**: As needed for critical bugs
-- **Minor Releases**: Monthly after MVP for new features
-- **Major Releases**: When significant breaking changes are needed

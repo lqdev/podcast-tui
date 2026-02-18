@@ -8,19 +8,21 @@ This guide will help you get Podcast TUI running on your system, regardless of p
 
 ## TL;DR - 5 Minute Quick Start
 
-### What Works Right Now (Sprint 3 Complete)
+### What Works Right Now (v1.6.0)
 ✅ Subscribe to RSS podcast feeds  
 ✅ Browse episodes with full metadata  
-✅ Download episodes (2-3 at a time)  
+✅ Download episodes (configurable concurrent)  
 ✅ Create/manage playlists and auto-generated `Today` playlist  
+✅ Sync to MP3 players/USB devices  
+✅ Search & filter episodes (text, status, date range)  
 ✅ OPML import/export  
 ✅ Intuitive keyboard shortcuts  
 ✅ 4 color themes  
 
 ### Not Yet Working
-❌ Audio playback (coming in Sprint 4)  
-❌ Episode notes (Sprint 5)  
-❌ Statistics (Sprint 6)  
+❌ Audio playback (planned for a future sprint)  
+❌ Episode notes  
+❌ Statistics  
 
 ### Speed Run Installation
 
@@ -28,7 +30,7 @@ This guide will help you get Podcast TUI running on your system, regardless of p
 ```powershell
 winget install Rustlang.Rustup
 winget install Microsoft.VisualStudio.2022.BuildTools
-git clone https://github.com/yourusername/podcast-tui.git
+git clone https://github.com/lqdev/podcast-tui.git
 cd podcast-tui
 cargo build --release
 .\target\release\podcast-tui.exe
@@ -37,8 +39,8 @@ cargo build --release
 **Linux:**
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-sudo apt install build-essential pkg-config libssl-dev  # Ubuntu/Debian
-git clone https://github.com/yourusername/podcast-tui.git
+sudo apt install build-essential pkg-config libssl-dev libasound2-dev  # Ubuntu/Debian
+git clone https://github.com/lqdev/podcast-tui.git
 cd podcast-tui
 cargo build --release
 ./target/release/podcast-tui
@@ -57,22 +59,24 @@ cargo build --release
 
 ---
 
-## Current Development Status (October 2025)
+## Current Development Status (February 2026)
 
-**✅ What Works:**
+**✅ What Works (v1.6.0):**
 - Subscribe to podcast RSS feeds
-- Browse episode lists with metadat- **Keybindings Reference**: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)
-- Download episodes (2-3 concurrent downloads)
+- Browse episode lists with metadata
+- Download episodes (configurable concurrent downloads)
+- Device sync to MP3 players/USB drives
+- Search & filter episodes (text, status, date range)
 - OPML import/export
+- Playlist management (user + auto-generated Today playlist)
 - Intuitive keyboard navigation
 - Multiple color themes
 - Cross-platform builds (Windows/Linux)
 
 **🚧 What's Coming:**
-- Audio playback (Sprint 4 - next up)
-- Episode notes (Sprint 5)
-- Statistics tracking (Sprint 6)
-- Search & filtering enhancements (Sprint 5)
+- Audio playback (rodio integration, planned)
+- Episode notes
+- Statistics tracking
 
 ## Platform-Specific Setup
 
@@ -87,7 +91,7 @@ cargo build --release
 #### Building from Source
 ```powershell
 # Clone the repository
-git clone https://github.com/yourusername/podcast-tui.git
+git clone https://github.com/lqdev/podcast-tui.git
 cd podcast-tui
 
 # Verify build dependencies
@@ -118,7 +122,7 @@ cargo build --release
 #### Building from Source
 ```powershell
 # Clone the repository
-git clone https://github.com/yourusername/podcast-tui.git
+git clone https://github.com/lqdev/podcast-tui.git
 cd podcast-tui
 
 # Install LLVM (see scripts/INSTALL-LLVM.md for details)
@@ -148,7 +152,7 @@ sudo apt-get install build-essential pkg-config libssl-dev
 #### Building from Source
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/podcast-tui.git
+git clone https://github.com/lqdev/podcast-tui.git
 cd podcast-tui
 
 # Build the project
@@ -161,7 +165,7 @@ cargo build --release
 #### Using Pre-built Binaries
 ```bash
 # Download the latest release
-wget https://github.com/yourusername/podcast-tui/releases/download/vX.X.X/podcast-tui-vX.X.X-linux-x86_64.tar.gz
+wget https://github.com/lqdev/podcast-tui/releases/download/vX.X.X/podcast-tui-vX.X.X-linux-x86_64.tar.gz
 
 # Extract and run
 tar -xzf podcast-tui-vX.X.X-linux-x86_64.tar.gz
@@ -246,11 +250,17 @@ sudo pacman -S base-devel rust openssl
 
 **Episode Actions:**
 - `Shift+D` - Download episode
-- `Shift+X` - Delete downloaded file
+- `Shift+X` or `X` - Delete downloaded file
 - `p` - Add selected episode to playlist
 - `Ctrl+x` - Delete ALL downloads
 - `:clean-older-than <dur>` - Delete downloads older than duration (e.g., `7d`, `2w`)
 - `:cleanup <dur>` - Alias for clean-older-than
+
+**Search & Filter:**
+- `/` - Open search (filter episodes by text)
+- `:filter-status <status>` - Filter by status (`new`, `downloaded`, `played`, `downloading`, `failed`)
+- `:filter-date <range>` - Filter by date (`today`, `7d`, `2w`, `1m`)
+- `:clear-filters` - Clear all active filters
 
 **Help:**
 - `F1` or `?` or `h` - Show help
@@ -362,7 +372,7 @@ sudo pacman -S openssl
 
 1. **Built-in Help**: Press `F1` or `?` for the help system
 2. **Documentation**: See [docs/](docs/) directory for detailed documentation
-3. **Issues**: Report bugs at https://github.com/yourusername/podcast-tui/issues
+3. **Issues**: Report bugs at https://github.com/lqdev/podcast-tui/issues
 4. **Keybindings Reference**: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md)
 
 ## Next Steps
@@ -374,20 +384,22 @@ sudo pacman -S openssl
 
 ## Development Status
 
-**Completed (75% of core MVP):**
-- ✅ Sprint 0: Foundation (Storage, Models, Config)
-- ✅ Sprint 1: Core UI (Emacs-style TUI, Buffers, Themes)
-- ✅ Sprint 2: RSS & Podcasts (Feed parsing, Subscriptions, OPML)
-- ✅ Sprint 3: Downloads (Concurrent downloads, File management)
+**Completed:**
+- ✅ Foundation (Storage, Models, Config)
+- ✅ Core UI (Emacs-style TUI, Buffers, Themes)
+- ✅ RSS & Podcasts (Feed parsing, Subscriptions, OPML)
+- ✅ Downloads (Concurrent downloads, File management, Cleanup)
+- ✅ Device Sync (MP3 player sync, metadata-based comparison)
+- ✅ Search & Filter (Text, status, date range)
+- ✅ Playlists (User playlists + Today auto-playlist)
 
-**In Progress (Next Sprints):**
-- 🚧 Sprint 4: Audio Playback (rodio integration)
-- 🚧 Sprint 5: Enhanced Features (Playlists, Notes, Search)
-- 🚧 Sprint 6: Statistics & Polish
-- 🚧 Sprint 7: Final testing & Documentation
+**In Progress / Planned:**
+- 🚧 Audio Playback (rodio integration)
+- 🚧 Episode Notes
+- 🚧 Statistics & Reporting
 
 ---
 
-**Last Updated**: October 2025  
-**Version**: 1.0.0-mvp (in development)  
-**Status**: Sprint 3 Complete
+**Last Updated**: February 2026  
+**Version**: 1.6.0  
+**Status**: Active Development

@@ -124,6 +124,7 @@ impl HelpBuffer {
             "  d             Delete selected playlist (with confirmation)".to_string(),
             "  r             Refresh Today or rebuild selected user playlist".to_string(),
             "  p             Add selected episode to a playlist (episode lists)".to_string(),
+            "  Enter         Open selected playlist episode details".to_string(),
             "  Ctrl+↑/Ctrl+↓ Reorder episodes in playlist detail".to_string(),
             "".to_string(),
             "DEVICE SYNC:".to_string(),

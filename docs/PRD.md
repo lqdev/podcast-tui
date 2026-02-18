@@ -2,12 +2,11 @@
 
 ## Project Information
 - **Project Name**: Podcast TUI
-- **Version**: 1.0.0-MVP
+- **Version**: 1.6.0
 - **Created**: 2025-09-28
-- **Last Updated**: 2025-10-05
-- **Status**: In Development (Sprint 3 Complete - 37.5% of MVP)
+- **Last Updated**: 2026-02-18
+- **Status**: Active Development
 - **Team**: Solo Development
-- **Timeline**: 8 weeks to MVP (Week 4 complete)
 
 ## Executive Summary
 
@@ -62,20 +61,20 @@ Current podcast management solutions are either:
 - [x] Cross-platform compatibility (Windows/Linux) ✅ **COMPLETE** (Sprint 0-3, build scripts)
 
 ### Should Have (P1)
-- [ ] Basic audio playback (play/pause/stop/seek) 🚧 **SPRINT 4**
-- [ ] Episode notes functionality 🚧 **SPRINT 5**
-- [ ] Simple playlist creation and management 🚧 **SPRINT 5**
-- [ ] Episode filtering (status, date, duration) 🚧 **SPRINT 5**
-- [ ] Chapter support and navigation 🚧 **SPRINT 4**
-- [ ] Basic statistics tracking 🚧 **SPRINT 6**
-- [x] Episode cleanup (manual and automatic) ✅ **COMPLETE** (Sprint 3)
+- [ ] Basic audio playback (play/pause/stop/seek) ⏳ **PENDING**
+- [ ] Episode notes functionality ⏳ **PENDING**
+- [x] Simple playlist creation and management ✅ **COMPLETE** (user playlists + Today auto-playlist)
+- [x] Episode filtering (status, date, text search) ✅ **COMPLETE** (duration deferred pending RSS data)
+- [ ] Chapter support and navigation ⏳ **PENDING**
+- [ ] Basic statistics tracking ⏳ **PENDING**
+- [x] Episode cleanup (manual and automatic) ✅ **COMPLETE**
+- [x] Device sync to MP3 players/USB drives ✅ **COMPLETE**
 
 ### Could Have (P2)
-- [ ] Transcript display (when available) 🚧 **SPRINT 6**
-- [ ] Basic metadata management (ID3 tags) 🚧 **SPRINT 6**
-- [ ] External player integration 🚧 **SPRINT 4** (fallback option)
-- [ ] Simple search functionality 🚧 **SPRINT 5**
-- [ ] Episode artwork embedding 🚧 **SPRINT 6**
+- [ ] Transcript display (when available) ⏳ **PENDING**
+- [x] Basic metadata management (ID3 tags) ✅ **COMPLETE** (embed_id3_metadata, artwork, track numbers)
+- [ ] External player integration ⏳ **PENDING**
+- [x] Episode artwork embedding ✅ **COMPLETE**
 
 ### Won't Have (This Version)
 - Advanced smart playlists

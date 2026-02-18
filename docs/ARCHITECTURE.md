@@ -1,8 +1,8 @@
 # Podcast TUI Architecture
 
-**Last Updated**: October 7, 2025  
-**Version**: 1.0.0-MVP  
-**Status**: Sprint 3 Complete
+**Last Updated**: February 2026  
+**Version**: 1.6.0  
+**Status**: Active Development
 
 ## Overview
 
@@ -145,12 +145,18 @@ User Input → KeyEvent → App::handle_key() → State Update → UI Render
 
 **How**: Each view (podcast list, episode list, downloads, help) is a "buffer". Users switch between buffers with keyboard shortcuts.
 
-**Buffer Types**:
+**Buffer Types** (12 total):
 - **Podcast List** (`F2`): Main subscription list
-- **Episode List**: Episodes for selected podcast
+- **Episode List**: Episodes for selected podcast (with search/filter support via `src/ui/filters.rs`)
+- **Episode Detail**: Single episode view
 - **Downloads** (`F4`): Download queue and status
 - **Help** (`F1`, `?`): Keybinding reference
-- **What's New**: Recently updated episodes
+- **Buffer List** (`Ctrl+b`): All open buffers overlay
+- **Playlist List** (`F7`): All playlists
+- **Playlist Detail**: Single playlist episodes
+- **Playlist Picker**: Add-to-playlist overlay
+- **Sync**: Device sync history
+- **What's New**: Rolling new episodes across all podcasts
 
 **Benefits**:
 - ✅ Familiar workflow for Emacs users
@@ -194,12 +200,13 @@ User Input → KeyEvent → App::handle_key() → State Update → UI Render
 **Purpose**: Terminal UI rendering and interaction
 
 **Key Files**:
-- `app.rs`: UI application wrapper
-- `buffers/`: Buffer implementations (podcast list, episodes, downloads, help)
+- `app.rs`: UI application wrapper and main event loop
+- `buffers/`: 12 buffer implementations (see `.github/instructions/ui-buffers.instructions.md`)
 - `components/`: Reusable UI components (lists, status bar, minibuffer)
 - `events.rs`: Event types and handling
 - `keybindings.rs`: Key mapping and command dispatch
-- `themes.rs`: Color schemes
+- `themes.rs`: Color schemes (dark, light, high-contrast, solarized)
+- `filters.rs`: Episode filtering (`EpisodeFilter`, `EpisodeStatus`, `DateRange`)
 
 **Dependencies**: `ratatui`, `crossterm`
 
@@ -225,13 +232,23 @@ User Input → KeyEvent → App::handle_key() → State Update → UI Render
 **Dependencies**: `tokio::fs`, `serde`, `serde_json`
 
 #### `src/download/`
-**Purpose**: Episode download management
+**Purpose**: Episode download management, device sync, and download cleanup
 
 **Key Files**:
-- `manager.rs`: Download queue, progress tracking, concurrent downloads
+- `manager.rs`: Download queue, progress tracking, concurrent downloads, device sync (`sync_*` methods), cleanup (`cleanup_old_downloads*`)
 - `mod.rs`: Public API
 
-**Dependencies**: `reqwest`, `tokio::fs`
+**Dependencies**: `reqwest`, `tokio::fs`, `id3`, `image`
+
+#### `src/playlist/`
+**Purpose**: Playlist creation, management, and device-compatible audio file copying
+
+**Key Files**:
+- `models.rs`: `Playlist`, `PlaylistType`, `AutoPlaylistKind`, `RefreshPolicy`, `PlaylistEpisode`
+- `manager.rs`: Playlist CRUD operations
+- `file_manager.rs`: Audio file copying for device compatibility
+- `auto_generator.rs`: Auto-generates `Today` playlist (rolling 24h)
+- `mod.rs`: Public API
 
 #### `src/config.rs`
 **Purpose**: Application configuration
@@ -305,6 +322,32 @@ User Input → KeyEvent → App::handle_key() → State Update → UI Render
 5. App State: Reload podcast list
    ↓
 6. UI: Display imported podcasts
+```
+
+#### Syncing to Device
+
+```
+1. User Input: ':sync [path]'
+   ↓
+2. Download Manager: scan Podcasts/ + Playlists/ dirs on device
+   ↓
+3. Compare by filename + file size (metadata-based, no checksums)
+   ↓
+4. Copy new/changed files, optionally delete orphans
+   ↓
+5. Sync Buffer: Update history with result summary
+```
+
+#### Filtering Episodes
+
+```
+1. User Input: '/' (text) or ':filter-status new' or ':filter-date 7d'
+   ↓
+2. EpisodeFilter updated in EpisodeListBuffer
+   ↓
+3. Episodes list re-rendered with AND-combined filters applied
+   ↓
+4. ':clear-filters' resets EpisodeFilter to default (all pass)
 ```
 
 ## Key Design Patterns

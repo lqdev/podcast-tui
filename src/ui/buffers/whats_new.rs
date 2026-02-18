@@ -255,6 +255,7 @@ impl Buffer for WhatsNewBuffer {
             "  C-p, ↑    Previous episode".to_string(),
             "  Enter     View episode details".to_string(),
             "  D         Download episode".to_string(),
+            "  p         Add selected episode to a playlist".to_string(),
             "  /         Search episodes".to_string(),
             "  F6        Clear filters".to_string(),
             "  F5        Refresh episode list".to_string(),
@@ -336,11 +337,7 @@ impl UIComponent for WhatsNewBuffer {
             }
             UIAction::Search => UIAction::Search,
             UIAction::ApplySearch { query } => {
-                self.filter.text_query = if query.is_empty() {
-                    None
-                } else {
-                    Some(query)
-                };
+                self.filter.text_query = if query.is_empty() { None } else { Some(query) };
                 self.apply_filters();
                 UIAction::Render
             }
@@ -368,7 +365,10 @@ impl UIComponent for WhatsNewBuffer {
                         self.apply_filters();
                         UIAction::Render
                     }
-                    None => UIAction::ShowError(format!("Unknown date range: '{}'. Use: today, 12h, 7d, 2w, 1m", range)),
+                    None => UIAction::ShowError(format!(
+                        "Unknown date range: '{}'. Use: today, 12h, 7d, 2w, 1m",
+                        range
+                    )),
                 }
             }
             _ => UIAction::None,

@@ -695,70 +695,56 @@ impl UIApp {
             }
             UIAction::AddToPlaylist => {
                 if let Some(current_id) = self.buffer_manager.current_buffer_id() {
-                    if current_id.starts_with("episodes-") {
-                        let mut selected: Option<(
-                            crate::storage::PodcastId,
-                            crate::storage::EpisodeId,
-                        )> = None;
-                        if let Some(episode_buffer) = self
-                            .buffer_manager
-                            .get_episode_list_buffer_mut_by_id(&current_id)
-                        {
-                            if let Some(episode) = episode_buffer.selected_episode() {
-                                selected =
-                                    Some((episode_buffer.podcast_id.clone(), episode.id.clone()));
-                            }
-                        }
+                    if !self.add_to_playlist_supported_in_buffer(&current_id) {
+                        self.show_message(
+                            "Add-to-playlist is available from episode lists, episode detail, and What's New".to_string(),
+                        );
+                        return Ok(true);
+                    }
 
-                        if let Some((podcast_id, episode_id)) = selected {
-                            match self.playlist_manager.list_playlists().await {
-                                Ok(playlists) => {
-                                    let options: Vec<_> = playlists
-                                        .into_iter()
-                                        .filter_map(|playlist| {
-                                            if matches!(
-                                                playlist.playlist_type,
-                                                crate::playlist::PlaylistType::User
-                                            ) {
-                                                Some((
-                                                    playlist.id,
-                                                    playlist.name,
-                                                    playlist.episodes.len(),
-                                                ))
-                                            } else {
-                                                None
-                                            }
-                                        })
-                                        .collect();
-                                    if options.is_empty() {
-                                        self.show_error(
-                                            "No user playlists available; create one first"
-                                                .to_string(),
-                                        );
-                                    } else {
-                                        let _ = self
-                                            .buffer_manager
-                                            .remove_buffer(&"playlist-picker".to_string());
-                                        self.buffer_manager.create_playlist_picker_buffer(
-                                            options, podcast_id, episode_id,
-                                        );
-                                        let _ = self
-                                            .buffer_manager
-                                            .switch_to_buffer(&"playlist-picker".to_string());
-                                        self.update_status_bar();
-                                    }
-                                }
-                                Err(e) => {
-                                    self.show_error(format!("Failed to list playlists: {}", e))
+                    if let Some((podcast_id, episode_id)) =
+                        self.resolve_add_to_playlist_selection(&current_id)
+                    {
+                        match self.playlist_manager.list_playlists().await {
+                            Ok(playlists) => {
+                                let options: Vec<_> = playlists
+                                    .into_iter()
+                                    .filter_map(|playlist| {
+                                        if matches!(
+                                            playlist.playlist_type,
+                                            crate::playlist::PlaylistType::User
+                                        ) {
+                                            Some((
+                                                playlist.id,
+                                                playlist.name,
+                                                playlist.episodes.len(),
+                                            ))
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect();
+                                if options.is_empty() {
+                                    self.show_error(
+                                        "No user playlists available; create one first".to_string(),
+                                    );
+                                } else {
+                                    let _ = self
+                                        .buffer_manager
+                                        .remove_buffer(&"playlist-picker".to_string());
+                                    self.buffer_manager.create_playlist_picker_buffer(
+                                        options, podcast_id, episode_id,
+                                    );
+                                    let _ = self
+                                        .buffer_manager
+                                        .switch_to_buffer(&"playlist-picker".to_string());
+                                    self.update_status_bar();
                                 }
                             }
-                        } else {
-                            self.show_error("No episode selected".to_string());
+                            Err(e) => self.show_error(format!("Failed to list playlists: {}", e)),
                         }
                     } else {
-                        self.show_message(
-                            "Add-to-playlist is available from episode lists".to_string(),
-                        );
+                        self.show_error("No episode selected".to_string());
                     }
                 }
                 Ok(true)
@@ -2414,11 +2400,55 @@ impl UIApp {
     }
 
     fn open_episode_detail_buffer(&mut self, episode: crate::podcast::Episode) {
-        self.buffer_manager.create_episode_detail_buffer(episode.clone());
+        self.buffer_manager
+            .create_episode_detail_buffer(episode.clone());
         let episode_buffer_id = format!("episode-detail-{}", episode.id);
         let _ = self.buffer_manager.switch_to_buffer(&episode_buffer_id);
         self.update_status_bar();
         self.refresh_buffer_list_if_open();
+    }
+
+    fn add_to_playlist_supported_in_buffer(&self, buffer_id: &str) -> bool {
+        buffer_id.starts_with("episodes-")
+            || buffer_id.starts_with("episode-detail-")
+            || buffer_id == "whats-new"
+    }
+
+    fn resolve_add_to_playlist_selection(
+        &mut self,
+        buffer_id: &str,
+    ) -> Option<(crate::storage::PodcastId, crate::storage::EpisodeId)> {
+        if buffer_id.starts_with("episodes-") {
+            if let Some(episode_buffer) = self
+                .buffer_manager
+                .get_episode_list_buffer_mut_by_id(buffer_id)
+            {
+                if let Some(episode) = episode_buffer.selected_episode() {
+                    return Some((episode_buffer.podcast_id.clone(), episode.id.clone()));
+                }
+            }
+        } else if buffer_id == "whats-new" {
+            if let Some(whats_new_buffer) = self.buffer_manager.get_whats_new_buffer_mut() {
+                if let Some(agg_episode) = whats_new_buffer.selected_episode() {
+                    return Some((
+                        agg_episode.podcast_id.clone(),
+                        agg_episode.episode.id.clone(),
+                    ));
+                }
+            }
+        } else if buffer_id.starts_with("episode-detail-") {
+            if let Some(episode_detail_buffer) = self
+                .buffer_manager
+                .get_episode_detail_buffer_mut_by_id(buffer_id)
+            {
+                return Some((
+                    episode_detail_buffer.podcast_id().clone(),
+                    episode_detail_buffer.episode_id().clone(),
+                ));
+            }
+        }
+
+        None
     }
 
     /// Trigger async podcast addition
@@ -4085,6 +4115,155 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_add_to_playlist_opens_picker_from_supported_buffers() {
+        use crate::config::DownloadConfig;
+        use crate::podcast::Episode;
+        use crate::storage::JsonStorage;
+        use chrono::Utc;
+        use tempfile::TempDir;
+
+        let config = Config::default();
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_dir.path().to_path_buf(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
+        let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager,
+            storage,
+            app_event_tx,
+        )
+        .unwrap();
+        app.initialize().await.unwrap();
+
+        app.playlist_manager
+            .create_playlist("Issue55 Playlist", None)
+            .await
+            .unwrap();
+
+        let podcast_id = crate::storage::PodcastId::new();
+        let episode = Episode::new(
+            podcast_id.clone(),
+            "Issue55 Episode".to_string(),
+            "https://example.com/issue55.mp3".to_string(),
+            Utc::now(),
+        );
+
+        let episode_buffer_id = "episodes-issue55-podcast".to_string();
+        app.buffer_manager.create_episode_list_buffer(
+            "Issue55 Podcast".to_string(),
+            podcast_id.clone(),
+            app.subscription_manager.clone(),
+            app.download_manager.clone(),
+        );
+        if let Some(episode_buffer) = app
+            .buffer_manager
+            .get_episode_list_buffer_mut_by_id(&episode_buffer_id)
+        {
+            episode_buffer.set_episodes(vec![episode.clone()]);
+        }
+        app.buffer_manager
+            .switch_to_buffer(&episode_buffer_id)
+            .unwrap();
+        let result = app.handle_action(UIAction::AddToPlaylist).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            app.buffer_manager.current_buffer_id(),
+            Some("playlist-picker".to_string())
+        );
+
+        if let Some(whats_new_buffer) = app.buffer_manager.get_whats_new_buffer_mut() {
+            whats_new_buffer.set_episodes(vec![crate::ui::events::AggregatedEpisode {
+                podcast_id: podcast_id.clone(),
+                podcast_title: "Issue55 Podcast".to_string(),
+                episode: episode.clone(),
+            }]);
+        }
+        app.buffer_manager
+            .switch_to_buffer(&"whats-new".to_string())
+            .unwrap();
+        let result = app.handle_action(UIAction::AddToPlaylist).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            app.buffer_manager.current_buffer_id(),
+            Some("playlist-picker".to_string())
+        );
+
+        let episode_detail_id = format!("episode-detail-{}", episode.id);
+        app.buffer_manager
+            .create_episode_detail_buffer(episode.clone());
+        app.buffer_manager
+            .switch_to_buffer(&episode_detail_id)
+            .unwrap();
+        let result = app.handle_action(UIAction::AddToPlaylist).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            app.buffer_manager.current_buffer_id(),
+            Some("playlist-picker".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_add_to_playlist_in_unsupported_buffer_shows_info_message() {
+        use crate::config::DownloadConfig;
+        use crate::storage::JsonStorage;
+        use tempfile::TempDir;
+
+        let config = Config::default();
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_dir.path().to_path_buf(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
+        let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager,
+            storage,
+            app_event_tx,
+        )
+        .unwrap();
+        app.initialize().await.unwrap();
+
+        app.buffer_manager
+            .switch_to_buffer(&"podcast-list".to_string())
+            .unwrap();
+        let result = app.handle_action(UIAction::AddToPlaylist).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            app.buffer_manager.current_buffer_id(),
+            Some("podcast-list".to_string())
+        );
+        assert_ne!(
+            app.buffer_manager.current_buffer_id(),
+            Some("playlist-picker".to_string())
+        );
+        assert!(app.minibuffer.is_visible());
+    }
+
+    #[tokio::test]
     async fn test_playlist_detail_select_item_opens_episode_detail() {
         use crate::config::DownloadConfig;
         use crate::playlist::{Playlist, PlaylistEpisode, PlaylistId, PlaylistType};
@@ -4139,7 +4318,10 @@ mod tests {
 
         let playlist_id = PlaylistId::new();
         let playlist_name = "Test Playlist".to_string();
-        let detail_id = format!("playlist-{}", playlist_name.replace(' ', "-").to_lowercase());
+        let detail_id = format!(
+            "playlist-{}",
+            playlist_name.replace(' ', "-").to_lowercase()
+        );
         let playlist_manager = app.playlist_manager.clone();
         app.buffer_manager.create_playlist_detail_buffer(
             playlist_id.clone(),
@@ -4224,7 +4406,10 @@ mod tests {
 
         let playlist_id = PlaylistId::new();
         let playlist_name = "Broken Playlist".to_string();
-        let detail_id = format!("playlist-{}", playlist_name.replace(' ', "-").to_lowercase());
+        let detail_id = format!(
+            "playlist-{}",
+            playlist_name.replace(' ', "-").to_lowercase()
+        );
         let playlist_manager = app.playlist_manager.clone();
         app.buffer_manager.create_playlist_detail_buffer(
             playlist_id.clone(),

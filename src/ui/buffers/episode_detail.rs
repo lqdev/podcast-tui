@@ -258,6 +258,7 @@ impl Buffer for EpisodeDetailBuffer {
             "  Home, <   Scroll to top".to_string(),
             "  End, >    Scroll to bottom".to_string(),
             "  D         Download episode".to_string(),
+            "  p         Add episode to a playlist".to_string(),
             "  q, C-k    Close buffer".to_string(),
             "  C-h       Show help".to_string(),
         ]

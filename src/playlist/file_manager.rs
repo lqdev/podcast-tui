@@ -205,6 +205,7 @@ mod tests {
         PlaylistEpisode {
             podcast_id: PodcastId::new(),
             episode_id: EpisodeId::new(),
+            episode_title: None,
             added_at: Utc::now(),
             order,
             file_synced: true,

@@ -692,6 +692,7 @@ mod tests {
             episodes: vec![PlaylistEpisode {
                 podcast_id: PodcastId::new(),
                 episode_id: EpisodeId::new(),
+                episode_title: None,
                 added_at: chrono::Utc::now(),
                 order: 0,
                 file_synced: false,

@@ -229,8 +229,9 @@ impl UIComponent for PlaylistDetailBuffer {
                     let selected = self.selected_index == Some(index);
                     let marker = if selected { "► " } else { "  " };
                     let display_name = episode
-                        .filename
+                        .episode_title
                         .clone()
+                        .or_else(|| episode.filename.clone())
                         .unwrap_or_else(|| episode.episode_id.to_string());
                     let text = format!("{marker}{:03} {}", episode.order, display_name);
                     if selected {

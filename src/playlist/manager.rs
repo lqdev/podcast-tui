@@ -163,6 +163,7 @@ impl PlaylistManager {
         let playlist_episode = PlaylistEpisode {
             podcast_id: podcast_id.clone(),
             episode_id: episode_id.clone(),
+            episode_title: Some(episode.title.clone()),
             added_at: Utc::now(),
             order,
             file_synced: true,
@@ -316,7 +317,10 @@ impl PlaylistManager {
                 .load_episode(&playlist_episode.podcast_id, &playlist_episode.episode_id)
                 .await
             {
-                Ok(episode) => episode.local_path,
+                Ok(episode) => {
+                    playlist_episode.episode_title = Some(episode.title);
+                    episode.local_path
+                }
                 Err(_) => {
                     result.failed += 1;
                     if !existing_file_exists {

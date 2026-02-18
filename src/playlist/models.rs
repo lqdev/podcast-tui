@@ -82,6 +82,8 @@ pub enum RefreshPolicy {
 pub struct PlaylistEpisode {
     pub podcast_id: PodcastId,
     pub episode_id: EpisodeId,
+    #[serde(default)]
+    pub episode_title: Option<String>,
     pub added_at: DateTime<Utc>,
     pub order: usize,
     /// Whether the audio file has been copied to the playlist directory.

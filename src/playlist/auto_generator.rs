@@ -195,6 +195,7 @@ impl TodayGenerator {
             playlist.episodes.push(PlaylistEpisode {
                 podcast_id: podcast_id.clone(),
                 episode_id: episode.id.clone(),
+                episode_title: Some(episode.title.clone()),
                 added_at: Utc::now(),
                 order: playlist.episodes.len() + 1,
                 file_synced: true,
@@ -437,6 +438,7 @@ mod tests {
         loaded.episodes.push(PlaylistEpisode {
             podcast_id: PodcastId::new(),
             episode_id: episode_id.clone(),
+            episode_title: Some("Old Episode".to_string()),
             added_at: Utc::now(),
             order: 1,
             file_synced: true,

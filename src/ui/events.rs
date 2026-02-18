@@ -335,6 +335,7 @@ pub enum AppEvent {
     DeviceSyncStarted {
         device_path: std::path::PathBuf,
         dry_run: bool,
+        hard_sync: bool,
     },
 
     /// Device sync completed successfully

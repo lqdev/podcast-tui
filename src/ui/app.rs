@@ -812,7 +812,7 @@ impl UIApp {
             }
             UIAction::SyncPlaylist { .. } => {
                 let default_path = self.get_default_sync_path();
-                self.trigger_async_device_sync(default_path, false, false);
+                self.trigger_async_device_sync(default_path, false, false, false);
                 Ok(true)
             }
             UIAction::HardRefreshPodcast => {
@@ -1545,10 +1545,13 @@ impl UIApp {
             AppEvent::DeviceSyncStarted {
                 device_path,
                 dry_run,
+                hard_sync,
             } => {
                 let mode = if dry_run { " (dry run)" } else { "" };
+                let sync_kind = if hard_sync { "hard " } else { "" };
                 self.show_message(format!(
-                    "Starting device sync to {}{}...",
+                    "Starting {}device sync to {}{}...",
+                    sync_kind,
                     device_path.display(),
                     mode
                 ));
@@ -1744,9 +1747,13 @@ impl UIApp {
                 }
             }
             "sync" | "sync-device" => {
-                if parts.len() > 1 {
-                    let device_path = parts[1..].join(" ");
-                    self.trigger_async_device_sync(device_path, false, false);
+                let (device_path, hard_sync) = Self::parse_sync_command_args(&parts[1..]);
+                if let Some(device_path) = device_path {
+                    self.trigger_async_device_sync(device_path, false, false, hard_sync);
+                    Ok(true)
+                } else if hard_sync {
+                    let default_path = self.get_default_sync_path();
+                    self.trigger_async_device_sync(default_path, false, false, true);
                     Ok(true)
                 } else {
                     // Prompt for device path with default from config
@@ -1759,9 +1766,13 @@ impl UIApp {
                 }
             }
             "sync-dry-run" | "sync-preview" => {
-                if parts.len() > 1 {
-                    let device_path = parts[1..].join(" ");
-                    self.trigger_async_device_sync(device_path, false, true);
+                let (device_path, hard_sync) = Self::parse_sync_command_args(&parts[1..]);
+                if let Some(device_path) = device_path {
+                    self.trigger_async_device_sync(device_path, false, true, hard_sync);
+                    Ok(true)
+                } else if hard_sync {
+                    let default_path = self.get_default_sync_path();
+                    self.trigger_async_device_sync(default_path, false, true, true);
                     Ok(true)
                 } else {
                     // Prompt for device path
@@ -1811,7 +1822,7 @@ impl UIApp {
             }
             "playlist-sync" => {
                 let default_path = self.get_default_sync_path();
-                self.trigger_async_device_sync(default_path, false, false);
+                self.trigger_async_device_sync(default_path, false, false, false);
                 Ok(true)
             }
             "clean-older-than" | "cleanup" => {
@@ -3002,12 +3013,33 @@ impl UIApp {
             .unwrap_or_else(|| crate::constants::downloads::DEFAULT_SYNC_DEVICE_PATH.to_string())
     }
 
+    /// Parse sync command arguments, extracting optional --hard and optional device path.
+    fn parse_sync_command_args(args: &[&str]) -> (Option<String>, bool) {
+        let mut hard_sync = false;
+        let mut path_parts = Vec::new();
+
+        for arg in args {
+            if *arg == "--hard" {
+                hard_sync = true;
+            } else {
+                path_parts.push(*arg);
+            }
+        }
+
+        if path_parts.is_empty() {
+            (None, hard_sync)
+        } else {
+            (Some(path_parts.join(" ")), hard_sync)
+        }
+    }
+
     /// Trigger async device sync
     fn trigger_async_device_sync(
         &mut self,
         device_path_str: String,
         delete_orphans: bool,
         dry_run: bool,
+        hard_sync: bool,
     ) {
         let download_manager = self.download_manager.clone();
         let app_event_tx = self.app_event_tx.clone();
@@ -3033,11 +3065,18 @@ impl UIApp {
         let _ = app_event_tx.send(AppEvent::DeviceSyncStarted {
             device_path: device_path.clone(),
             dry_run,
+            hard_sync,
         });
 
         tokio::spawn(async move {
             match download_manager
-                .sync_to_device(device_path.clone(), playlists_dir, delete_orphans, dry_run)
+                .sync_to_device(
+                    device_path.clone(),
+                    playlists_dir,
+                    delete_orphans,
+                    dry_run,
+                    hard_sync,
+                )
                 .await
             {
                 Ok(report) => {
@@ -3473,12 +3512,12 @@ impl UIApp {
                 } else if prompt.starts_with("Sync to device path") {
                     // Empty input means use default sync path
                     let default_path = self.get_default_sync_path();
-                    self.trigger_async_device_sync(default_path, false, false);
+                    self.trigger_async_device_sync(default_path, false, false, false);
                     return;
                 } else if prompt.starts_with("Dry run sync to") {
                     // Empty input means use default sync path for dry run
                     let default_path = self.get_default_sync_path();
-                    self.trigger_async_device_sync(default_path, false, true);
+                    self.trigger_async_device_sync(default_path, false, true, false);
                     return;
                 }
             }
@@ -3505,11 +3544,17 @@ impl UIApp {
                 return;
             } else if prompt.starts_with("Sync to device path") {
                 // This is a device sync
-                self.trigger_async_device_sync(input.to_string(), false, false);
+                let args: Vec<&str> = input.split_whitespace().collect();
+                let (device_path, hard_sync) = Self::parse_sync_command_args(&args);
+                let device_path = device_path.unwrap_or_else(|| self.get_default_sync_path());
+                self.trigger_async_device_sync(device_path, false, false, hard_sync);
                 return;
             } else if prompt.starts_with("Dry run sync to") {
                 // This is a device sync dry run
-                self.trigger_async_device_sync(input.to_string(), false, true);
+                let args: Vec<&str> = input.split_whitespace().collect();
+                let (device_path, hard_sync) = Self::parse_sync_command_args(&args);
+                let device_path = device_path.unwrap_or_else(|| self.get_default_sync_path());
+                self.trigger_async_device_sync(device_path, false, true, hard_sync);
                 return;
             } else if prompt.starts_with("Create playlist:") {
                 self.trigger_async_create_playlist(input.to_string(), None);

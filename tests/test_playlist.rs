@@ -217,6 +217,7 @@ async fn test_sync_with_playlists_creates_sibling_device_dirs() {
             Some(setup.data_dir.join("Playlists")),
             false,
             false,
+            false,
         )
         .await
         .expect("Sync should succeed");

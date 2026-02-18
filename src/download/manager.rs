@@ -1032,8 +1032,10 @@ impl<S: Storage> DownloadManager<S> {
     ///
     /// # Arguments
     /// * `device_path` - Path to the device/directory to sync to
+    /// * `playlists_dir` - Optional playlists data directory to include in sync
     /// * `delete_orphans` - Whether to delete files on device not present on PC
     /// * `dry_run` - If true, only report what would be done without making changes
+    /// * `hard_sync` - If true, wipe managed device directories before copy
     ///
     /// # Returns
     /// A `SyncReport` detailing all operations performed or that would be performed
@@ -1043,6 +1045,7 @@ impl<S: Storage> DownloadManager<S> {
         playlists_dir: Option<PathBuf>,
         delete_orphans: bool,
         dry_run: bool,
+        hard_sync: bool,
     ) -> Result<SyncReport, SyncError> {
         let mut report = SyncReport::new();
 
@@ -1071,6 +1074,44 @@ impl<S: Storage> DownloadManager<S> {
             )));
         }
         let _ = fs::remove_file(&test_file).await;
+
+        // In hard sync mode, clear managed device directories before reconciliation.
+        if hard_sync {
+            let mut managed_files_to_delete: std::collections::HashMap<PathBuf, (PathBuf, u64)> =
+                std::collections::HashMap::new();
+            let podcasts_target = device_path.join("Podcasts");
+            if podcasts_target.exists() {
+                self.scan_directory_with_prefix(
+                    &podcasts_target,
+                    Path::new("Podcasts"),
+                    &mut managed_files_to_delete,
+                )
+                .await?;
+            }
+
+            let playlists_target = device_path.join("Playlists");
+            if playlists_dir.is_some() && playlists_target.exists() {
+                self.scan_directory_with_prefix(
+                    &playlists_target,
+                    Path::new("Playlists"),
+                    &mut managed_files_to_delete,
+                )
+                .await?;
+            }
+
+            for (relative_path, _) in managed_files_to_delete {
+                report.files_deleted.push(relative_path);
+            }
+
+            if !dry_run {
+                if podcasts_target.exists() {
+                    fs::remove_dir_all(&podcasts_target).await?;
+                }
+                if playlists_dir.is_some() && playlists_target.exists() {
+                    fs::remove_dir_all(&playlists_target).await?;
+                }
+            }
+        }
 
         // Step 1: Build a map of all downloaded episodes on PC
         let mut pc_files: std::collections::HashMap<PathBuf, (PathBuf, u64)> =
@@ -1148,7 +1189,7 @@ impl<S: Storage> DownloadManager<S> {
         }
 
         // Step 4: Delete orphan files on device (files not present on PC)
-        if delete_orphans {
+        if delete_orphans && !hard_sync {
             for (relative_path, (device_file_path, _)) in &device_files {
                 if !pc_files.contains_key(relative_path) {
                     // File exists on device but not on PC, delete it
@@ -1411,7 +1452,7 @@ mod tests {
 
         let invalid_path = PathBuf::from("/nonexistent/path");
         let result = manager
-            .sync_to_device(invalid_path, None, true, false)
+            .sync_to_device(invalid_path, None, true, false, false)
             .await;
 
         assert!(result.is_err());
@@ -1445,7 +1486,7 @@ mod tests {
 
         // Run sync in dry-run mode
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, true)
+            .sync_to_device(device_path.clone(), None, false, true, false)
             .await
             .unwrap();
 
@@ -1488,7 +1529,7 @@ mod tests {
 
         // Run sync
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, false)
+            .sync_to_device(device_path.clone(), None, false, false, false)
             .await
             .unwrap();
 
@@ -1531,7 +1572,7 @@ mod tests {
 
         // Run sync
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, false)
+            .sync_to_device(device_path.clone(), None, false, false, false)
             .await
             .unwrap();
 
@@ -1568,7 +1609,7 @@ mod tests {
 
         // Run sync with delete_orphans=true
         let report = manager
-            .sync_to_device(device_path.clone(), None, true, false)
+            .sync_to_device(device_path.clone(), None, true, false, false)
             .await
             .unwrap();
 
@@ -1606,7 +1647,7 @@ mod tests {
 
         // Run sync
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, false)
+            .sync_to_device(device_path.clone(), None, false, false, false)
             .await
             .unwrap();
 
@@ -1648,7 +1689,7 @@ mod tests {
         fs::create_dir_all(&device_path).await.unwrap();
 
         let report = manager
-            .sync_to_device(device_path.clone(), Some(playlists_dir), false, false)
+            .sync_to_device(device_path.clone(), Some(playlists_dir), false, false, false)
             .await
             .unwrap();
 
@@ -1682,7 +1723,7 @@ mod tests {
         fs::create_dir_all(&device_path).await.unwrap();
 
         let report = manager
-            .sync_to_device(device_path.clone(), Some(playlists_dir), false, false)
+            .sync_to_device(device_path.clone(), Some(playlists_dir), false, false, false)
             .await
             .unwrap();
 
@@ -1720,7 +1761,7 @@ mod tests {
         fs::create_dir_all(&device_path).await.unwrap();
 
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, false)
+            .sync_to_device(device_path.clone(), None, false, false, false)
             .await
             .unwrap();
 
@@ -1759,7 +1800,7 @@ mod tests {
         fs::write(&orphan_file, b"orphan").await.unwrap();
 
         let report = manager
-            .sync_to_device(device_path.clone(), Some(playlists_dir), true, false)
+            .sync_to_device(device_path.clone(), Some(playlists_dir), true, false, false)
             .await
             .unwrap();
 
@@ -1769,6 +1810,132 @@ mod tests {
             .join("Playlists")
             .join("Morning Commute")
             .join("001-episode.mp3")
+            .exists());
+    }
+
+    #[tokio::test]
+    async fn test_sync_hard_mode_wipes_managed_dirs_only() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let playlists_dir = temp_dir.path().join("Playlists");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+        fs::create_dir_all(&playlists_dir).await.unwrap();
+
+        let podcast_dir = downloads_dir.join("Test Podcast");
+        fs::create_dir_all(&podcast_dir).await.unwrap();
+        fs::write(podcast_dir.join("episode1.mp3"), b"download")
+            .await
+            .unwrap();
+
+        let playlist_audio_dir = playlists_dir.join("Morning Commute").join("audio");
+        fs::create_dir_all(&playlist_audio_dir).await.unwrap();
+        fs::write(playlist_audio_dir.join("001-episode.mp3"), b"playlist")
+            .await
+            .unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+        let device_path = temp_dir.path().join("device");
+        let stale_podcast_file = device_path
+            .join("Podcasts")
+            .join("Test Podcast")
+            .join("old_episode.mp3");
+        let stale_playlist_file = device_path
+            .join("Playlists")
+            .join("Old Playlist")
+            .join("001-old.mp3");
+        let unmanaged_file = device_path.join("Manual").join("keep.mp3");
+
+        fs::create_dir_all(stale_podcast_file.parent().unwrap())
+            .await
+            .unwrap();
+        fs::create_dir_all(stale_playlist_file.parent().unwrap())
+            .await
+            .unwrap();
+        fs::create_dir_all(unmanaged_file.parent().unwrap())
+            .await
+            .unwrap();
+        fs::write(&stale_podcast_file, b"stale").await.unwrap();
+        fs::write(&stale_playlist_file, b"stale").await.unwrap();
+        fs::write(&unmanaged_file, b"keep").await.unwrap();
+
+        let report = manager
+            .sync_to_device(
+                device_path.clone(),
+                Some(playlists_dir),
+                true,
+                false,
+                true,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(report.files_copied.len(), 2);
+        assert_eq!(report.errors.len(), 0);
+        assert!(report
+            .files_deleted
+            .iter()
+            .any(|path| path.ends_with(Path::new("Podcasts").join("Test Podcast").join("old_episode.mp3"))));
+        assert!(report
+            .files_deleted
+            .iter()
+            .any(|path| path.ends_with(Path::new("Playlists").join("Old Playlist").join("001-old.mp3"))));
+        assert!(!stale_podcast_file.exists());
+        assert!(!stale_playlist_file.exists());
+        assert!(unmanaged_file.exists());
+        assert!(device_path
+            .join("Podcasts")
+            .join("Test Podcast")
+            .join("episode1.mp3")
+            .exists());
+        assert!(device_path
+            .join("Playlists")
+            .join("Morning Commute")
+            .join("001-episode.mp3")
+            .exists());
+    }
+
+    #[tokio::test]
+    async fn test_sync_hard_mode_dry_run_preserves_device_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        let podcast_dir = downloads_dir.join("Test Podcast");
+        fs::create_dir_all(&podcast_dir).await.unwrap();
+        fs::write(podcast_dir.join("episode1.mp3"), b"download")
+            .await
+            .unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+        let device_path = temp_dir.path().join("device");
+        let stale_podcast_file = device_path
+            .join("Podcasts")
+            .join("Test Podcast")
+            .join("old_episode.mp3");
+        fs::create_dir_all(stale_podcast_file.parent().unwrap())
+            .await
+            .unwrap();
+        fs::write(&stale_podcast_file, b"stale").await.unwrap();
+
+        let report = manager
+            .sync_to_device(device_path.clone(), None, true, true, true)
+            .await
+            .unwrap();
+
+        assert_eq!(report.files_copied.len(), 1);
+        assert_eq!(report.errors.len(), 0);
+        assert!(report.files_deleted.iter().any(|path| {
+            path.ends_with(Path::new("Podcasts").join("Test Podcast").join("old_episode.mp3"))
+        }));
+        assert!(stale_podcast_file.exists());
+        assert!(!device_path
+            .join("Podcasts")
+            .join("Test Podcast")
+            .join("episode1.mp3")
             .exists());
     }
 

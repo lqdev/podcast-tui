@@ -47,7 +47,7 @@ async fn test_sync_to_device_copies_files() {
     // Test sync directly (simulating what the command would trigger)
     let device_path = device_dir.clone();
     let result = download_manager
-        .sync_to_device(device_path.clone(), None, false, false)
+        .sync_to_device(device_path.clone(), None, false, false, false)
         .await;
 
     assert!(result.is_ok(), "Sync should succeed");
@@ -104,7 +104,7 @@ async fn test_sync_dry_run() {
     // Test dry run sync
     let device_path = device_dir.clone();
     let result = download_manager
-        .sync_to_device(device_path.clone(), None, false, true)
+        .sync_to_device(device_path.clone(), None, false, true, false)
         .await;
 
     assert!(result.is_ok(), "Dry run sync should succeed");

@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Playlist Support — February 2026**
+- **User Playlists**: Create, delete, and manage custom playlists with copied audio files for device compatibility
+- **Auto-Generated `Today` Playlist**: Rolling 24-hour playlist using episode `published` date, with refresh policies (`daily`, `on_launch`, `manual`)
+- **Playlist Storage**: New `playlists/` data directory with per-playlist metadata (`playlist.json`) and `audio/` files (`001-Title.ext` ordering)
+- **Playlist UI**:
+  - New playlists buffer (F7)
+  - Playlist detail and picker buffers
+  - Episode action `p` to add to playlist
+  - Playlist commands: `:playlists`, `:playlist-create`, `:playlist-delete`, `:playlist-refresh`, `:playlist-sync`
+- **Sync Integration**:
+  - `:sync` now syncs both downloads and playlists by default
+  - Device output layout now uses sibling directories:
+    - `<sync_device_path>/Podcasts/...`
+    - `<sync_device_path>/Playlists/<playlist>/...`
+  - New config option: `downloads.sync_include_playlists` (default: `true`)
+- **Configuration**: Added `playlist` config section for refresh policy and playlist download behavior
+
 **Download Cleanup — Auto-Cleanup on Startup and Manual Command - February 2026**
 - **Auto-cleanup on Startup**: Automatically delete downloaded episodes older than the configured `cleanup_after_days` threshold when the app launches
   - Wires up the previously-dead `cleanup_after_days` config field (default: 30 days)

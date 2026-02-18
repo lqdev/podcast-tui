@@ -136,6 +136,16 @@ pub mod feed {
     pub const DEFAULT_MAX_EPISODES_PER_PODCAST: usize = 0;
 }
 
+/// Playlist constants
+pub mod playlist {
+    /// Maximum playlist name length.
+    pub const MAX_PLAYLIST_NAME_LENGTH: usize = 100;
+    /// Maximum number of episodes per playlist.
+    pub const MAX_EPISODES_PER_PLAYLIST: usize = 500;
+    /// Maximum number of user playlists.
+    pub const MAX_USER_PLAYLISTS: usize = 50;
+}
+
 /// Audio playback constants (for future Sprint 4)
 #[allow(dead_code)]
 pub mod audio {
@@ -224,6 +234,11 @@ mod tests {
         assert!(opml::IMPORT_TIMEOUT.as_secs() > 0);
         assert!(opml::MAX_OPML_FILE_SIZE > 0);
         assert!(!opml::OPML_VERSION.is_empty());
+
+        // Playlist constants
+        assert!(super::playlist::MAX_PLAYLIST_NAME_LENGTH > 0);
+        assert!(super::playlist::MAX_EPISODES_PER_PLAYLIST > 0);
+        assert!(super::playlist::MAX_USER_PLAYLISTS > 0);
     }
 
     #[test]

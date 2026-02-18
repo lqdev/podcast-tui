@@ -13,6 +13,8 @@ pub struct Config {
     pub keybindings: KeybindingConfig,
     pub storage: StorageConfig,
     pub ui: UiConfig,
+    #[serde(default)]
+    pub playlist: PlaylistConfig,
 }
 
 impl Config {
@@ -63,6 +65,7 @@ impl Default for Config {
             keybindings: KeybindingConfig::default(),
             storage: StorageConfig::default(),
             ui: UiConfig::default(),
+            playlist: PlaylistConfig::default(),
         }
     }
 }
@@ -125,6 +128,8 @@ pub struct DownloadConfig {
     pub sync_preserve_structure: bool, // Preserve podcast folder structure (default: true)
     #[serde(default = "default_sync_dry_run")]
     pub sync_dry_run: bool, // Default to dry-run mode for safety (default: false)
+    #[serde(default = "default_sync_include_playlists")]
+    pub sync_include_playlists: bool, // Include playlists in device sync (default: true)
 }
 
 // Default functions for serde
@@ -161,6 +166,9 @@ fn default_sync_preserve_structure() -> bool {
 fn default_sync_dry_run() -> bool {
     false
 }
+fn default_sync_include_playlists() -> bool {
+    true
+}
 
 impl Default for DownloadConfig {
     fn default() -> Self {
@@ -186,6 +194,41 @@ impl Default for DownloadConfig {
             sync_delete_orphans: true,
             sync_preserve_structure: true,
             sync_dry_run: false,
+            sync_include_playlists: true,
+        }
+    }
+}
+
+/// Playlist management configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlaylistConfig {
+    /// Refresh policy for the auto-generated "Today" playlist.
+    #[serde(default = "default_today_refresh_policy")]
+    pub today_refresh_policy: String, // "daily", "on_launch", "manual"
+    /// Auto-download episodes when adding to playlists.
+    #[serde(default = "default_auto_download_on_add")]
+    pub auto_download_on_add: bool,
+    /// Download retries when adding episodes to playlists.
+    #[serde(default = "default_playlist_download_retries")]
+    pub download_retries: u32,
+}
+
+fn default_today_refresh_policy() -> String {
+    "daily".to_string()
+}
+fn default_auto_download_on_add() -> bool {
+    true
+}
+fn default_playlist_download_retries() -> u32 {
+    3
+}
+
+impl Default for PlaylistConfig {
+    fn default() -> Self {
+        Self {
+            today_refresh_policy: default_today_refresh_policy(),
+            auto_download_on_add: default_auto_download_on_add(),
+            download_retries: default_playlist_download_retries(),
         }
     }
 }
@@ -320,6 +363,8 @@ mod tests {
             config.downloads.concurrent_downloads,
             downloads::DEFAULT_CONCURRENT_DOWNLOADS
         );
+        assert!(config.downloads.sync_include_playlists);
+        assert_eq!(config.playlist.today_refresh_policy, "daily");
         assert_eq!(config.keybindings.play_pause, "SPC");
         assert_eq!(config.ui.theme, "default");
     }
@@ -337,6 +382,66 @@ mod tests {
             config.downloads.concurrent_downloads,
             deserialized.downloads.concurrent_downloads
         );
+    }
+
+    #[test]
+    fn test_config_backward_compat_playlist_defaults() {
+        let legacy_json = r#"{
+  "audio": {
+    "volume": 0.8,
+    "seek_seconds": 10,
+    "external_player": null,
+    "auto_play_next": false,
+    "remember_position": true
+  },
+  "downloads": {
+    "directory": "~/Downloads/Podcasts",
+    "concurrent_downloads": 3,
+    "cleanup_after_days": 30,
+    "auto_download_new": false,
+    "max_download_size_mb": 500
+  },
+  "keybindings": {
+    "play_pause": "SPC",
+    "stop": "s",
+    "next_episode": "n",
+    "prev_episode": "p",
+    "seek_forward": "f",
+    "seek_backward": "b",
+    "volume_up": "+",
+    "volume_down": "-",
+    "add_podcast": "a",
+    "refresh_feeds": "r",
+    "refresh_all_feeds": "R",
+    "download_episode": "D",
+    "delete_episode": "X",
+    "toggle_played": "m",
+    "add_note": "N",
+    "quit": "q",
+    "help": "C-h ?"
+  },
+  "storage": {
+    "data_directory": null,
+    "backup_enabled": true,
+    "backup_frequency_days": 7,
+    "max_backups": 5,
+    "opml_export_directory": "~/Documents/podcast-exports"
+  },
+  "ui": {
+    "theme": "default",
+    "show_progress_bar": true,
+    "show_episode_numbers": true,
+    "date_format": "%Y-%m-%d",
+    "time_format": "%H:%M:%S",
+    "compact_mode": false,
+    "mouse_support": true,
+    "whats_new_episode_limit": 50
+  }
+}"#;
+
+        let config: Config = serde_json::from_str(legacy_json).expect("Legacy config should parse");
+        assert_eq!(config.playlist.today_refresh_policy, "daily");
+        assert!(config.downloads.sync_include_playlists);
     }
 
     #[test]

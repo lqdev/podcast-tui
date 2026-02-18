@@ -1,3 +1,4 @@
+use crate::playlist::{Playlist, PlaylistId};
 use crate::podcast::{Episode, Podcast};
 use crate::storage::models::{EpisodeId, PodcastId, StorageError};
 use anyhow::Result;
@@ -49,6 +50,13 @@ pub trait Storage: Send + Sync {
         episodes: &[Episode],
     ) -> Result<(), Self::Error>;
     async fn load_episodes(&self, podcast_id: &PodcastId) -> Result<Vec<Episode>, Self::Error>;
+
+    // Playlist operations
+    async fn save_playlist(&self, playlist: &Playlist) -> Result<(), Self::Error>;
+    async fn load_playlist(&self, id: &PlaylistId) -> Result<Playlist, Self::Error>;
+    async fn delete_playlist(&self, id: &PlaylistId) -> Result<(), Self::Error>;
+    async fn list_playlists(&self) -> Result<Vec<PlaylistId>, Self::Error>;
+    async fn playlist_exists(&self, id: &PlaylistId) -> Result<bool, Self::Error>;
 
     // Storage management
     async fn initialize(&self) -> Result<(), Self::Error>;

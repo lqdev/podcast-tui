@@ -8,16 +8,21 @@ pub mod downloads;
 pub mod episode_detail;
 pub mod episode_list;
 pub mod help;
+pub mod playlist_detail;
+pub mod playlist_list;
+pub mod playlist_picker;
 pub mod podcast_list;
 pub mod sync;
 pub mod whats_new;
 
 use ratatui::layout::Rect;
+use std::any::Any;
 use std::collections::HashMap;
 
 use crate::ui::{UIAction, UIComponent, UIError, UIResult};
 use crate::{
     download::DownloadManager,
+    playlist::{manager::PlaylistManager, PlaylistId, PlaylistType},
     podcast::subscription::SubscriptionManager,
     storage::{JsonStorage, PodcastId},
 };
@@ -27,12 +32,18 @@ use std::sync::Arc;
 pub type BufferId = String;
 
 /// Trait that all buffer types must implement
-pub trait Buffer: UIComponent {
+pub trait Buffer: UIComponent + Any {
     /// Get the unique ID of this buffer
     fn id(&self) -> BufferId;
 
     /// Get the buffer name for display in buffer lists
     fn name(&self) -> String;
+
+    /// Downcast support for typed buffer access.
+    fn as_any(&self) -> &dyn Any;
+
+    /// Mutable downcast support for typed buffer access.
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 
     /// Check if this buffer can be closed
     fn can_close(&self) -> bool {
@@ -307,18 +318,50 @@ impl BufferManager {
         let _ = self.add_buffer(Box::new(sync_buffer));
     }
 
+    /// Create playlist list buffer
+    pub fn create_playlist_list_buffer(&mut self, playlist_manager: Arc<PlaylistManager>) {
+        let mut playlist_buffer = crate::ui::buffers::playlist_list::PlaylistListBuffer::new();
+        playlist_buffer.set_playlist_manager(playlist_manager);
+        let _ = self.add_buffer(Box::new(playlist_buffer));
+    }
+
+    /// Create playlist detail buffer
+    pub fn create_playlist_detail_buffer(
+        &mut self,
+        playlist_id: PlaylistId,
+        playlist_name: String,
+        playlist_type: PlaylistType,
+        playlist_manager: Arc<PlaylistManager>,
+    ) {
+        let mut detail = crate::ui::buffers::playlist_detail::PlaylistDetailBuffer::new(
+            playlist_id,
+            playlist_name,
+            playlist_type,
+        );
+        detail.set_playlist_manager(playlist_manager);
+        let _ = self.add_buffer(Box::new(detail));
+    }
+
+    /// Create playlist picker buffer
+    pub fn create_playlist_picker_buffer(
+        &mut self,
+        playlists: Vec<(PlaylistId, String, usize)>,
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+    ) {
+        let picker = crate::ui::buffers::playlist_picker::PlaylistPickerBuffer::new(
+            playlists, podcast_id, episode_id,
+        );
+        let _ = self.add_buffer(Box::new(picker));
+    }
+
     /// Get mutable reference to podcast list buffer
     pub fn get_podcast_list_buffer_mut(
         &mut self,
     ) -> Option<&mut crate::ui::buffers::podcast_list::PodcastListBuffer> {
         let podcast_id = "podcast-list".to_string();
-        self.get_buffer(&podcast_id).and_then(|buffer| {
-            // This is safe because we know podcast-list buffer is always PodcastListBuffer
-            let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
-            unsafe {
-                (raw_ptr as *mut crate::ui::buffers::podcast_list::PodcastListBuffer).as_mut()
-            }
-        })
+        self.get_buffer(&podcast_id)
+            .and_then(|buffer| buffer.as_any_mut().downcast_mut())
     }
 
     /// Get mutable reference to episode list buffer by podcast name
@@ -327,13 +370,8 @@ impl BufferManager {
         podcast_name: &str,
     ) -> Option<&mut crate::ui::buffers::episode_list::EpisodeListBuffer> {
         let episode_id = format!("episodes-{}", podcast_name.replace(' ', "-").to_lowercase());
-        self.get_buffer(&episode_id).and_then(|buffer| {
-            // This is safe because we know episode buffer is always EpisodeListBuffer
-            let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
-            unsafe {
-                (raw_ptr as *mut crate::ui::buffers::episode_list::EpisodeListBuffer).as_mut()
-            }
-        })
+        self.get_buffer(&episode_id)
+            .and_then(|buffer| buffer.as_any_mut().downcast_mut())
     }
 
     /// Get mutable reference to episode list buffer by buffer ID
@@ -342,13 +380,8 @@ impl BufferManager {
         buffer_id: &str,
     ) -> Option<&mut crate::ui::buffers::episode_list::EpisodeListBuffer> {
         let buffer_id = buffer_id.to_string();
-        self.get_buffer(&buffer_id).and_then(|buffer| {
-            // This is safe because we know episode buffer is always EpisodeListBuffer
-            let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
-            unsafe {
-                (raw_ptr as *mut crate::ui::buffers::episode_list::EpisodeListBuffer).as_mut()
-            }
-        })
+        self.get_buffer(&buffer_id)
+            .and_then(|buffer| buffer.as_any_mut().downcast_mut())
     }
 
     /// Get mutable reference to downloads buffer
@@ -356,11 +389,8 @@ impl BufferManager {
         &mut self,
     ) -> Option<&mut crate::ui::buffers::downloads::DownloadsBuffer> {
         let buffer_id = "downloads".to_string();
-        self.get_buffer(&buffer_id).and_then(|buffer| {
-            // This is safe because we know downloads buffer is always DownloadsBuffer
-            let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
-            unsafe { (raw_ptr as *mut crate::ui::buffers::downloads::DownloadsBuffer).as_mut() }
-        })
+        self.get_buffer(&buffer_id)
+            .and_then(|buffer| buffer.as_any_mut().downcast_mut())
     }
 
     /// Get mutable reference to What's New buffer
@@ -368,21 +398,34 @@ impl BufferManager {
         &mut self,
     ) -> Option<&mut crate::ui::buffers::whats_new::WhatsNewBuffer> {
         let buffer_id = "whats-new".to_string();
-        self.get_buffer(&buffer_id).and_then(|buffer| {
-            // This is safe because we know whats-new buffer is always WhatsNewBuffer
-            let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
-            unsafe { (raw_ptr as *mut crate::ui::buffers::whats_new::WhatsNewBuffer).as_mut() }
-        })
+        self.get_buffer(&buffer_id)
+            .and_then(|buffer| buffer.as_any_mut().downcast_mut())
     }
 
     /// Get mutable reference to Sync buffer
     pub fn get_sync_buffer_mut(&mut self) -> Option<&mut crate::ui::buffers::sync::SyncBuffer> {
         let buffer_id = "sync".to_string();
-        self.get_buffer(&buffer_id).and_then(|buffer| {
-            // This is safe because we know sync buffer is always SyncBuffer
-            let raw_ptr = buffer.as_mut() as *mut dyn Buffer;
-            unsafe { (raw_ptr as *mut crate::ui::buffers::sync::SyncBuffer).as_mut() }
-        })
+        self.get_buffer(&buffer_id)
+            .and_then(|buffer| buffer.as_any_mut().downcast_mut())
+    }
+
+    /// Get mutable reference to playlist list buffer
+    pub fn get_playlist_list_buffer_mut(
+        &mut self,
+    ) -> Option<&mut crate::ui::buffers::playlist_list::PlaylistListBuffer> {
+        let buffer_id = "playlist-list".to_string();
+        self.get_buffer(&buffer_id)
+            .and_then(|buffer| buffer.as_any_mut().downcast_mut())
+    }
+
+    /// Get mutable reference to a playlist detail buffer by ID.
+    pub fn get_playlist_detail_buffer_mut_by_id(
+        &mut self,
+        buffer_id: &str,
+    ) -> Option<&mut crate::ui::buffers::playlist_detail::PlaylistDetailBuffer> {
+        let buffer_id = buffer_id.to_string();
+        self.get_buffer(&buffer_id)
+            .and_then(|buffer| buffer.as_any_mut().downcast_mut())
     }
 
     /// Create episode list buffer for a podcast

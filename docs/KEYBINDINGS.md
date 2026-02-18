@@ -25,6 +25,7 @@ This document outlines the keybinding system for the Podcast TUI application.
 - `F3` - Switch to help buffer
 - `F4` - Switch to downloads buffer
 - `F5` - Refresh current buffer
+- `F7` - Switch to playlists buffer
 - `Ctrl+b` - Show buffer list / Switch buffer
 - `Ctrl+k` - Close current buffer
 - `Ctrl+l` - List all buffers
@@ -43,6 +44,7 @@ This document outlines the keybinding system for the Podcast TUI application.
 ### Podcast Management
 - `a` - Add new podcast subscription
 - `d` - Delete selected podcast (with confirmation)
+- `c` - Create playlist
 - `r` - Refresh selected podcast feed
 - `Shift+R` - Refresh all podcast feeds
 - `Ctrl+r` - Hard refresh selected podcast (re-parse all episodes)
@@ -53,6 +55,9 @@ This document outlines the keybinding system for the Podcast TUI application.
 - `Enter` - Play selected episode (when playback is implemented in Sprint 4)
 - `Shift+D` - Download selected episode
 - `Shift+X` - Delete downloaded file for selected episode
+- `p` - Add selected episode to a playlist
+- `Ctrl+↑` - Move selected playlist episode up (playlist detail buffer)
+- `Ctrl+↓` - Move selected playlist episode down (playlist detail buffer)
 - `Ctrl+x` - Delete ALL downloaded episodes and clean up downloads folder
 
 ### Minibuffer Input (When Active)
@@ -100,8 +105,15 @@ This document outlines the keybinding system for the Podcast TUI application.
   - Auto-cleanup also runs on startup when `cleanup_after_days` is set in config (default: 30)
 
 #### Sync Commands
-- `sync [path]` / `sync-device [path]` - Sync downloaded episodes to external device
+- `sync [path]` / `sync-device [path]` - Sync podcasts + playlists to external device
 - `sync-dry-run [path]` / `sync-preview [path]` - Preview sync changes without applying them
+
+#### Playlist Commands
+- `playlists` - Open playlists buffer
+- `playlist-create [name]` / `playlist-new [name]` - Create playlist
+- `playlist-delete <name>` - Delete playlist by name
+- `playlist-refresh` - Refresh auto-generated `Today` playlist
+- `playlist-sync` - Trigger standard device sync (podcasts + playlists)
 
 #### Search & Filter Commands
 - `search` - Search episodes by title (also `/` keybinding)
@@ -145,6 +157,14 @@ The command prompt supports intelligent auto-completion:
 - Shows all downloaded episodes across all podcasts
 - Displays download progress for active downloads
 - Shows file sizes and download status
+
+### Playlists Buffer
+- Shows all user playlists plus auto-generated `Today` playlist
+- `Enter` opens playlist detail
+- `c` creates a playlist
+- `d` deletes selected playlist (with confirmation)
+- `r` refreshes `Today` (from playlist list)
+- `r` in playlist detail refreshes `Today` for auto playlists, or rebuilds files for user playlists
 
 ### Help Buffer
 - Read-only buffer with help information

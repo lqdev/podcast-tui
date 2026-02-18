@@ -118,11 +118,25 @@ impl HelpBuffer {
             "  X             Delete selected download".to_string(),
             "  Enter         View download details".to_string(),
             "".to_string(),
+            "PLAYLISTS BUFFER (F7):".to_string(),
+            "  F7            Switch to playlists buffer".to_string(),
+            "  c             Create playlist".to_string(),
+            "  d             Delete selected playlist (with confirmation)".to_string(),
+            "  r             Refresh Today or rebuild selected user playlist".to_string(),
+            "  p             Add selected episode to a playlist (episode lists)".to_string(),
+            "  Ctrl+↑/Ctrl+↓ Reorder episodes in playlist detail".to_string(),
+            "".to_string(),
             "DEVICE SYNC:".to_string(),
-            "  :sync <path>         Sync downloaded episodes to device".to_string(),
+            "  :sync <path>         Sync podcasts and playlists to device".to_string(),
+            "  :sync --hard <path>  Wipe managed device dirs, then fresh copy".to_string(),
             "  :sync-dry-run <path> Preview sync changes without applying".to_string(),
+            "  :playlists           Open playlists buffer".to_string(),
+            "  :playlist-create     Create playlist".to_string(),
+            "  :playlist-delete     Delete playlist by name".to_string(),
+            "  :playlist-refresh    Refresh Today auto-playlist".to_string(),
             "  :buffer sync         Switch to sync buffer to view history".to_string(),
             "  Note: Sync compares files by name and size (metadata-only)".to_string(),
+            "        Use --hard to clear Podcasts/Playlists before copying".to_string(),
             "        Use dry-run to preview changes before actual sync".to_string(),
             "        Config: sync_device_path, sync_delete_orphans in config.json".to_string(),
             "".to_string(),
@@ -159,6 +173,7 @@ impl HelpBuffer {
             "  F3            Switch to help buffer".to_string(),
             "  F4            Switch to downloads buffer".to_string(),
             "  F5            Refresh current buffer".to_string(),
+            "  F7            Switch to playlists buffer".to_string(),
             "  F10           Quit application".to_string(),
             "".to_string(),
             "Note: These keybindings work in VS Code and other environments.".to_string(),
@@ -231,6 +246,14 @@ impl Buffer for HelpBuffer {
 
     fn name(&self) -> String {
         self.title.clone()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 
     fn can_close(&self) -> bool {

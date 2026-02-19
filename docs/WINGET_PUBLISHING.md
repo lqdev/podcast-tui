@@ -281,11 +281,11 @@ wingetcreate token --store <github-pat>
 
 ## Version History
 
-| Version | Release Date | Notes |
-|---------|-------------|-------|
+| Version | Manifest Created | Notes |
+|---------|-----------------|-------|
 | 1.5.0 | 2026-02-15 | Initial winget submission (x64 + ARM64) |
-| 1.6.0 | 2026-02-16 | Backfilled — manifest created manually (winget-pkgs submission pending) |
-| 1.7.0 | 2026-02-17 | Backfilled — manifest created manually (winget-pkgs submission pending) |
+| 1.6.0 | 2026-02-19 | Backfilled — manifest created manually (winget-pkgs submission pending) |
+| 1.7.0 | 2026-02-19 | Backfilled — manifest created manually (winget-pkgs submission pending) |
 | 1.8.0 | 2026-02-19 | Backfilled — manifest created manually (winget-pkgs submission pending) |
 
 ---

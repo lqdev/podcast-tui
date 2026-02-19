@@ -80,5 +80,13 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Cargo.toml manifests/
           git diff --cached --stat
-          git commit -m "chore: sync version to ${{ steps.version.outputs.VERSION }} after release"
-          git push origin main
+          # Only commit and push if there are staged changes.
+          # This prevents workflow failure when the version was already
+          # synced manually before this automation ran.
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "chore: sync version to ${{ steps.version.outputs.VERSION }} after release"
+            git push origin main
+          } else {
+            Write-Host "Nothing to commit — version already in sync with ${{ steps.version.outputs.VERSION }}"
+          }

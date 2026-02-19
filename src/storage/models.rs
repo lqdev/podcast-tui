@@ -130,13 +130,13 @@ pub enum StorageError {
         error: String,
     },
 
-    #[error("Could not initialize podcast storage.")]
+    #[error("Could not initialize podcast storage: {reason}")]
     InitializationFailed { reason: String },
 
-    #[error("Could not create a storage backup.")]
+    #[error("Could not create a storage backup: {reason}")]
     BackupFailed { reason: String },
 
-    #[error("Could not restore from backup.")]
+    #[error("Could not restore from backup: {reason}")]
     RestoreFailed { reason: String },
 }
 
@@ -197,7 +197,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn storage_error_display_messages_are_user_friendly() {
+    fn test_storage_error_display_omits_technical_details() {
         let podcast_id = PodcastId::from_string("123e4567-e89b-12d3-a456-426614174000").unwrap();
         let episode_id = EpisodeId::from_string("123e4567-e89b-12d3-a456-426614174001").unwrap();
         let serialization_error =
@@ -258,19 +258,19 @@ mod tests {
                 StorageError::InitializationFailed {
                     reason: "missing config".to_string(),
                 },
-                "Could not initialize podcast storage.".to_string(),
+                "Could not initialize podcast storage: missing config".to_string(),
             ),
             (
                 StorageError::BackupFailed {
                     reason: "disk full".to_string(),
                 },
-                "Could not create a storage backup.".to_string(),
+                "Could not create a storage backup: disk full".to_string(),
             ),
             (
                 StorageError::RestoreFailed {
                     reason: "invalid archive".to_string(),
                 },
-                "Could not restore from backup.".to_string(),
+                "Could not restore from backup: invalid archive".to_string(),
             ),
         ];
 
@@ -284,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn storage_error_technical_details_preserve_internal_fields() {
+    fn test_storage_error_technical_details_preserves_all_fields() {
         let podcast_id = PodcastId::from_string("123e4567-e89b-12d3-a456-426614174000").unwrap();
         let episode_id = EpisodeId::from_string("123e4567-e89b-12d3-a456-426614174001").unwrap();
 

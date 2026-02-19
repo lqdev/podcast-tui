@@ -1,11 +1,11 @@
 [package]
 name = "podcast-tui"
-version = "1.2.0-mvp"
+version = "1.8.0"
 edition = "2021"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["lqdev"]
 description = "A cross-platform terminal user interface for podcast management"
 license = "MIT"
-repository = "https://github.com/yourusername/podcast-tui"
+repository = "https://github.com/lqdev/podcast-tui"
 keywords = ["podcast", "tui", "terminal", "rss", "audio"]
 categories = ["command-line-utilities", "multimedia::audio"]
 

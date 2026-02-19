@@ -79,10 +79,7 @@ impl KeyHandler {
             KeyChord::none(KeyCode::F(2)),
             UIAction::SwitchBuffer("podcast-list".to_string()),
         );
-        self.bind_key(
-            KeyChord::none(KeyCode::F(3)),
-            UIAction::SwitchBuffer("*Help*".to_string()),
-        );
+        self.bind_key(KeyChord::none(KeyCode::F(3)), UIAction::Search);
         self.bind_key(
             KeyChord::none(KeyCode::F(4)),
             UIAction::SwitchBuffer("downloads".to_string()),

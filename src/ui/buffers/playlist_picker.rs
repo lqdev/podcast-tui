@@ -115,7 +115,7 @@ impl UIComponent for PlaylistPickerBuffer {
                         episode_id: self.target_episode_id.clone(),
                     }
                 } else {
-                    UIAction::ShowError("No playlist selected".to_string())
+                    UIAction::ShowMessage("No playlist selected".to_string())
                 }
             }
             UIAction::CreatePlaylist => UIAction::PromptInput("Create playlist: ".to_string()),

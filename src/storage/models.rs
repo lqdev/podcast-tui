@@ -29,14 +29,6 @@ impl PodcastId {
         let uuid = Uuid::from_u64_pair(hash, hash);
         Self(uuid)
     }
-
-    /// Get the string representation of the ID
-    pub fn as_str(&self) -> &str {
-        // This is a workaround - we return the Display formatted string
-        // For a proper implementation, we'd store the string separately
-        // or use a different ID type
-        unsafe { std::mem::transmute(Box::leak(Box::new(self.0.to_string())).as_str()) }
-    }
 }
 
 impl Default for PodcastId {

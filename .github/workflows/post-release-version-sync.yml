@@ -1,0 +1,84 @@
+name: Post-Release Version Sync
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  sync-version:
+    name: Sync Cargo.toml and winget manifests
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.release.tag_name }}"
+          # Tags use clean semver since v1.6.0: v1.6.0, v1.7.0, v1.8.0, etc.
+          $version = if ($tag.StartsWith('v')) { $tag.Substring(1) } else { $tag }
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "TAG=$tag" >> $env:GITHUB_OUTPUT
+          Write-Host "Tag: $tag -> Version: $version"
+
+      - name: Update Cargo.toml version
+        shell: pwsh
+        run: |
+          # Replace only the top-level [package] version line.
+          # Uses multiline regex anchored to start-of-line to avoid
+          # matching dependency version strings elsewhere in the file.
+          $content = Get-Content Cargo.toml -Raw
+          $newContent = $content -replace '(?m)^version = ".*"', ('version = "' + "${{ steps.version.outputs.VERSION }}" + '"')
+          Set-Content Cargo.toml -Value $newContent -NoNewline
+          Write-Host "Updated Cargo.toml to version ${{ steps.version.outputs.VERSION }}"
+          Get-Content Cargo.toml | Select-Object -First 5
+
+      - name: Install wingetcreate
+        shell: pwsh
+        run: |
+          # Download standalone EXE — no winget required on the runner
+          Invoke-WebRequest -Uri https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+
+      - name: Generate winget manifests
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $tag     = "${{ steps.version.outputs.TAG }}"
+          $baseUrl = "https://github.com/lqdev/podcast-tui/releases/download/$tag"
+
+          # Artifact naming pattern (clean semver since v1.6.0):
+          #   podcast-tui-{TAG}-windows-{arch}.zip
+          $arm64Url = "$baseUrl/podcast-tui-$tag-windows-aarch64.zip|arm64"
+          $x64Url   = "$baseUrl/podcast-tui-$tag-windows-x86_64.zip|x64"
+
+          # wingetcreate creates the full l/lqdev/PodcastTUI/<version>/ tree
+          # under --out, so point at the manifests root.
+          # NOTE: This step requires lqdev.PodcastTUI to exist in the
+          # microsoft/winget-pkgs repository. Submit the package first via
+          # docs/WINGET_PUBLISHING.md before this workflow will succeed.
+          .\wingetcreate.exe update lqdev.PodcastTUI `
+            --version $version `
+            --urls $arm64Url $x64Url `
+            --out manifests
+
+          Write-Host "Generated manifests:"
+          Get-ChildItem "manifests/l/lqdev/PodcastTUI/$version"
+
+      - name: Commit and push version sync
+        shell: pwsh
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml manifests/
+          git diff --cached --stat
+          git commit -m "chore: sync version to ${{ steps.version.outputs.VERSION }} after release"
+          git push origin main

@@ -2408,4 +2408,99 @@ mod tests {
         // Confirm file is deleted
         assert!(!episode.local_path.as_ref().unwrap().exists());
     }
+
+    // -----------------------------------------------------------------------
+    // Failure-tracking test using MockStorage (generated via mockall::automock)
+    // -----------------------------------------------------------------------
+
+    /// Verifies that when save_episode() fails after a file has been deleted,
+    /// cleanup_old_downloads_hours() returns Err with:
+    ///   - the aggregate failure count in the message
+    ///   - the first underlying error detail (from the #47 improvement)
+    ///
+    /// Also verifies that the deletion itself is not rolled back — the file
+    /// is gone from disk even though the status-reset save failed.
+    #[tokio::test]
+    async fn test_cleanup_failure_tracking_on_save_error() {
+        use crate::storage::models::StorageError;
+        use crate::storage::traits::MockStorage;
+
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let downloads_dir = temp_dir.path().join("downloads");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        let podcast_id = PodcastId::new();
+
+        // Create the episode file on disk
+        let episode_file = downloads_dir.join("FailPod").join("episode.mp3");
+        fs::create_dir_all(episode_file.parent().unwrap())
+            .await
+            .unwrap();
+        fs::write(&episode_file, b"fake audio data").await.unwrap();
+
+        // Age the file to 10 days — well past the 7-day cleanup cutoff
+        let ten_days = std::time::Duration::from_secs(10 * 24 * 3600);
+        set_file_mtime_age(&episode_file, ten_days);
+
+        // Build an Episode that believes it is Downloaded at that file path
+        let mut episode = Episode::new(
+            podcast_id.clone(),
+            "Fail Episode".to_string(),
+            "https://example.com/episode.mp3".to_string(),
+            Utc::now(),
+        );
+        episode.status = EpisodeStatus::Downloaded;
+        episode.local_path = Some(episode_file.clone());
+
+        // Configure MockStorage:
+        //   list_podcasts  → succeeds, returns our one podcast ID
+        //   load_episodes  → succeeds, returns our one downloaded episode
+        //   save_episode   → always fails (simulates e.g. disk-full after deletion)
+        let podcast_id_for_mock = podcast_id.clone();
+        let episode_for_mock = episode.clone();
+        let mut mock = MockStorage::new();
+        mock.expect_list_podcasts()
+            .returning(move || Ok(vec![podcast_id_for_mock.clone()]));
+        mock.expect_load_episodes()
+            .returning(move |_| Ok(vec![episode_for_mock.clone()]));
+        mock.expect_save_episode()
+            .returning(|_, _| Err(StorageError::Io(std::io::Error::other("disk full"))));
+
+        let storage = Arc::new(mock);
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+
+        // Act
+        let result = manager.cleanup_old_downloads_hours(7 * 24).await;
+
+        // Assert: method returns Err because save_episode failed
+        assert!(
+            result.is_err(),
+            "expected Err when save_episode fails after file deletion, got: {:?}",
+            result
+        );
+
+        let err_msg = result.unwrap_err().to_string();
+
+        // Error message must report that at least one operation failed
+        assert!(
+            err_msg.contains("operations failed"),
+            "expected 'operations failed' in error message, got: {}",
+            err_msg
+        );
+
+        // Error message must include the first error detail (added in #47)
+        assert!(
+            err_msg.contains("First error:"),
+            "expected first error detail in error message, got: {}",
+            err_msg
+        );
+
+        // The file was deleted before save_episode was called — deletion is not rolled back
+        assert!(
+            !episode_file.exists(),
+            "file should have been deleted from disk even though save_episode failed"
+        );
+    }
 }

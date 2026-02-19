@@ -9,6 +9,7 @@ use async_trait::async_trait;
 /// This trait provides an abstraction layer over data storage,
 /// allowing for different backend implementations (JSON, SQLite, etc.)
 /// while maintaining a consistent interface for the application logic.
+#[cfg_attr(test, mockall::automock(type Error = StorageError;))]
 #[async_trait]
 pub trait Storage: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;

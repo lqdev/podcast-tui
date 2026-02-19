@@ -515,7 +515,7 @@ impl UIApp {
                         }
                     }
                 } else {
-                    self.show_error("No buffer to close".to_string());
+                    self.show_message("No buffer to close".to_string());
                     Ok(true)
                 }
             }
@@ -575,7 +575,7 @@ impl UIApp {
                                 });
                             }
                         } else {
-                            self.show_error("No playlist selected for deletion".to_string());
+                            self.show_message("No playlist selected for deletion".to_string());
                         }
                     }
                     return Ok(true);
@@ -595,7 +595,7 @@ impl UIApp {
                             input: String::new(),
                         });
                     } else {
-                        self.show_error("No podcast selected for deletion".to_string());
+                        self.show_message("No podcast selected for deletion".to_string());
                     }
                 } else {
                     self.show_error("Podcast list not available".to_string());
@@ -647,7 +647,7 @@ impl UIApp {
                         // Trigger async refresh
                         self.trigger_async_refresh_single(podcast_id);
                     } else {
-                        self.show_error("No podcast selected for refresh".to_string());
+                        self.show_message("No podcast selected for refresh".to_string());
                     }
                 } else {
                     self.show_error("Podcast list not available".to_string());
@@ -747,7 +747,7 @@ impl UIApp {
                             Err(e) => self.show_error(format!("Could not list playlists: {}", e)),
                         }
                     } else {
-                        self.show_error("No episode selected".to_string());
+                        self.show_message("No episode selected".to_string());
                     }
                 }
                 Ok(true)
@@ -819,7 +819,7 @@ impl UIApp {
                         // Trigger async hard refresh
                         self.trigger_async_hard_refresh_single(podcast_id);
                     } else {
-                        self.show_error("No podcast selected for hard refresh".to_string());
+                        self.show_message("No podcast selected for hard refresh".to_string());
                     }
                 } else {
                     self.show_error("Podcast list not available".to_string());
@@ -1677,7 +1677,7 @@ impl UIApp {
                             }
                         }
                     } else {
-                        self.show_error("No buffer to close".to_string());
+                        self.show_message("No buffer to close".to_string());
                         Ok(true)
                     }
                 }
@@ -3657,7 +3657,7 @@ impl UIApp {
                 self.pending_bulk_deletion = false;
                 self.trigger_async_delete_all_downloads();
             } else {
-                self.show_error("No deletion pending".to_string());
+                self.show_message("No deletion pending".to_string());
             }
         } else if input.to_lowercase() == "n" || input.to_lowercase() == "no" {
             // Cancel deletion

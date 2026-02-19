@@ -32,10 +32,13 @@ manifests/
 └── l/
     └── lqdev/
         └── PodcastTUI/
-            └── 1.5.0/
-                ├── lqdev.PodcastTUI.yaml                 # Version manifest
-                ├── lqdev.PodcastTUI.installer.yaml        # Installer manifest
-                └── lqdev.PodcastTUI.locale.en-US.yaml     # Locale manifest
+            ├── 1.5.0/
+            │   ├── lqdev.PodcastTUI.yaml                 # Version manifest
+            │   ├── lqdev.PodcastTUI.installer.yaml        # Installer manifest
+            │   └── lqdev.PodcastTUI.locale.en-US.yaml     # Locale manifest
+            ├── 1.6.0/
+            ├── 1.7.0/
+            └── 1.8.0/
 ```
 
 ### Version Manifest (`lqdev.PodcastTUI.yaml`)
@@ -61,9 +64,9 @@ Each architecture entry specifies:
 ```yaml
 - Architecture: arm64
   NestedInstallerFiles:
-  - RelativeFilePath: podcast-tui-v1.5.0-mvp-windows-aarch64\podcast-tui.exe
+  - RelativeFilePath: podcast-tui-v1.8.0-windows-aarch64\podcast-tui.exe
     PortableCommandAlias: podcast-tui
-  InstallerUrl: https://github.com/lqdev/podcast-tui/releases/download/v1.5.0-mvp/...
+  InstallerUrl: https://github.com/lqdev/podcast-tui/releases/download/v1.8.0/...
   InstallerSha256: <sha256-hash>
 ```
 
@@ -96,11 +99,34 @@ Alternative installation methods:
 
 ---
 
+## Automation
+
+### Post-Release Version Sync Workflow
+
+A GitHub Actions workflow at `.github/workflows/post-release-version-sync.yml` automatically runs after each GitHub release is published. It:
+
+1. Updates `Cargo.toml` version to match the release tag
+2. Runs `wingetcreate update` to generate new manifests
+3. Commits and pushes both changes to `main`
+
+**Prerequisite**: `lqdev.PodcastTUI` must be submitted to and accepted in `microsoft/winget-pkgs` before the manifest generation step will succeed. Until then, use the manual post-release checklist below.
+
+---
+
 ## Workflow
 
 ### Creating a New Version Manifest
 
-When a new release of Podcast TUI is published on GitHub, follow these steps to update the winget package.
+When a new release of Podcast TUI is published on GitHub, the post-release workflow handles this automatically (see [Automation](#automation) above). If the workflow is not yet active or needs a manual override, follow these steps.
+
+#### Post-Release Checklist (Manual)
+
+1. [ ] Update `Cargo.toml` version to match the release tag (e.g., `version = "1.9.0"`)
+2. [ ] Run `wingetcreate update` to generate new manifests (see Step 2 below)
+3. [ ] Validate: `winget validate manifests\l\lqdev\PodcastTUI\<version>`
+4. [ ] Commit: `git commit -m "chore: sync version to <version> after release"`
+5. [ ] Push to `main`
+6. [ ] Submit to winget-pkgs (see Step 5 below)
 
 #### Step 1: Build and Publish the Release
 
@@ -108,7 +134,7 @@ When a new release of Podcast TUI is published on GitHub, follow these steps to 
    ```powershell
    .\scripts\build-releases-windows.ps1
    ```
-2. Create a GitHub Release with the version tag (e.g., `v1.6.0-mvp`)
+2. Create a GitHub Release with the version tag (e.g., `v1.9.0`)
 3. Upload the zip archives for each architecture
 
 #### Step 2: Create or Update the Manifest
@@ -117,13 +143,15 @@ When a new release of Podcast TUI is published on GitHub, follow these steps to 
 
 ```powershell
 wingetcreate update lqdev.PodcastTUI `
-  --version 1.6.0 `
-  --urls "https://github.com/lqdev/podcast-tui/releases/download/v1.6.0-mvp/podcast-tui-v1.6.0-mvp-windows-aarch64.zip|arm64" `
-        "https://github.com/lqdev/podcast-tui/releases/download/v1.6.0-mvp/podcast-tui-v1.6.0-mvp-windows-x86_64.zip|x64" `
+  --version 1.9.0 `
+  --urls "https://github.com/lqdev/podcast-tui/releases/download/v1.9.0/podcast-tui-v1.9.0-windows-aarch64.zip|arm64" `
+        "https://github.com/lqdev/podcast-tui/releases/download/v1.9.0/podcast-tui-v1.9.0-windows-x86_64.zip|x64" `
   --out manifests
 ```
 
-The `|arm64` and `|x64` suffixes explicitly specify the architecture for each URL.
+The `|arm64` and `|x64` suffixes explicitly specify the architecture for each URL. `wingetcreate` downloads each installer to compute the SHA256 hash automatically.
+
+**Note**: `wingetcreate update` requires `lqdev.PodcastTUI` to already exist in `microsoft/winget-pkgs`. If the package has not been submitted yet, create the manifest YAML files manually using the existing version as a template, updating `PackageVersion`, `InstallerUrl`, `InstallerSha256`, `RelativeFilePath`, and `ReleaseNotesUrl`.
 
 **For a brand-new package (first-time submission):**
 
@@ -147,7 +175,7 @@ winget settings --enable LocalManifestFiles
 Validate manifest schema:
 
 ```powershell
-winget validate manifests\l\lqdev\PodcastTUI\1.6.0
+winget validate manifests\l\lqdev\PodcastTUI\1.9.0
 ```
 
 #### Step 4: Test Locally
@@ -155,7 +183,7 @@ winget validate manifests\l\lqdev\PodcastTUI\1.6.0
 Install from the local manifest to verify everything works:
 
 ```powershell
-winget install --manifest manifests\l\lqdev\PodcastTUI\1.6.0
+winget install --manifest manifests\l\lqdev\PodcastTUI\1.9.0
 ```
 
 Verify the installation:
@@ -175,7 +203,7 @@ winget uninstall lqdev.PodcastTUI
 **Option A — Submit via wingetcreate (recommended):**
 
 ```powershell
-wingetcreate submit manifests\l\lqdev\PodcastTUI\1.6.0 --token <github-pat>
+wingetcreate submit manifests\l\lqdev\PodcastTUI\1.9.0 --token <github-pat>
 ```
 
 This automatically:
@@ -227,12 +255,12 @@ If you need to manually compute SHA256 hashes for installer URLs:
 
 ```powershell
 # PowerShell
-Get-FileHash .\podcast-tui-v1.6.0-mvp-windows-x86_64.zip -Algorithm SHA256
+Get-FileHash .\podcast-tui-v1.9.0-windows-x86_64.zip -Algorithm SHA256
 ```
 
 ```bash
 # Linux/macOS
-sha256sum podcast-tui-v1.6.0-mvp-windows-x86_64.zip
+sha256sum podcast-tui-v1.9.0-windows-x86_64.zip
 ```
 
 ---
@@ -256,6 +284,9 @@ wingetcreate token --store <github-pat>
 | Version | Release Date | Notes |
 |---------|-------------|-------|
 | 1.5.0 | 2026-02-15 | Initial winget submission (x64 + ARM64) |
+| 1.6.0 | 2026-02-16 | Backfilled — manifest created manually (winget-pkgs submission pending) |
+| 1.7.0 | 2026-02-17 | Backfilled — manifest created manually (winget-pkgs submission pending) |
+| 1.8.0 | 2026-02-19 | Backfilled — manifest created manually (winget-pkgs submission pending) |
 
 ---
 
@@ -288,3 +319,6 @@ wingetcreate submit manifests\l\lqdev\PodcastTUI\<VER> --token <PAT>
 - [Manifest schema reference](https://aka.ms/winget-manifest.version.1.10.0.schema.json)
 - [Windows Package Manager documentation](https://learn.microsoft.com/en-us/windows/package-manager/)
 - [Build System documentation](BUILD_SYSTEM.md)
+
+---
+*Last Updated: February 2026 | Version: v1.8.0 | Maintainer: [@lqdev](https://github.com/lqdev)*

@@ -498,6 +498,7 @@ impl<S: Storage> DownloadManager<S> {
 
         let mut deleted_count: usize = 0;
         let mut failed_count: usize = 0;
+        let mut first_error: Option<String> = None;
 
         let podcast_ids = self
             .storage
@@ -526,17 +527,30 @@ impl<S: Storage> DownloadManager<S> {
                                         Ok(_) => {
                                             episode.status = EpisodeStatus::New;
                                             episode.local_path = None;
-                                            if let Err(_) = self
+                                            if let Err(e) = self
                                                 .storage
                                                 .save_episode(podcast_id, &episode)
                                                 .await
                                             {
                                                 failed_count += 1;
+                                                if first_error.is_none() {
+                                                    first_error = Some(format!(
+                                                        "Failed to save episode '{}' (podcast {}): {}",
+                                                        &episode.title, podcast_id, e
+                                                    ));
+                                                }
                                             }
                                             deleted_count += 1;
                                         }
-                                        Err(_) => {
+                                        Err(e) => {
                                             failed_count += 1;
+                                            if first_error.is_none() {
+                                                first_error = Some(format!(
+                                                    "Failed to delete '{}': {}",
+                                                    local_path.display(),
+                                                    e
+                                                ));
+                                            }
                                         }
                                     }
                                 }
@@ -547,8 +561,14 @@ impl<S: Storage> DownloadManager<S> {
                         // Clean up the stale status
                         episode.status = EpisodeStatus::New;
                         episode.local_path = None;
-                        if let Err(_) = self.storage.save_episode(podcast_id, &episode).await {
+                        if let Err(e) = self.storage.save_episode(podcast_id, &episode).await {
                             failed_count += 1;
+                            if first_error.is_none() {
+                                first_error = Some(format!(
+                                    "Failed to save episode '{}' (podcast {}): {}",
+                                    &episode.title, podcast_id, e
+                                ));
+                            }
                         }
                     }
                 }
@@ -559,9 +579,10 @@ impl<S: Storage> DownloadManager<S> {
         self.cleanup_empty_directories().await?;
 
         if failed_count > 0 {
+            let detail = first_error.unwrap_or_default();
             return Err(DownloadError::Storage(format!(
-                "Cleaned up {} files, but {} operations failed",
-                deleted_count, failed_count
+                "Cleaned up {} files, but {} operations failed. First error: {}",
+                deleted_count, failed_count, detail
             )));
         }
 

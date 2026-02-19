@@ -22,7 +22,7 @@ This document outlines the keybinding system for the Podcast TUI application.
 - `Ctrl+Page Up` - Switch to previous buffer (alternative)
 - `Ctrl+Page Down` - Switch to next buffer (alternative)
 - `F2` - Switch to podcast list buffer
-- `F3` - Switch to help buffer
+- `F3` - Search episodes
 - `F4` - Switch to downloads buffer
 - `F5` - Refresh current buffer
 - `F7` - Switch to playlists buffer
@@ -116,7 +116,7 @@ This document outlines the keybinding system for the Podcast TUI application.
 - `playlist-sync` - Trigger standard device sync (podcasts + playlists)
 
 #### Search & Filter Commands
-- `search` - Search episodes by title (also `/` keybinding)
+- `search` - Search episodes by title (also `/` and `F3` keybindings)
 - `filter-status <status>` - Filter by status: `new`, `downloaded`, `played`, `downloading`, `failed`
 - `filter-date <range>` - Filter by publish date: `today`, `12h`, `7d`, `2w`, `1m` (same syntax as cleanup)
 - `clear-filters` / `widen` - Remove all active filters

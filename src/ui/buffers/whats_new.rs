@@ -300,7 +300,7 @@ impl UIComponent for WhatsNewBuffer {
                 if let Some(agg_episode) = self.selected_episode() {
                     // Open episode detail buffer
                     UIAction::OpenEpisodeDetail {
-                        episode: agg_episode.episode.clone(),
+                        episode: Box::new(agg_episode.episode.clone()),
                     }
                 } else {
                     UIAction::ShowMessage("No episode selected".to_string())
@@ -315,10 +315,7 @@ impl UIComponent for WhatsNewBuffer {
                     } else if matches!(episode.status, EpisodeStatus::Downloading) {
                         UIAction::ShowMessage("Episode is already downloading".to_string())
                     } else if episode.audio_url.is_empty()
-                        && !episode
-                            .guid
-                            .as_ref()
-                            .map_or(false, |g| g.starts_with("http"))
+                        && !episode.guid.as_ref().is_some_and(|g| g.starts_with("http"))
                     {
                         UIAction::ShowMessage(
                             "Cannot download: No audio URL available for this episode".to_string(),

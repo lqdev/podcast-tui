@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::constants::{audio, downloads, storage, ui};
 
 /// Application configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     pub audio: AudioConfig,
     pub downloads: DownloadConfig,
@@ -54,19 +54,6 @@ impl Config {
             .ok_or_else(|| anyhow::anyhow!("Unable to determine config directory"))?;
 
         Ok(project_dirs.config_dir().join("config.json"))
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            audio: AudioConfig::default(),
-            downloads: DownloadConfig::default(),
-            keybindings: KeybindingConfig::default(),
-            storage: StorageConfig::default(),
-            ui: UiConfig::default(),
-            playlist: PlaylistConfig::default(),
-        }
     }
 }
 

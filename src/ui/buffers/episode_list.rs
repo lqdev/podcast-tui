@@ -281,7 +281,7 @@ impl UIComponent for EpisodeListBuffer {
                         // Open episode detail buffer
                         if let Some(episode) = self.selected_episode() {
                             UIAction::OpenEpisodeDetail {
-                                episode: episode.clone(),
+                                episode: Box::new(episode.clone()),
                             }
                         } else {
                             UIAction::None
@@ -318,10 +318,7 @@ impl UIComponent for EpisodeListBuffer {
                     } else if matches!(episode.status, crate::podcast::EpisodeStatus::Downloading) {
                         UIAction::ShowMessage("Episode is already downloading".to_string())
                     } else if episode.audio_url.is_empty()
-                        && !episode
-                            .guid
-                            .as_ref()
-                            .map_or(false, |g| g.starts_with("http"))
+                        && !episode.guid.as_ref().is_some_and(|g| g.starts_with("http"))
                     {
                         UIAction::ShowMessage(
                             "Cannot download: No audio URL available for this episode".to_string(),
@@ -435,10 +432,7 @@ impl UIComponent for EpisodeListBuffer {
                     let status_indicator = match episode.status {
                         crate::podcast::EpisodeStatus::New => {
                             if episode.audio_url.is_empty()
-                                && !episode
-                                    .guid
-                                    .as_ref()
-                                    .map_or(false, |g| g.starts_with("http"))
+                                && !episode.guid.as_ref().is_some_and(|g| g.starts_with("http"))
                             {
                                 "⚠"
                             } else {
@@ -452,10 +446,7 @@ impl UIComponent for EpisodeListBuffer {
                     };
 
                     let title_with_info = if episode.audio_url.is_empty()
-                        && !episode
-                            .guid
-                            .as_ref()
-                            .map_or(false, |g| g.starts_with("http"))
+                        && !episode.guid.as_ref().is_some_and(|g| g.starts_with("http"))
                         && episode.status == crate::podcast::EpisodeStatus::New
                     {
                         format!("{} (no audio URL)", episode.title)

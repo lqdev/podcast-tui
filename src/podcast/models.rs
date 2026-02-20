@@ -121,7 +121,7 @@ impl Episode {
     /// Check if the episode is downloaded
     pub fn is_downloaded(&self) -> bool {
         matches!(self.status, EpisodeStatus::Downloaded)
-            && self.local_path.as_ref().map_or(false, |p| p.exists())
+            && self.local_path.as_ref().is_some_and(|p| p.exists())
     }
 
     /// Check if the episode has been played

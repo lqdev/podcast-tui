@@ -45,6 +45,12 @@ pub struct DownloadsBuffer {
     storage: Option<Arc<JsonStorage>>,
 }
 
+impl Default for DownloadsBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DownloadsBuffer {
     /// Create a new downloads buffer
     pub fn new() -> Self {

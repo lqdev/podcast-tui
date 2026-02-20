@@ -451,7 +451,7 @@ impl<S: Storage> SubscriptionManager<S> {
                 }
             };
 
-            let feed_title = outline.title.as_deref().or(Some(&outline.text)).unwrap();
+            let feed_title = outline.title.as_deref().unwrap_or(&outline.text);
             let current = index + 1;
 
             progress_callback(format!(

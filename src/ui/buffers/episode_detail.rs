@@ -315,7 +315,7 @@ impl UIComponent for EpisodeDetailBuffer {
                         .episode
                         .guid
                         .as_ref()
-                        .map_or(false, |g| g.starts_with("http"))
+                        .is_some_and(|g| g.starts_with("http"))
                 {
                     UIAction::ShowMessage(
                         "Cannot download: No audio URL available for this episode".to_string(),

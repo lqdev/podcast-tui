@@ -299,16 +299,13 @@ impl UIApp {
                 }
                 // Handle incoming app events (from async tasks)
                 app_event = app_event_rx.recv() => {
-                    match app_event {
-                        Some(event) => {
-                            if let Err(e) = self.handle_app_event(event).await {
-                                self.show_error(format!(
-                                    "Could not process background event: {}",
-                                    e
-                                ));
-                            }
+                    if let Some(event) = app_event {
+                        if let Err(e) = self.handle_app_event(event).await {
+                            self.show_error(format!(
+                                "Could not process background event: {}",
+                                e
+                            ));
                         }
-                        None => {} // Channel closed, continue
                     }
                 }
                 // Render timeout
@@ -460,7 +457,7 @@ impl UIApp {
                     .buffer_manager
                     .find_buffer_id_by_name(&name)
                     .unwrap_or_else(|| name.clone());
-                if let Err(_) = self.buffer_manager.switch_to_buffer(&buffer_id) {
+                if self.buffer_manager.switch_to_buffer(&buffer_id).is_err() {
                     self.show_error(format!("Could not switch to buffer: {}", name));
                 }
                 self.update_status_bar();
@@ -1104,7 +1101,7 @@ impl UIApp {
                     match result_action {
                         UIAction::SwitchBuffer(buffer_id) => {
                             // Handle buffer switching from buffer list
-                            if let Err(_) = self.buffer_manager.switch_to_buffer(&buffer_id) {
+                            if self.buffer_manager.switch_to_buffer(&buffer_id).is_err() {
                                 self.show_error(format!(
                                     "Could not switch to buffer: {}",
                                     buffer_id
@@ -1163,7 +1160,7 @@ impl UIApp {
                             self.show_message(format!("Loading episodes for: {}", podcast_name));
                         }
                         UIAction::OpenEpisodeDetail { episode } => {
-                            self.open_episode_detail_buffer(episode);
+                            self.open_episode_detail_buffer(*episode);
                         }
                         UIAction::OpenEpisodeDetailById {
                             podcast_id,
@@ -1714,7 +1711,7 @@ impl UIApp {
 
     /// Execute a command directly without recursion
     fn execute_command_direct(&mut self, command: String) -> UIResult<bool> {
-        let parts: Vec<&str> = command.trim().split_whitespace().collect();
+        let parts: Vec<&str> = command.split_whitespace().collect();
         if parts.is_empty() {
             return Ok(true);
         }
@@ -2070,7 +2067,11 @@ impl UIApp {
         buffer_list_buffer.update_buffer_list(buffer_names, current_id.as_ref());
 
         // Add and switch to buffer list buffer
-        if let Ok(_) = self.buffer_manager.add_buffer(Box::new(buffer_list_buffer)) {
+        if self
+            .buffer_manager
+            .add_buffer(Box::new(buffer_list_buffer))
+            .is_ok()
+        {
             let _ = self.buffer_manager.switch_to_buffer(&buffer_list_id);
         }
 
@@ -2224,7 +2225,7 @@ impl UIApp {
         {
             // Get the command part and the buffer name part
             let parts: Vec<&str> = input.split_whitespace().collect();
-            if parts.len() >= 1 {
+            if !parts.is_empty() {
                 let command_part = parts[0];
 
                 // Get available buffer names (just the names)
@@ -2294,8 +2295,7 @@ impl UIApp {
         }
 
         // Add contextual completions for specific command patterns
-        if input_lower.starts_with("theme ") {
-            let theme_part = &input_lower[6..]; // Skip "theme "
+        if let Some(theme_part) = input_lower.strip_prefix("theme ") {
             let themes = ["dark", "light", "high-contrast", "solarized"];
             for theme in &themes {
                 if theme.starts_with(theme_part) {
@@ -3805,7 +3805,7 @@ impl UIApp {
             });
 
             if let Some((buffer_id, buffer_name)) = matching_buffer {
-                if let Err(_) = self.buffer_manager.switch_to_buffer(&buffer_id) {
+                if self.buffer_manager.switch_to_buffer(buffer_id).is_err() {
                     self.show_error(format!("Could not switch to buffer: {}", buffer_name));
                 } else {
                     self.update_status_bar();

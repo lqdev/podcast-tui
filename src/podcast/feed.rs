@@ -155,15 +155,13 @@ impl FeedParser {
             .header("Accept", "application/rss+xml, application/rdf+xml, application/atom+xml, application/xml, text/xml, */*")
             .send()
             .await
-            .map_err(|e| FeedError::Network(e))?;
+            .map_err(FeedError::Network)?;
 
         let status = response.status();
         let _final_url = response.url().clone();
 
         if !status.is_success() {
-            return Err(FeedError::Network(reqwest::Error::from(
-                response.error_for_status().unwrap_err(),
-            )));
+            return Err(FeedError::Network(response.error_for_status().unwrap_err()));
         }
 
         // Check content type if available (validation only)
@@ -176,7 +174,7 @@ impl FeedParser {
             }
         }
 
-        let content = response.text().await.map_err(|e| FeedError::Network(e))?;
+        let content = response.text().await.map_err(FeedError::Network)?;
 
         Ok(content)
     }
@@ -263,7 +261,7 @@ impl FeedParser {
         let duration_secs = duration.map(|d| d.num_seconds() as u32);
 
         // Create the audio URL - use empty string if not found, will be validated at download time
-        let audio_url = audio_url.unwrap_or_else(String::new);
+        let audio_url = audio_url.unwrap_or_default();
 
         let episode = Episode {
             id,
@@ -357,7 +355,7 @@ impl FeedParser {
         if let Some(enclosure_link) = entry
             .links
             .iter()
-            .find(|link| link.rel.as_ref().map_or(false, |rel| rel == "enclosure"))
+            .find(|link| link.rel.as_ref().is_some_and(|rel| rel == "enclosure"))
         {
             return Some(enclosure_link.href.clone());
         }

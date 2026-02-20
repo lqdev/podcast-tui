@@ -89,7 +89,7 @@ impl OpmlParser {
         } else {
             tokio::fs::read_to_string(&expanded_source)
                 .await
-                .map_err(|e| OpmlError::FileRead(e))?
+                .map_err(OpmlError::FileRead)?
         };
 
         // Validate OPML structure before parsing
@@ -171,18 +171,15 @@ impl OpmlParser {
             .get(url)
             .send()
             .await
-            .map_err(|e| OpmlError::NetworkError(e))?;
+            .map_err(OpmlError::NetworkError)?;
 
         if !response.status().is_success() {
-            return Err(OpmlError::NetworkError(reqwest::Error::from(
+            return Err(OpmlError::NetworkError(
                 response.error_for_status().unwrap_err(),
-            )));
+            ));
         }
 
-        let content = response
-            .text()
-            .await
-            .map_err(|e| OpmlError::NetworkError(e))?;
+        let content = response.text().await.map_err(OpmlError::NetworkError)?;
 
         Ok(content)
     }
@@ -274,11 +271,11 @@ impl OpmlExporter {
         let temp_path = path.with_extension("tmp");
         tokio::fs::write(&temp_path, opml_xml)
             .await
-            .map_err(|e| OpmlError::FileRead(e))?;
+            .map_err(OpmlError::FileRead)?;
 
         tokio::fs::rename(&temp_path, path)
             .await
-            .map_err(|e| OpmlError::FileRead(e))?;
+            .map_err(OpmlError::FileRead)?;
 
         Ok(())
     }
@@ -353,7 +350,7 @@ pub struct OpmlOutline {
 impl OpmlOutline {
     /// Get the feed URL (prefer xmlUrl over url)
     pub fn feed_url(&self) -> Option<&str> {
-        self.xml_url.as_deref().or_else(|| self.url.as_deref())
+        self.xml_url.as_deref().or(self.url.as_deref())
     }
 }
 

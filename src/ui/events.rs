@@ -44,7 +44,7 @@ impl UIEventHandler {
                     // Event is available, read it
                     let read_result = tokio::time::timeout(
                         Duration::from_millis(100),
-                        tokio::task::spawn_blocking(|| event::read()),
+                        tokio::task::spawn_blocking(event::read),
                     )
                     .await;
 

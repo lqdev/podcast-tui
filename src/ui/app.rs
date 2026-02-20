@@ -370,6 +370,10 @@ impl UIApp {
             self.download_manager.clone(),
             self.download_manager.storage().clone(),
         );
+        self.buffer_manager.create_sync_buffer(
+            self.download_manager.clone(),
+            self._storage.data_dir.clone(),
+        );
         self.buffer_manager.create_whats_new_buffer(
             self.subscription_manager.clone(),
             self.download_manager.clone(),
@@ -4605,9 +4609,7 @@ mod tests {
         .unwrap();
         app.initialize().await.unwrap();
 
-        // Register and activate the sync buffer (not created by initialize())
-        app.buffer_manager
-            .create_sync_buffer(download_manager.clone(), temp_path);
+        // Switch to the sync buffer (now created by initialize())
         app.buffer_manager
             .switch_to_buffer(&"sync".to_string())
             .unwrap();
@@ -4682,6 +4684,54 @@ mod tests {
         assert_eq!(
             app.buffer_manager.current_buffer_id(),
             Some("sync".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_initialize_creates_sync_buffer() {
+        // Arrange — build UIApp via new() which leaves BufferManager empty,
+        // then call initialize() (the real startup path from App::run)
+        use crate::config::DownloadConfig;
+        use crate::storage::JsonStorage;
+        use tempfile::TempDir;
+
+        let config = Config::default();
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.keep();
+
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_path.clone()));
+        let download_manager = Arc::new(
+            DownloadManager::new(storage.clone(), temp_path, DownloadConfig::default()).unwrap(),
+        );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
+        let (app_event_tx, _rx) = mpsc::unbounded_channel();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager,
+            storage,
+            app_event_tx,
+        )
+        .unwrap();
+
+        // Act
+        app.initialize().await.unwrap();
+
+        // Assert — sync buffer must be registered and switchable
+        let buffer_ids = app.buffer_manager.get_buffer_ids();
+        assert!(
+            buffer_ids.contains(&"sync".to_string()),
+            "initialize() must create the sync buffer; got: {:?}",
+            buffer_ids
+        );
+        assert!(
+            app.buffer_manager
+                .switch_to_buffer(&"sync".to_string())
+                .is_ok(),
+            "Should be able to switch to sync buffer after initialize()"
         );
     }
 }

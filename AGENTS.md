@@ -375,7 +375,7 @@ podcast-tui/
 
 1. **Understand the issue**: Read the issue description and comments
 2. **Review documentation**: Check [ARCHITECTURE.md](docs/ARCHITECTURE.md) for relevant design patterns
-3. **Check sprint status**: Review [IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for current priorities
+3. **Check project board**: Review the [GitHub Projects board](https://github.com/users/lqdev/projects/1) for current priorities and phase context
 4. **Set up branch**: Create a feature branch from `main`
 
 ```bash
@@ -822,7 +822,7 @@ cargo add dependency-name --features feature1,feature2
 
 ---
 
-## 🎯 Current Development Status
+## 📊 Current Development Status
 
 **Version**: 1.6.0  
 **Status**: Active Development (February 2026)

@@ -3,6 +3,12 @@ name: Post-Release Version Sync
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to sync (e.g., v1.9.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -23,7 +29,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $tag = "${{ github.event.release.tag_name }}"
+          $tag = if ("${{ inputs.tag }}" -ne "") { "${{ inputs.tag }}" } else { "${{ github.event.release.tag_name }}" }
           # Tags use clean semver since v1.6.0: v1.6.0, v1.7.0, v1.8.0, etc.
           $version = if ($tag.StartsWith('v')) { $tag.Substring(1) } else { $tag }
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT

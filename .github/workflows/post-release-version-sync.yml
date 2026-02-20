@@ -97,3 +97,12 @@ jobs:
           } else {
             Write-Host "Nothing to commit — version already in sync with ${{ steps.version.outputs.VERSION }}"
           }
+
+      - name: Submit to winget-pkgs
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          .\wingetcreate.exe submit `
+            manifests\l\lqdev\PodcastTUI\$version `
+            --prtitle "lqdev.PodcastTUI version $version" `
+            --token ${{ secrets.WINGET_SUBMIT_TOKEN }}

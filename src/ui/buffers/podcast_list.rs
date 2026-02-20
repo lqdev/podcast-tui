@@ -5,7 +5,6 @@
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame,
@@ -353,12 +352,12 @@ impl UIComponent for PodcastListBuffer {
                 let error_block = Block::default()
                     .title("Podcasts - Error")
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Red))
+                    .border_style(self.theme.error_style())
                     .title_style(self.theme.title_style());
 
                 let error_text = Paragraph::new(error.as_str())
                     .block(error_block)
-                    .style(Style::default().fg(Color::Red))
+                    .style(self.theme.error_style())
                     .wrap(Wrap { trim: true });
 
                 frame.render_widget(error_text, chunks[0]);

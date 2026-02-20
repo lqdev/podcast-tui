@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+**Fix Hardcoded Color Violations — February 2026**
+- **Active buffer indicator** in the buffer list (`buffer_list.rs`) now uses `theme.active_indicator_style()` instead of hardcoded `Color::Yellow`
+- **Error state** in the podcast list (`podcast_list.rs`) — both the border and text — now use `theme.error_style()` instead of hardcoded `Color::Red`
+- **New `active_indicator` color field** added to `ColorScheme`; all 4 bundled themes (dark, light, high-contrast, solarized) provide an appropriate yellow/gold value
+- **New `active_indicator_style()` method** on `Theme` for highlighting active/current items in lists
+- All `Color::` literals are now confined to `src/ui/themes.rs` — no hardcoded colors remain in buffer rendering code. Closes [#101](https://github.com/lqdev/podcast-tui/issues/101).
+
 **Standardize Context-Dependent Key Semantics — February 2026**
 - **`d` now consistently means "delete"** across all buffers; pressing `d` in the sync buffer no longer triggers a dry-run preview — it shows an informational message instead
 - **`D` (Shift-D) triggers dry-run preview** in the sync buffer (previously `d`); `D` already opened episode downloads in episode contexts, making this a clean contextual override with no global conflicts

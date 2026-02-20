@@ -49,6 +49,9 @@ pub struct ColorScheme {
     pub downloaded: Color,
     pub downloading: Color,
     pub queued: Color,
+
+    // Indicator colors
+    pub active_indicator: Color,
 }
 
 /// Theme manager that provides styling for different UI components
@@ -91,6 +94,8 @@ impl Theme {
             downloaded: Color::Rgb(33, 150, 243),
             downloading: Color::Rgb(156, 39, 176),
             queued: Color::Rgb(158, 158, 158),
+
+            active_indicator: Color::Rgb(255, 193, 7),
         };
 
         Self::new("Default Dark".to_string(), colors)
@@ -123,6 +128,8 @@ impl Theme {
             downloaded: Color::Rgb(13, 110, 253),
             downloading: Color::Rgb(111, 66, 193),
             queued: Color::Rgb(108, 117, 125),
+
+            active_indicator: Color::Rgb(255, 193, 7),
         };
 
         Self::new("Light".to_string(), colors)
@@ -155,6 +162,8 @@ impl Theme {
             downloaded: Color::Cyan,
             downloading: Color::Magenta,
             queued: Color::White,
+
+            active_indicator: Color::Yellow,
         };
 
         Self::new("High Contrast".to_string(), colors)
@@ -187,6 +196,8 @@ impl Theme {
             downloaded: Color::Rgb(38, 139, 210),  // blue
             downloading: Color::Rgb(211, 54, 130), // magenta
             queued: Color::Rgb(101, 123, 131),     // base00
+
+            active_indicator: Color::Rgb(181, 137, 0), // yellow
         };
 
         Self::new("Solarized".to_string(), colors)
@@ -328,6 +339,11 @@ impl Theme {
         Style::default()
             .fg(self.colors.text)
             .bg(self.colors.surface)
+    }
+
+    /// Style for active buffer/item indicators
+    pub fn active_indicator_style(&self) -> Style {
+        Style::default().fg(self.colors.active_indicator)
     }
 }
 

@@ -384,6 +384,7 @@ mod tests {
         let _ = theme.focused_style();
         let _ = theme.error_style();
         let _ = theme.status_style("playing");
+        let _ = theme.active_indicator_style();
     }
 
     #[test]

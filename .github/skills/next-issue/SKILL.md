@@ -50,9 +50,17 @@ Exclude:
 
 Keep only: `Status: Todo` and `state: OPEN` and not an epic.
 
-### 3. Stack rank the results
+### 3. Check dependencies
 
-Sort by the following fields in order:
+Before ranking, scan each issue body for **"Depends on: … #N"** lines. Build a dependency map:
+- If issue A depends on issue B, and B is **not** in the Done/Closed set, then A is **blocked**.
+- A blocked item cannot be "next up" regardless of its rank fields.
+
+Mark each item as either **READY** (all deps done) or **BLOCKED** (at least one open dep).
+
+### 4. Stack rank the results
+
+Sort **READY** items by the following fields in order:
 
 | Field | Rank order |
 |-------|-----------|
@@ -60,19 +68,21 @@ Sort by the following fields in order:
 | **Phase** | Phase 1 > Phase 2 > Phase 3 |
 | **Effort** | XS > S > M > L > XL (prefer smaller work when all else equal) |
 
-### 4. Report the top item
+Append **BLOCKED** items at the bottom (same sort order within blocked), noting what they're waiting on.
+
+### 5. Report the top item
 
 Present a short table of the top 5 actionable items:
 
-| # | Issue | Priority | Phase | Effort |
-|---|-------|----------|-------|--------|
-| **N** | Title (next up) | P1 | Phase 1 | S |
-| N | Title | P1 | Phase 2 | M |
-| ... | ... | ... | ... | ... |
+| # | Issue | Priority | Phase | Effort | Status |
+|---|-------|----------|-------|--------|--------|
+| **N** | Title (next up) | P1 | Phase 1 | S | ✅ READY |
+| N | Title | P1 | Phase 2 | M | ⛔ blocked by #X |
+| ... | ... | ... | ... | ... | ... |
 
-Call out the **top item** explicitly as "Next up: #N — Title".
+Call out the **top READY item** explicitly as "Next up: #N — Title".
 
-### 5. Cross-reference with work-on-issue
+### 6. Cross-reference with work-on-issue
 
 After identifying the next issue, use the `work-on-issue` skill to implement it.
 

@@ -194,7 +194,7 @@ impl UIApp {
         buffer_manager.create_help_buffer();
         buffer_manager.create_podcast_list_buffer(subscription_manager.clone());
         buffer_manager.create_downloads_buffer(download_manager.clone(), storage.clone());
-        buffer_manager.create_sync_buffer(download_manager.clone());
+        buffer_manager.create_sync_buffer(download_manager.clone(), storage.data_dir.clone());
         buffer_manager.create_playlist_list_buffer(playlist_manager.clone());
         buffer_manager.create_whats_new_buffer(
             subscription_manager.clone(),
@@ -711,6 +711,14 @@ impl UIApp {
                 Ok(true)
             }
             UIAction::AddToPlaylist => {
+                // When in the sync buffer, 'p' opens the directory picker instead
+                if self.buffer_manager.current_buffer_id().as_deref() == Some("sync") {
+                    if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
+                        sync_buffer.enter_directory_picker();
+                    }
+                    return Ok(true);
+                }
+
                 if let Some(current_id) = self.buffer_manager.current_buffer_id() {
                     if !self.add_to_playlist_supported_in_buffer(&current_id) {
                         self.show_message(
@@ -1229,6 +1237,20 @@ impl UIApp {
                                 prompt,
                                 input: String::new(),
                             });
+                        }
+                        UIAction::TriggerDeviceSync {
+                            device_path,
+                            delete_orphans,
+                            dry_run,
+                        } => {
+                            // Buffer has an active target and wants to sync directly (no prompt)
+                            let path_str = device_path.to_string_lossy().to_string();
+                            self.trigger_async_device_sync(
+                                path_str,
+                                delete_orphans,
+                                dry_run,
+                                false,
+                            );
                         }
                         _ => {
                             // Ignore other actions to avoid infinite recursion
@@ -4481,7 +4503,12 @@ mod tests {
 
         let storage = Arc::new(JsonStorage::with_data_dir(temp_path.clone()));
         let download_manager = Arc::new(
-            DownloadManager::new(storage.clone(), temp_path, DownloadConfig::default()).unwrap(),
+            DownloadManager::new(
+                storage.clone(),
+                temp_path.clone(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
         );
         let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
             storage.clone(),
@@ -4500,7 +4527,7 @@ mod tests {
 
         // Register and activate the sync buffer (not created by initialize())
         app.buffer_manager
-            .create_sync_buffer(download_manager.clone());
+            .create_sync_buffer(download_manager.clone(), temp_path);
         app.buffer_manager
             .switch_to_buffer(&"sync".to_string())
             .unwrap();

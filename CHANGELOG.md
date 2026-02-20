@@ -22,7 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-**Playlist Support — February 2026**
+**Sync Buffer Phase 2: Saved Targets, Directory Picker, History Persistence — February 2026**
+- **Saved Targets**: Up to 5 recently-used sync destinations are remembered and shown in the overview, ranked by use count
+- **Ranger-Style Directory Picker**: Press `p` from the sync buffer overview to browse the filesystem and select a sync target directory
+  - Platform-aware quick access: drive letters (Windows), `/Volumes` + `~/Music` (macOS), `/media` + `/mnt` (Linux)
+  - `→` / `MoveRight` to enter a directory; `←` / `MoveLeft` to go up; `Enter` on a regular directory to select it as the target
+  - `Esc` cancels picker and returns to overview
+- **History Persistence**: Sync results are saved across sessions in `{data_dir}/sync_history.json` (up to 10 entries with file counts)
+- **Target Persistence**: Saved targets and the active target are stored in `{data_dir}/sync_targets.json`
+- **Overview Status Panel**: Shows active target path and last sync summary (timestamp, mode, files copied/deleted)
+  - Falls back to persisted history when in-memory sync hasn't run yet
+- Keybindings: `p` → open directory picker, `Enter` → activate selected target (overview), `→`/`←` → navigate picker
+- Tests added: 12 unit tests
+
+
 - **User Playlists**: Create, delete, and manage custom playlists with copied audio files for device compatibility
 - **Auto-Generated `Today` Playlist**: Rolling 24-hour playlist using episode `published` date, with refresh policies (`daily`, `on_launch`, `manual`)
 - **Playlist Storage**: New `playlists/` data directory with per-playlist metadata (`playlist.json`) and `audio/` files (`001-Title.ext` ordering)

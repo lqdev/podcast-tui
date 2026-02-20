@@ -312,9 +312,14 @@ impl BufferManager {
     }
 
     /// Create Sync buffer
-    pub fn create_sync_buffer(&mut self, download_manager: Arc<DownloadManager<JsonStorage>>) {
+    pub fn create_sync_buffer(
+        &mut self,
+        download_manager: Arc<DownloadManager<JsonStorage>>,
+        data_dir: std::path::PathBuf,
+    ) {
         let mut sync_buffer = crate::ui::buffers::sync::SyncBuffer::new();
         sync_buffer.set_download_manager(download_manager);
+        sync_buffer.set_data_dir(data_dir);
         let _ = self.add_buffer(Box::new(sync_buffer));
     }
 

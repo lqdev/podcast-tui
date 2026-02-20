@@ -1,16 +1,25 @@
 // Sync buffer - Device synchronization interface
 //
 // This buffer provides a UI for syncing downloaded episodes to external devices
-// like MP3 players. It shows sync status, history, and allows configuration.
+// like MP3 players. It shows sync status, history, saved targets, and allows
+// picking a sync directory via a ranger-style directory picker.
 
+use chrono::{DateTime, Utc};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
+    style::Modifier,
+    text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame,
 };
+use serde::{Deserialize, Serialize};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use crate::{
-    download::{DownloadManager, SyncReport},
+    download::{DownloadManager, SyncHistorySummary, SyncReport},
     storage::JsonStorage,
     ui::{
         buffers::{Buffer, BufferId},
@@ -19,15 +28,63 @@ use crate::{
     },
 };
 
-use std::sync::Arc;
+const MAX_SAVED_TARGETS: usize = 5;
+const MAX_HISTORY_ENTRIES: usize = 10;
 
-/// Sync history entry
+/// Saved sync target with usage statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncTarget {
+    pub path: PathBuf,
+    pub use_count: u32,
+    pub last_used: DateTime<Utc>,
+}
+
+/// Persistent sync history entry stored to disk
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistentSyncHistoryEntry {
+    pub timestamp: DateTime<Utc>,
+    pub device_path: PathBuf,
+    pub summary: SyncHistorySummary,
+    pub dry_run: bool,
+}
+
+/// In-memory sync history entry (carries full SyncReport for detail view)
 #[derive(Debug, Clone)]
 pub struct SyncHistoryEntry {
-    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub timestamp: DateTime<Utc>,
     pub device_path: std::path::PathBuf,
     pub report: SyncReport,
     pub dry_run: bool,
+}
+
+/// Entry shown in the directory picker
+#[derive(Debug, Clone)]
+struct DirectoryEntry {
+    path: PathBuf,
+    /// Short name for display
+    name: String,
+    /// Whether the entry can be navigated into
+    is_accessible: bool,
+    /// True when this entry represents the parent ("..")
+    is_parent: bool,
+    /// True when this entry is a quick-access shortcut
+    is_quick_access: bool,
+}
+
+/// Sync buffer operation mode
+enum SyncBufferMode {
+    /// Overview: saved targets + sync history
+    Overview,
+    /// Ranger-style filesystem navigator
+    DirectoryPicker {
+        current_path: PathBuf,
+        /// Flat list: quick-access entries first, then directory contents
+        entries: Vec<DirectoryEntry>,
+        /// Cursor index within `entries`
+        selected: usize,
+        /// Scroll offset
+        scroll: usize,
+    },
 }
 
 /// Buffer for device sync management
@@ -37,12 +94,31 @@ pub struct SyncBuffer {
     theme: Theme,
     download_manager: Option<Arc<DownloadManager<JsonStorage>>>,
 
-    // Sync state
-    last_sync: Option<SyncHistoryEntry>,
+    /// Current UI mode
+    mode: SyncBufferMode,
+
+    /// Data directory for persistence (sync_targets.json, sync_history.json)
+    data_dir: Option<PathBuf>,
+
+    /// Persisted saved targets (loaded from / written to disk)
+    saved_targets: Vec<SyncTarget>,
+
+    /// Currently active sync target path
+    active_target: Option<PathBuf>,
+
+    /// Persisted sync history (loaded from / written to disk)
+    persistent_history: Vec<PersistentSyncHistoryEntry>,
+
+    /// In-memory history (keeps full SyncReport for detail view)
     sync_history: Vec<SyncHistoryEntry>,
 
-    // UI state
+    /// Last sync entry for the status section
+    last_sync: Option<SyncHistoryEntry>,
+
+    /// Cursor index across the flat overview list (targets then history)
     selected_index: usize,
+
+    /// Scroll offset for the history section
     scroll_offset: usize,
 }
 
@@ -54,69 +130,617 @@ impl SyncBuffer {
             focused: false,
             theme: Theme::default(),
             download_manager: None,
-            last_sync: None,
+            mode: SyncBufferMode::Overview,
+            data_dir: None,
+            saved_targets: Vec::new(),
+            active_target: None,
+            persistent_history: Vec::new(),
             sync_history: Vec::new(),
+            last_sync: None,
             selected_index: 0,
             scroll_offset: 0,
         }
     }
+}
 
+impl Default for SyncBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SyncBuffer {
     /// Set download manager
-    pub fn set_download_manager(&mut self, download_manager: Arc<DownloadManager<JsonStorage>>) {
-        self.download_manager = Some(download_manager);
+    pub fn set_download_manager(&mut self, dm: Arc<DownloadManager<JsonStorage>>) {
+        self.download_manager = Some(dm);
     }
 
-    /// Add a sync result to history
+    /// Set data directory and load persisted data
+    pub fn set_data_dir(&mut self, dir: PathBuf) {
+        self.data_dir = Some(dir);
+        self.load_persisted_data();
+    }
+
+    /// Set the active sync target (called externally, e.g. after a sync completes)
+    pub fn set_active_target(&mut self, path: PathBuf) {
+        self.active_target = Some(path);
+    }
+
+    // ── Persistence ──────────────────────────────────────────────────────────
+
+    /// Load saved targets and history from disk.
+    fn load_persisted_data(&mut self) {
+        let Some(ref dir) = self.data_dir else {
+            return;
+        };
+        self.saved_targets = Self::load_json(dir.join("sync_targets.json")).unwrap_or_default();
+        self.persistent_history =
+            Self::load_json(dir.join("sync_history.json")).unwrap_or_default();
+
+        // Restore active target from the most-recently-used saved target
+        if self.active_target.is_none() {
+            if let Some(t) = self.saved_targets.first() {
+                self.active_target = Some(t.path.clone());
+            }
+        }
+    }
+
+    fn load_json<T: for<'de> Deserialize<'de>>(path: PathBuf) -> Option<T> {
+        let content = std::fs::read_to_string(&path).ok()?;
+        serde_json::from_str(&content).ok()
+    }
+
+    fn save_json<T: Serialize>(path: &PathBuf, value: &T) {
+        if let Ok(json) = serde_json::to_string_pretty(value) {
+            let tmp = path.with_extension("json.tmp");
+            if std::fs::write(&tmp, &json).is_ok() {
+                let _ = std::fs::rename(&tmp, path);
+            }
+        }
+    }
+
+    fn persist_targets(&self) {
+        if let Some(ref dir) = self.data_dir {
+            Self::save_json(&dir.join("sync_targets.json"), &self.saved_targets);
+        }
+    }
+
+    fn persist_history(&self) {
+        if let Some(ref dir) = self.data_dir {
+            Self::save_json(&dir.join("sync_history.json"), &self.persistent_history);
+        }
+    }
+
+    // ── Sync result handling ─────────────────────────────────────────────────
+
+    /// Record a completed sync operation. Updates saved targets and history.
     pub fn add_sync_result(
         &mut self,
         device_path: std::path::PathBuf,
         report: SyncReport,
         dry_run: bool,
     ) {
+        let now = Utc::now();
+
+        // Update or insert into saved targets
+        if let Some(existing) = self
+            .saved_targets
+            .iter_mut()
+            .find(|t| t.path == device_path)
+        {
+            existing.use_count += 1;
+            existing.last_used = now;
+        } else {
+            self.saved_targets.push(SyncTarget {
+                path: device_path.clone(),
+                use_count: 1,
+                last_used: now,
+            });
+        }
+
+        // Sort by last_used descending and cap at MAX_SAVED_TARGETS
+        self.saved_targets
+            .sort_by(|a, b| b.last_used.cmp(&a.last_used));
+        self.saved_targets.truncate(MAX_SAVED_TARGETS);
+        self.persist_targets();
+
+        // Update active target
+        self.active_target = Some(device_path.clone());
+
+        // Add to persistent history
+        self.persistent_history.insert(
+            0,
+            PersistentSyncHistoryEntry {
+                timestamp: now,
+                device_path: device_path.clone(),
+                summary: SyncHistorySummary::from(&report),
+                dry_run,
+            },
+        );
+        self.persistent_history.truncate(MAX_HISTORY_ENTRIES);
+        self.persist_history();
+
+        // In-memory history (full SyncReport)
         let entry = SyncHistoryEntry {
-            timestamp: chrono::Utc::now(),
-            device_path,
+            timestamp: now,
+            device_path: device_path.clone(),
             report,
             dry_run,
         };
-
         self.last_sync = Some(entry.clone());
         self.sync_history.insert(0, entry);
-
-        // Keep only last 10 sync operations
-        if self.sync_history.len() > 10 {
-            self.sync_history.truncate(10);
-        }
+        self.sync_history.truncate(MAX_HISTORY_ENTRIES);
     }
 
-    /// Move selection up
+    // ── Overview navigation ──────────────────────────────────────────────────
+
+    /// Total items in the Overview flat list (saved targets + persistent history)
+    fn overview_item_count(&self) -> usize {
+        self.saved_targets.len() + self.persistent_history.len()
+    }
+
     fn select_previous(&mut self) {
         if self.selected_index > 0 {
             self.selected_index -= 1;
         }
     }
 
-    /// Move selection down
     fn select_next(&mut self) {
-        if self.selected_index < self.sync_history.len().saturating_sub(1) {
+        let max = self.overview_item_count().saturating_sub(1);
+        if self.selected_index < max {
             self.selected_index += 1;
         }
     }
 
-    /// Adjust scroll offset to ensure selected item is visible
     fn adjust_scroll(&mut self, visible_height: usize) {
         if visible_height == 0 {
             return;
         }
-
-        // If selected item is above the visible area, scroll up
         if self.selected_index < self.scroll_offset {
             self.scroll_offset = self.selected_index;
-        }
-        // If selected item is below the visible area, scroll down
-        else if self.selected_index >= self.scroll_offset + visible_height {
+        } else if self.selected_index >= self.scroll_offset + visible_height {
             self.scroll_offset = self.selected_index.saturating_sub(visible_height - 1);
         }
+    }
+
+    // ── Directory picker ─────────────────────────────────────────────────────
+
+    /// Enter directory picker mode, starting from `active_target` or a platform default.
+    pub fn enter_directory_picker(&mut self) {
+        let start_path = self
+            .active_target
+            .clone()
+            .unwrap_or_else(Self::platform_default_path);
+
+        let entries = Self::build_entries(&start_path);
+        self.mode = SyncBufferMode::DirectoryPicker {
+            current_path: start_path,
+            entries,
+            selected: 0,
+            scroll: 0,
+        };
+    }
+
+    /// Platform-aware starting path for the directory picker.
+    fn platform_default_path() -> PathBuf {
+        #[cfg(target_os = "windows")]
+        {
+            // Find first available drive letter
+            for letter in b'A'..=b'Z' {
+                let p = PathBuf::from(format!("{}:\\", letter as char));
+                if p.exists() {
+                    return p;
+                }
+            }
+            PathBuf::from("C:\\")
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            PathBuf::from("/")
+        }
+    }
+
+    /// Build the flat list of entries for the given directory.
+    ///
+    /// Layout: quick-access shortcuts first, then `..` (if not at root),
+    /// then alphabetically-sorted subdirectories.
+    fn build_entries(current: &PathBuf) -> Vec<DirectoryEntry> {
+        let mut entries = Vec::new();
+
+        // Quick-access shortcuts
+        for path in Self::quick_access_paths() {
+            if path.exists() {
+                let name = path.to_string_lossy().to_string();
+                entries.push(DirectoryEntry {
+                    name,
+                    path,
+                    is_accessible: true,
+                    is_parent: false,
+                    is_quick_access: true,
+                });
+            }
+        }
+
+        // Parent ".." entry
+        if let Some(parent) = current.parent() {
+            let parent_path = parent.to_path_buf();
+            // Only add ".." when there's a real parent
+            if parent_path != *current {
+                entries.push(DirectoryEntry {
+                    name: "..".to_string(),
+                    path: parent_path,
+                    is_accessible: true,
+                    is_parent: true,
+                    is_quick_access: false,
+                });
+            }
+        }
+
+        // Directory contents
+        if let Ok(mut read_dir) = std::fs::read_dir(current) {
+            let mut dirs: Vec<DirectoryEntry> = Vec::new();
+            while let Some(Ok(entry)) = read_dir.next() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.display().to_string());
+                // Skip hidden directories
+                if name.starts_with('.') {
+                    continue;
+                }
+                // Check accessibility
+                let is_accessible = std::fs::read_dir(&path).is_ok();
+                dirs.push(DirectoryEntry {
+                    name,
+                    path,
+                    is_accessible,
+                    is_parent: false,
+                    is_quick_access: false,
+                });
+            }
+            dirs.sort_by(|a, b| a.name.cmp(&b.name));
+            entries.extend(dirs);
+        }
+
+        entries
+    }
+
+    /// Platform-aware quick-access paths shown at the top of the picker.
+    fn quick_access_paths() -> Vec<PathBuf> {
+        #[cfg(target_os = "windows")]
+        {
+            // Enumerate available drive letters
+            (b'A'..=b'Z')
+                .map(|l| PathBuf::from(format!("{}:\\", l as char)))
+                .filter(|p| p.exists())
+                .collect()
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let mut paths = vec![PathBuf::from("/Volumes")];
+            if let Some(home) = dirs::home_dir() {
+                paths.push(home.join("Music"));
+            }
+            paths
+        }
+        #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+        {
+            // Linux / other Unix
+            let mut paths = Vec::new();
+            // /media/$USER
+            if let Ok(user) = std::env::var("USER") {
+                let media_user = PathBuf::from(format!("/media/{}", user));
+                if media_user.exists() {
+                    paths.push(media_user);
+                }
+            }
+            let mnt = PathBuf::from("/mnt");
+            if mnt.exists() {
+                paths.push(mnt);
+            }
+            if let Some(home) = dirs::home_dir() {
+                let music = home.join("Music");
+                if music.exists() {
+                    paths.push(music);
+                }
+            }
+            paths
+        }
+    }
+
+    /// Navigate the picker into a new directory, rebuilding the entry list.
+    fn picker_navigate_to(
+        current_path: &mut PathBuf,
+        entries: &mut Vec<DirectoryEntry>,
+        selected: &mut usize,
+        scroll: &mut usize,
+        new_path: PathBuf,
+    ) {
+        *current_path = new_path;
+        *entries = Self::build_entries(current_path);
+        *selected = 0;
+        *scroll = 0;
+    }
+
+    // ── Rendering helpers ─────────────────────────────────────────────────────
+
+    fn border_style(&self) -> ratatui::style::Style {
+        if self.focused {
+            self.theme.border_focused_style()
+        } else {
+            self.theme.border_style()
+        }
+    }
+
+    fn render_overview(&mut self, frame: &mut Frame, area: Rect) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(5), // Status / active target
+                Constraint::Min(5),    // Flat list (targets + history)
+                Constraint::Length(3), // Hints
+            ])
+            .split(area);
+
+        self.render_overview_status(frame, chunks[0]);
+        self.render_overview_list(frame, chunks[1]);
+        self.render_overview_hints(frame, chunks[2]);
+    }
+
+    fn render_overview_status(&self, frame: &mut Frame, area: Rect) {
+        let target_line = self
+            .active_target
+            .as_ref()
+            .map(|p| format!("Active: {}", p.display()))
+            .unwrap_or_else(|| "No target set. Press 'p' to pick one.".to_string());
+
+        let last_line = self
+            .last_sync
+            .as_ref()
+            .map(|e| {
+                let mode = if e.dry_run { " [DRY]" } else { "" };
+                format!(
+                    "Last sync{}: {} → copied {}, deleted {}, skipped {}",
+                    mode,
+                    e.timestamp.format("%Y-%m-%d %H:%M"),
+                    e.report.files_copied.len(),
+                    e.report.files_deleted.len(),
+                    e.report.files_skipped.len()
+                )
+            })
+            .unwrap_or_else(|| {
+                self.persistent_history
+                    .first()
+                    .map(|e| {
+                        let mode = if e.dry_run { " [DRY]" } else { "" };
+                        format!(
+                            "Last sync{}: {} → copied {}, deleted {}, errors {}",
+                            mode,
+                            e.timestamp.format("%Y-%m-%d %H:%M"),
+                            e.summary.files_copied_count,
+                            e.summary.files_deleted_count,
+                            e.summary.error_count,
+                        )
+                    })
+                    .unwrap_or_else(|| "No syncs yet.".to_string())
+            });
+
+        let text = format!("{}\n{}", target_line, last_line);
+        let para = Paragraph::new(text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Sync Status")
+                    .border_style(self.border_style()),
+            )
+            .style(self.theme.text_style())
+            .wrap(Wrap { trim: true });
+        frame.render_widget(para, area);
+    }
+
+    fn render_overview_list(&mut self, frame: &mut Frame, area: Rect) {
+        let visible_height = area.height.saturating_sub(2) as usize;
+        self.adjust_scroll(visible_height);
+
+        let mut items: Vec<ListItem> = Vec::new();
+
+        // Saved targets section
+        if !self.saved_targets.is_empty() {
+            items.push(
+                ListItem::new(Line::from(vec![Span::styled(
+                    "─── Saved Targets (Enter to activate, p to pick new) ───",
+                    self.theme.text_style().add_modifier(Modifier::DIM),
+                )]))
+                .style(self.theme.text_style()),
+            );
+            for (i, target) in self.saved_targets.iter().enumerate() {
+                let active_marker = if self.active_target.as_deref() == Some(&target.path) {
+                    "▶ "
+                } else {
+                    "  "
+                };
+                let content = format!(
+                    "{}{}  (used {}×, last {})",
+                    active_marker,
+                    target.path.display(),
+                    target.use_count,
+                    target.last_used.format("%Y-%m-%d"),
+                );
+                let style = if i == self.selected_index {
+                    self.theme.selected_style()
+                } else {
+                    self.theme.text_style()
+                };
+                items.push(ListItem::new(content).style(style));
+            }
+        } else {
+            items.push(
+                ListItem::new("  No saved targets. Press 'p' to pick a directory.")
+                    .style(self.theme.text_style()),
+            );
+        }
+
+        // History section separator
+        items.push(
+            ListItem::new(Line::from(vec![Span::styled(
+                "─── Sync History ───",
+                self.theme.text_style().add_modifier(Modifier::DIM),
+            )]))
+            .style(self.theme.text_style()),
+        );
+
+        if self.persistent_history.is_empty() {
+            items.push(ListItem::new("  No sync history yet.").style(self.theme.text_style()));
+        } else {
+            let target_count = self.saved_targets.len();
+            for (i, entry) in self.persistent_history.iter().enumerate() {
+                let actual_i = target_count + i;
+                let icon = if entry.summary.error_count == 0 {
+                    "✓"
+                } else {
+                    "✗"
+                };
+                let mode = if entry.dry_run { " [DRY]" } else { "" };
+                let content = format!(
+                    "{}{} {}  {}  copied:{} deleted:{} errs:{}",
+                    icon,
+                    mode,
+                    entry.timestamp.format("%Y-%m-%d %H:%M"),
+                    entry
+                        .device_path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy(),
+                    entry.summary.files_copied_count,
+                    entry.summary.files_deleted_count,
+                    entry.summary.error_count,
+                );
+                let style = if actual_i == self.selected_index {
+                    self.theme.selected_style()
+                } else {
+                    self.theme.text_style()
+                };
+                items.push(ListItem::new(content).style(style));
+            }
+        }
+
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Targets & History")
+                    .border_style(self.border_style()),
+            )
+            .style(self.theme.text_style());
+        frame.render_widget(list, area);
+    }
+
+    fn render_overview_hints(&self, frame: &mut Frame, area: Rect) {
+        let has_targets = !self.saved_targets.is_empty();
+        let text = if has_targets {
+            "↑↓ navigate  s sync  Enter activate target  d dry-run  p pick dir  r refresh"
+        } else {
+            "s sync (prompts for path)  d dry-run  p pick directory  r refresh"
+        };
+        let para = Paragraph::new(text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Actions")
+                    .border_style(self.border_style()),
+            )
+            .style(self.theme.text_style());
+        frame.render_widget(para, area);
+    }
+
+    fn render_directory_picker(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        current_path: &Path,
+        entries: &[DirectoryEntry],
+        selected: usize,
+        scroll: usize,
+    ) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Current path header
+                Constraint::Min(5),    // Directory listing
+                Constraint::Length(3), // Hints
+            ])
+            .split(area);
+
+        // Header: current path
+        let header = Paragraph::new(format!("  📍 {}", current_path.display()))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Select Sync Target")
+                    .border_style(self.border_style()),
+            )
+            .style(self.theme.text_style());
+        frame.render_widget(header, chunks[0]);
+
+        // Listing
+        let visible_height = chunks[1].height.saturating_sub(2) as usize;
+        let end = (scroll + visible_height).min(entries.len());
+        let visible = &entries[scroll..end];
+
+        let items: Vec<ListItem> = visible
+            .iter()
+            .enumerate()
+            .map(|(vi, entry)| {
+                let actual_i = scroll + vi;
+                let icon = if entry.is_quick_access {
+                    "⚡"
+                } else if entry.is_parent {
+                    "↑"
+                } else if entry.is_accessible {
+                    "📁"
+                } else {
+                    "🔒"
+                };
+                let suffix = if !entry.is_accessible {
+                    " [no access]"
+                } else {
+                    "/"
+                };
+                let label = format!("  {} {}{}", icon, entry.name, suffix);
+                let style = if actual_i == selected {
+                    self.theme.selected_style()
+                } else {
+                    self.theme.text_style()
+                };
+                ListItem::new(label).style(style)
+            })
+            .collect();
+
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!("{} items", entries.len()))
+                    .border_style(self.border_style()),
+            )
+            .style(self.theme.text_style());
+        frame.render_widget(list, chunks[1]);
+
+        // Hints
+        let hints =
+            Paragraph::new("↑↓ move  → enter dir  ← parent  Enter select current dir  Esc cancel")
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("Navigation")
+                        .border_style(self.border_style()),
+                )
+                .style(self.theme.text_style());
+        frame.render_widget(hints, chunks[2]);
     }
 }
 
@@ -145,64 +769,208 @@ impl Buffer for SyncBuffer {
         vec![
             "Sync Buffer Help".to_string(),
             "".to_string(),
-            "Navigation:".to_string(),
-            "  ↑/k       Move up in history".to_string(),
-            "  ↓/j       Move down in history".to_string(),
+            "Overview:".to_string(),
+            "  ↑/↓         Navigate saved targets / history".to_string(),
+            "  Enter       Activate selected target (set as next sync destination)".to_string(),
+            "  s           Start sync to active target".to_string(),
+            "  d           Dry-run preview (show changes without applying)".to_string(),
+            "  p           Open directory picker to pick a sync target".to_string(),
+            "  r           Refresh / reload sync status".to_string(),
             "".to_string(),
-            "Actions:".to_string(),
-            "  s         Start sync (prompts for device path)".to_string(),
-            "  d         Dry run sync (preview changes)".to_string(),
-            "  r         Refresh sync status".to_string(),
-            "  Enter     View sync details".to_string(),
+            "Directory Picker:".to_string(),
+            "  ↑/↓         Move selection".to_string(),
+            "  →           Navigate INTO highlighted directory".to_string(),
+            "  ←           Go UP to parent directory".to_string(),
+            "  Enter       Select current directory as sync target".to_string(),
+            "  Esc         Cancel — return to Overview".to_string(),
             "".to_string(),
-            "  C-h       Show help".to_string(),
+            "  C-h / F1    Show this help".to_string(),
         ]
     }
 }
 
 impl UIComponent for SyncBuffer {
     fn handle_action(&mut self, action: UIAction) -> UIAction {
-        match action {
-            UIAction::MoveUp => {
-                self.select_previous();
-                UIAction::Render
-            }
-            UIAction::MoveDown => {
-                self.select_next();
-                UIAction::Render
-            }
-            UIAction::PageUp => {
-                // Move up by 10 items or to the top
-                self.selected_index = self.selected_index.saturating_sub(10);
-                UIAction::Render
-            }
-            UIAction::PageDown => {
-                // Move down by 10 items or to the bottom
-                let max = self.sync_history.len().saturating_sub(1);
-                self.selected_index = (self.selected_index + 10).min(max);
-                UIAction::Render
-            }
-            UIAction::SyncToDevice => {
-                // Prompt for device path — prefix must match handle_minibuffer_input_with_context
-                UIAction::PromptInput("Sync to device path: ".to_string())
-            }
-            UIAction::SelectItem => {
-                if let Some(entry) = self.sync_history.get(self.selected_index) {
-                    let details = format!(
-                        "Sync to {} at {}\nCopied: {}, Deleted: {}, Skipped: {}, Errors: {}",
-                        entry.device_path.display(),
-                        entry.timestamp.format("%Y-%m-%d %H:%M:%S"),
-                        entry.report.files_copied.len(),
-                        entry.report.files_deleted.len(),
-                        entry.report.files_skipped.len(),
-                        entry.report.errors.len()
-                    );
-                    UIAction::ShowMinibuffer(details)
-                } else {
-                    UIAction::ShowMessage("No sync history selected".to_string())
+        match &mut self.mode {
+            SyncBufferMode::DirectoryPicker {
+                ref mut current_path,
+                ref mut entries,
+                ref mut selected,
+                ref mut scroll,
+            } => {
+                match action {
+                    UIAction::MoveUp => {
+                        if *selected > 0 {
+                            *selected -= 1;
+                        }
+                        UIAction::Render
+                    }
+                    UIAction::MoveDown => {
+                        if *selected + 1 < entries.len() {
+                            *selected += 1;
+                        }
+                        UIAction::Render
+                    }
+                    UIAction::PageUp => {
+                        *selected = selected.saturating_sub(10);
+                        UIAction::Render
+                    }
+                    UIAction::PageDown => {
+                        let max = entries.len().saturating_sub(1);
+                        *selected = (*selected + 10).min(max);
+                        UIAction::Render
+                    }
+                    UIAction::MoveRight | UIAction::SelectItem => {
+                        // Navigate INTO the highlighted directory (MoveRight),
+                        // or if the user pressed Enter and there's a selected entry,
+                        // navigate into it IF it's a quick-access entry.
+                        // For Enter on the current_path itself, handled below via HideMinibuffer path.
+                        let sel = *selected;
+                        if let Some(entry) = entries.get(sel).cloned() {
+                            if action == UIAction::SelectItem {
+                                if entry.is_quick_access || entry.is_parent {
+                                    // Navigate to it (don't select as target yet)
+                                    if entry.is_accessible {
+                                        let new_path = entry.path.clone();
+                                        Self::picker_navigate_to(
+                                            current_path,
+                                            entries,
+                                            selected,
+                                            scroll,
+                                            new_path,
+                                        );
+                                    } else {
+                                        return UIAction::ShowMessage(
+                                            "Directory is not accessible".to_string(),
+                                        );
+                                    }
+                                } else {
+                                    // Enter on a regular dir entry: SELECT the current_path
+                                    let path = current_path.clone();
+                                    self.active_target = Some(path.clone());
+                                    self.upsert_saved_target(path.clone());
+                                    self.mode = SyncBufferMode::Overview;
+                                    return UIAction::ShowMessage(format!(
+                                        "Sync target set to {}",
+                                        path.display()
+                                    ));
+                                }
+                            } else {
+                                // MoveRight → always navigate into entry
+                                if entry.is_accessible {
+                                    let new_path = entry.path.clone();
+                                    Self::picker_navigate_to(
+                                        current_path,
+                                        entries,
+                                        selected,
+                                        scroll,
+                                        new_path,
+                                    );
+                                } else {
+                                    return UIAction::ShowMessage(
+                                        "Directory is not accessible".to_string(),
+                                    );
+                                }
+                            }
+                        } else if action == UIAction::SelectItem {
+                            // No entries (empty dir): select current_path as target
+                            let path = current_path.clone();
+                            self.active_target = Some(path.clone());
+                            self.upsert_saved_target(path.clone());
+                            self.mode = SyncBufferMode::Overview;
+                            return UIAction::ShowMessage(format!(
+                                "Sync target set to {}",
+                                path.display()
+                            ));
+                        }
+                        UIAction::Render
+                    }
+                    UIAction::MoveLeft => {
+                        // Navigate to parent
+                        if let Some(parent) = current_path.parent().map(|p| p.to_path_buf()) {
+                            if parent != *current_path {
+                                let new_path = parent;
+                                Self::picker_navigate_to(
+                                    current_path,
+                                    entries,
+                                    selected,
+                                    scroll,
+                                    new_path,
+                                );
+                            }
+                        }
+                        UIAction::Render
+                    }
+                    UIAction::HideMinibuffer => {
+                        // Esc: cancel picker, return to Overview
+                        self.mode = SyncBufferMode::Overview;
+                        UIAction::Render
+                    }
+                    _ => UIAction::Render,
                 }
             }
-            _ => UIAction::None,
+            SyncBufferMode::Overview => match action {
+                UIAction::MoveUp => {
+                    self.select_previous();
+                    UIAction::Render
+                }
+                UIAction::MoveDown => {
+                    self.select_next();
+                    UIAction::Render
+                }
+                UIAction::PageUp => {
+                    self.selected_index = self.selected_index.saturating_sub(10);
+                    UIAction::Render
+                }
+                UIAction::PageDown => {
+                    let max = self.overview_item_count().saturating_sub(1);
+                    self.selected_index = (self.selected_index + 10).min(max);
+                    UIAction::Render
+                }
+                UIAction::SelectItem => {
+                    let i = self.selected_index;
+                    let target_count = self.saved_targets.len();
+                    if i < target_count {
+                        // Activate the selected saved target
+                        let path = self.saved_targets[i].path.clone();
+                        self.active_target = Some(path.clone());
+                        UIAction::ShowMessage(format!("Active sync target: {}", path.display()))
+                    } else {
+                        // Show details of selected history entry
+                        let history_i = i - target_count;
+                        if let Some(entry) = self.persistent_history.get(history_i) {
+                            let mode = if entry.dry_run { " [DRY RUN]" } else { "" };
+                            let details = format!(
+                                "Sync to {} at {}{}\nCopied: {}  Deleted: {}  Skipped: {}  Errors: {}",
+                                entry.device_path.display(),
+                                entry.timestamp.format("%Y-%m-%d %H:%M:%S"),
+                                mode,
+                                entry.summary.files_copied_count,
+                                entry.summary.files_deleted_count,
+                                entry.summary.files_skipped_count,
+                                entry.summary.error_count,
+                            );
+                            UIAction::ShowMinibuffer(details)
+                        } else {
+                            UIAction::ShowMessage("No item selected".to_string())
+                        }
+                    }
+                }
+                UIAction::SyncToDevice => {
+                    if let Some(ref path) = self.active_target.clone() {
+                        // Trigger sync directly with the active target — no prompt needed
+                        UIAction::TriggerDeviceSync {
+                            device_path: path.clone(),
+                            delete_orphans: false,
+                            dry_run: false,
+                        }
+                    } else {
+                        // No saved target: prompt the user
+                        UIAction::PromptInput("Sync to device path: ".to_string())
+                    }
+                }
+                _ => UIAction::None,
+            },
         }
     }
 
@@ -219,119 +987,48 @@ impl UIComponent for SyncBuffer {
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(5), // Status
-                Constraint::Min(5),    // History
-                Constraint::Length(3), // Actions
-            ])
-            .split(area);
+        // Extract picker state before the borrow checker makes life difficult
+        let is_picker = matches!(self.mode, SyncBufferMode::DirectoryPicker { .. });
 
-        // Status section
-        let status_text = if let Some(ref entry) = self.last_sync {
-            let mode = if entry.dry_run { " [DRY RUN]" } else { "" };
-            format!(
-                "Last Sync: {}{}\nDevice: {}\nResult: {} copied, {} deleted, {} skipped, {} errors",
-                entry.timestamp.format("%Y-%m-%d %H:%M:%S"),
-                mode,
-                entry.device_path.display(),
-                entry.report.files_copied.len(),
-                entry.report.files_deleted.len(),
-                entry.report.files_skipped.len(),
-                entry.report.errors.len()
-            )
+        if is_picker {
+            if let SyncBufferMode::DirectoryPicker {
+                ref current_path,
+                ref entries,
+                selected,
+                scroll,
+            } = self.mode
+            {
+                // Clone so we can call `self.render_directory_picker`
+                let cp = current_path.clone();
+                let ents: Vec<DirectoryEntry> = entries.clone();
+                let sel = selected;
+                let scr = scroll;
+                self.render_directory_picker(frame, area, &cp, &ents, sel, scr);
+            }
         } else {
-            "No sync performed yet.\nPress 's' to start a sync or 'd' for a dry run.".to_string()
-        };
+            self.render_overview(frame, area);
+        }
+    }
+}
 
-        let border_style = if self.focused {
-            self.theme.border_focused_style()
+impl SyncBuffer {
+    /// Insert or update a saved target, capping at MAX_SAVED_TARGETS.
+    fn upsert_saved_target(&mut self, path: PathBuf) {
+        let now = Utc::now();
+        if let Some(existing) = self.saved_targets.iter_mut().find(|t| t.path == path) {
+            existing.use_count += 1;
+            existing.last_used = now;
         } else {
-            self.theme.border_style()
-        };
-
-        let status_paragraph = Paragraph::new(status_text)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Sync Status")
-                    .border_style(border_style),
-            )
-            .style(self.theme.text_style())
-            .wrap(Wrap { trim: true });
-
-        frame.render_widget(status_paragraph, chunks[0]);
-
-        // History section
-        let visible_height = chunks[1].height.saturating_sub(2) as usize;
-        self.adjust_scroll(visible_height);
-
-        let end_index = (self.scroll_offset + visible_height).min(self.sync_history.len());
-        let visible_history = &self.sync_history[self.scroll_offset..end_index];
-
-        let items: Vec<ListItem> = visible_history
-            .iter()
-            .enumerate()
-            .map(|(visible_i, entry)| {
-                let actual_i = self.scroll_offset + visible_i;
-                let status_icon = if entry.report.is_success() {
-                    "✅"
-                } else {
-                    "❌"
-                };
-                let mode = if entry.dry_run { " [DRY]" } else { "" };
-
-                let content = format!(
-                    "{}{} {} - {} → {} copied, {} deleted",
-                    status_icon,
-                    mode,
-                    entry.timestamp.format("%Y-%m-%d %H:%M"),
-                    entry
-                        .device_path
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy(),
-                    entry.report.files_copied.len(),
-                    entry.report.files_deleted.len()
-                );
-
-                if actual_i == self.selected_index {
-                    ListItem::new(content).style(self.theme.selected_style())
-                } else {
-                    ListItem::new(content).style(self.theme.text_style())
-                }
-            })
-            .collect();
-
-        let history_list = List::new(items)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(format!("Sync History ({})", self.sync_history.len()))
-                    .border_style(border_style),
-            )
-            .style(self.theme.text_style());
-
-        frame.render_widget(history_list, chunks[1]);
-
-        // Actions section
-        let actions_text = if self.sync_history.is_empty() {
-            "Press 's' to start sync • 'd' for dry run • 'C-h' for help"
-        } else {
-            "↑↓ navigate • Enter to view details • 's' to sync • 'd' for dry run"
-        };
-
-        let actions_paragraph = Paragraph::new(actions_text)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Actions")
-                    .border_style(border_style),
-            )
-            .style(self.theme.text_style());
-
-        frame.render_widget(actions_paragraph, chunks[2]);
+            self.saved_targets.push(SyncTarget {
+                path,
+                use_count: 1,
+                last_used: now,
+            });
+        }
+        self.saved_targets
+            .sort_by(|a, b| b.last_used.cmp(&a.last_used));
+        self.saved_targets.truncate(MAX_SAVED_TARGETS);
+        self.persist_targets();
     }
 }
 
@@ -340,15 +1037,141 @@ mod tests {
     use super::*;
     use crate::ui::{UIAction, UIComponent};
 
+    // ── SyncTarget serialization ──────────────────────────────────────────────
+
     #[test]
-    fn test_sync_to_device_returns_prompt_input() {
+    fn test_sync_target_serialization_roundtrip() {
+        // Arrange
+        let target = SyncTarget {
+            path: PathBuf::from("/media/usb"),
+            use_count: 5,
+            last_used: Utc::now(),
+        };
+
+        // Act
+        let json = serde_json::to_string(&target).unwrap();
+        let restored: SyncTarget = serde_json::from_str(&json).unwrap();
+
+        // Assert
+        assert_eq!(restored.path, target.path);
+        assert_eq!(restored.use_count, target.use_count);
+    }
+
+    #[test]
+    fn test_persistent_history_serialization_roundtrip() {
+        // Arrange
+        let entry = PersistentSyncHistoryEntry {
+            timestamp: Utc::now(),
+            device_path: PathBuf::from("/mnt/device"),
+            summary: SyncHistorySummary {
+                files_copied_count: 3,
+                files_deleted_count: 1,
+                files_skipped_count: 10,
+                error_count: 0,
+                errors: vec![],
+            },
+            dry_run: false,
+        };
+
+        // Act
+        let json = serde_json::to_string(&entry).unwrap();
+        let restored: PersistentSyncHistoryEntry = serde_json::from_str(&json).unwrap();
+
+        // Assert
+        assert_eq!(restored.device_path, entry.device_path);
+        assert_eq!(restored.summary.files_copied_count, 3);
+        assert!(!restored.dry_run);
+    }
+
+    // ── Overview navigation ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_sync_buffer_navigation_returns_render() {
         // Arrange
         let mut buffer = SyncBuffer::new();
+
+        // Act / Assert
+        assert_eq!(buffer.handle_action(UIAction::MoveUp), UIAction::Render);
+        assert_eq!(buffer.handle_action(UIAction::MoveDown), UIAction::Render);
+        assert_eq!(buffer.handle_action(UIAction::PageUp), UIAction::Render);
+        assert_eq!(buffer.handle_action(UIAction::PageDown), UIAction::Render);
+    }
+
+    #[test]
+    fn test_select_item_on_saved_target_activates_it() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        let path = PathBuf::from("/media/usb");
+        buffer.saved_targets.push(SyncTarget {
+            path: path.clone(),
+            use_count: 1,
+            last_used: Utc::now(),
+        });
+        buffer.selected_index = 0;
+
+        // Act
+        let action = buffer.handle_action(UIAction::SelectItem);
+
+        // Assert — should show a ShowMessage with the path and set active_target
+        assert_eq!(buffer.active_target, Some(path.clone()));
+        match action {
+            UIAction::ShowMessage(msg) => assert!(msg.contains("usb")),
+            other => panic!("Expected ShowMessage, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_select_item_empty_list_returns_message() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        buffer.selected_index = 0;
+
+        // Act
+        let action = buffer.handle_action(UIAction::SelectItem);
+
+        // Assert — no targets, no history → "No item selected"
+        assert_eq!(
+            action,
+            UIAction::ShowMessage("No item selected".to_string())
+        );
+    }
+
+    // ── SyncToDevice routing ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_sync_to_device_with_active_target_returns_trigger() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        let path = PathBuf::from("/media/player");
+        buffer.active_target = Some(path.clone());
 
         // Act
         let action = buffer.handle_action(UIAction::SyncToDevice);
 
-        // Assert — prompt must start with "Sync to device path" for context handler
+        // Assert — should trigger sync directly (no prompt)
+        match action {
+            UIAction::TriggerDeviceSync {
+                device_path,
+                dry_run,
+                ..
+            } => {
+                assert_eq!(device_path, path);
+                assert!(!dry_run);
+            }
+            other => panic!("Expected TriggerDeviceSync, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_sync_to_device_without_active_target_prompts() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        assert!(buffer.active_target.is_none());
+
+        // Act
+        let action = buffer.handle_action(UIAction::SyncToDevice);
+
+        // Assert — no active target → prompt the user
         match action {
             UIAction::PromptInput(prompt) => {
                 assert!(
@@ -361,30 +1184,92 @@ mod tests {
         }
     }
 
+    // ── add_sync_result ───────────────────────────────────────────────────────
+
     #[test]
-    fn test_sync_buffer_navigation() {
+    fn test_add_sync_result_creates_saved_target() {
         // Arrange
         let mut buffer = SyncBuffer::new();
+        let path = PathBuf::from("/media/usb");
+        let report = SyncReport::new();
 
-        // Act / Assert — navigation returns Render
-        assert_eq!(buffer.handle_action(UIAction::MoveUp), UIAction::Render);
-        assert_eq!(buffer.handle_action(UIAction::MoveDown), UIAction::Render);
-        assert_eq!(buffer.handle_action(UIAction::PageUp), UIAction::Render);
-        assert_eq!(buffer.handle_action(UIAction::PageDown), UIAction::Render);
+        // Act
+        buffer.add_sync_result(path.clone(), report, false);
+
+        // Assert
+        assert_eq!(buffer.saved_targets.len(), 1);
+        assert_eq!(buffer.saved_targets[0].path, path);
+        assert_eq!(buffer.saved_targets[0].use_count, 1);
+        assert_eq!(buffer.active_target, Some(path));
     }
 
     #[test]
-    fn test_sync_buffer_select_item_empty_history() {
+    fn test_add_sync_result_increments_use_count_for_existing_target() {
         // Arrange
         let mut buffer = SyncBuffer::new();
+        let path = PathBuf::from("/media/usb");
+        let report = SyncReport::new();
 
         // Act
-        let action = buffer.handle_action(UIAction::SelectItem);
+        buffer.add_sync_result(path.clone(), report.clone(), false);
+        buffer.add_sync_result(path.clone(), report, false);
 
-        // Assert — no history, should show message
-        assert_eq!(
-            action,
-            UIAction::ShowMessage("No sync history selected".to_string())
-        );
+        // Assert
+        assert_eq!(buffer.saved_targets.len(), 1);
+        assert_eq!(buffer.saved_targets[0].use_count, 2);
+    }
+
+    #[test]
+    fn test_add_sync_result_caps_targets_at_max() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        let report = SyncReport::new();
+
+        // Act — add 7 different targets
+        for i in 0..7usize {
+            buffer.add_sync_result(
+                PathBuf::from(format!("/media/usb{}", i)),
+                report.clone(),
+                false,
+            );
+        }
+
+        // Assert — capped at MAX_SAVED_TARGETS (5)
+        assert_eq!(buffer.saved_targets.len(), MAX_SAVED_TARGETS);
+    }
+
+    #[test]
+    fn test_add_sync_result_records_persistent_history() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        let path = PathBuf::from("/media/usb");
+        let report = SyncReport::new();
+
+        // Act
+        buffer.add_sync_result(path, report, true);
+
+        // Assert
+        assert_eq!(buffer.persistent_history.len(), 1);
+        assert!(buffer.persistent_history[0].dry_run);
+    }
+
+    // ── Directory picker mode ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_picker_esc_returns_to_overview() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        buffer.enter_directory_picker();
+        assert!(matches!(
+            buffer.mode,
+            SyncBufferMode::DirectoryPicker { .. }
+        ));
+
+        // Act
+        let action = buffer.handle_action(UIAction::HideMinibuffer);
+
+        // Assert
+        assert_eq!(action, UIAction::Render);
+        assert!(matches!(buffer.mode, SyncBufferMode::Overview));
     }
 }

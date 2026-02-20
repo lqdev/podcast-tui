@@ -295,7 +295,9 @@ The application will create configuration files on first run:
     "directory": "~/Downloads/Podcasts",
     "concurrent_downloads": 3,
     "cleanup_after_days": 30,
-    "sync_include_playlists": true
+    "sync_include_playlists": true,
+    "sync_preview_before_sync": false,
+    "sync_filter_removable_only": false
   },
   "playlist": {
     "today_refresh_policy": "daily",
@@ -309,6 +311,59 @@ The application will create configuration files on first run:
     "data_directory": null
   }
 }
+```
+
+## Device Sync
+
+Sync your downloaded episodes and playlists to an external device (USB drive, MP3 player, etc.).
+
+### Basic Workflow
+
+1. Press `F8` to open the Sync buffer.
+2. Press `s` to sync immediately (or be prompted for a path if no target is saved).
+3. Press `d` to perform a **dry-run preview** first — see exactly what would be copied,
+   deleted, and skipped before committing.
+
+### Dry-Run Preview
+
+Pressing `d` runs a dry-run and opens a tabbed preview showing:
+
+| Tab | Contents |
+|-----|----------|
+| **To Copy** | Files that will be copied to the device (with sizes) |
+| **To Delete** | Orphan files that will be removed from the device |
+| **Skipped** | Files already identical on the device |
+| **Errors** | Any problems encountered |
+
+Use `[` and `]` to cycle between tabs. Press `Enter` or `s` to confirm and start the real sync,
+or `Esc` to cancel.
+
+### Progress View
+
+When a real sync is running, the buffer switches to a live progress view showing:
+- Byte-based progress bar (`bytes copied / total bytes`)
+- Currently-copying filename
+- Running counters: ✅ Copied / 🗑️ Deleted / ⏭ Skipped / ❌ Errors
+- Elapsed time
+
+The view automatically transitions back to Overview when the sync completes.
+
+### Configuration Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `sync_preview_before_sync` | `false` | If `true`, pressing `s` always shows a dry-run preview first |
+| `sync_filter_removable_only` | `false` | If `true`, directory picker only shows removable/external drives |
+| `sync_delete_orphans` | `true` | Delete device files that no longer exist on the PC |
+| `sync_include_playlists` | `true` | Include playlist files in the sync |
+| `sync_device_path` | `null` | Default device path used when no saved target exists |
+
+### Commands
+
+```
+:sync <path>             Sync to device at <path>
+:sync --hard <path>      Wipe managed directories first, then fresh copy
+:sync-dry-run <path>     Preview sync without applying changes
 ```
 
 ## Good Test Feeds

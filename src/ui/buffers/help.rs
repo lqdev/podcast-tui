@@ -152,6 +152,17 @@ impl HelpBuffer {
             "  p                    Open directory picker (sync buffer only)".to_string(),
             "  r                    Refresh sync view (sync buffer only)".to_string(),
             "  Enter                Activate selected saved target (sync buffer only)".to_string(),
+            "Dry-Run Preview (after pressing d):".to_string(),
+            "  [/]                  Cycle between tabs: To Copy, To Delete, Skipped, Errors"
+                .to_string(),
+            "  ↑↓                   Scroll file list".to_string(),
+            "  Enter/s              Confirm and start real sync".to_string(),
+            "  Esc                  Cancel preview, return to overview".to_string(),
+            "Progress View (during active sync):".to_string(),
+            "  (read-only)          Byte-based progress bar + live counters + elapsed time"
+                .to_string(),
+            "                       View auto-transitions to Overview when sync completes"
+                .to_string(),
             "  :sync <path>         Sync podcasts and playlists to device".to_string(),
             "  :sync --hard <path>  Wipe managed device dirs, then fresh copy".to_string(),
             "  :sync-dry-run <path> Preview sync changes without applying".to_string(),
@@ -159,7 +170,9 @@ impl HelpBuffer {
             "  Note: Sync compares files by name and size (metadata-only)".to_string(),
             "        Use --hard to clear Podcasts/Playlists before copying".to_string(),
             "        Use dry-run to preview changes before actual sync".to_string(),
-            "        Config: sync_device_path, sync_delete_orphans in config.json".to_string(),
+            "        Config: sync_device_path, sync_delete_orphans, sync_preview_before_sync,"
+                .to_string(),
+            "                sync_filter_removable_only in config.json".to_string(),
             "".to_string(),
             "DOWNLOAD CLEANUP:".to_string(),
             "  :delete-all-downloads    Delete ALL downloaded episodes".to_string(),

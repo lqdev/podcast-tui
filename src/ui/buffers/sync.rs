@@ -9,17 +9,18 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Modifier,
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
+    time::Instant,
 };
 
 use crate::{
-    download::{DownloadManager, SyncHistorySummary, SyncReport},
+    download::{DownloadManager, SyncHistorySummary, SyncProgressEvent, SyncReport},
     storage::JsonStorage,
     ui::{
         buffers::{Buffer, BufferId},
@@ -71,6 +72,44 @@ struct DirectoryEntry {
     is_quick_access: bool,
 }
 
+/// Tab in the dry-run preview showing different file categories.
+#[derive(Debug, Clone, PartialEq)]
+enum PreviewTab {
+    ToCopy,
+    ToDelete,
+    Skipped,
+    Errors,
+}
+
+impl PreviewTab {
+    fn label(&self) -> &str {
+        match self {
+            PreviewTab::ToCopy => "To Copy",
+            PreviewTab::ToDelete => "To Delete",
+            PreviewTab::Skipped => "Skipped",
+            PreviewTab::Errors => "Errors",
+        }
+    }
+
+    fn next(&self) -> Self {
+        match self {
+            PreviewTab::ToCopy => PreviewTab::ToDelete,
+            PreviewTab::ToDelete => PreviewTab::Skipped,
+            PreviewTab::Skipped => PreviewTab::Errors,
+            PreviewTab::Errors => PreviewTab::ToCopy,
+        }
+    }
+
+    fn prev(&self) -> Self {
+        match self {
+            PreviewTab::ToCopy => PreviewTab::Errors,
+            PreviewTab::ToDelete => PreviewTab::ToCopy,
+            PreviewTab::Skipped => PreviewTab::ToDelete,
+            PreviewTab::Errors => PreviewTab::Skipped,
+        }
+    }
+}
+
 /// Sync buffer operation mode
 enum SyncBufferMode {
     /// Overview: saved targets + sync history
@@ -84,6 +123,26 @@ enum SyncBufferMode {
         selected: usize,
         /// Scroll offset
         scroll: usize,
+    },
+    /// Dry-run preview: tabbed file list from a completed dry-run
+    DryRunPreview {
+        report: SyncReport,
+        device_path: PathBuf,
+        active_tab: PreviewTab,
+        selected: usize,
+        scroll: usize,
+    },
+    /// Live progress view: shows byte-based progress during an active sync
+    Progress {
+        device_path: PathBuf,
+        total_bytes: u64,
+        bytes_copied: u64,
+        current_file: Option<PathBuf>,
+        copied_count: usize,
+        deleted_count: usize,
+        skipped_count: usize,
+        error_count: usize,
+        start_time: Instant,
     },
 }
 
@@ -117,7 +176,6 @@ pub struct SyncBuffer {
 
     /// Cursor index across the flat overview list (targets then history)
     selected_index: usize,
-
 }
 
 impl SyncBuffer {
@@ -163,6 +221,11 @@ impl SyncBuffer {
         self.active_target = Some(path);
     }
 
+    /// Return the current active sync target path (if any).
+    pub fn active_target(&self) -> Option<&PathBuf> {
+        self.active_target.as_ref()
+    }
+
     // ── Persistence ──────────────────────────────────────────────────────────
 
     /// Load saved targets and history from disk.
@@ -192,15 +255,24 @@ impl SyncBuffer {
         match serde_json::to_string_pretty(value) {
             Ok(json) => {
                 if let Err(e) = std::fs::write(&tmp, &json) {
-                    eprintln!("podcast-tui: failed to write sync data to {}: {e}", tmp.display());
+                    eprintln!(
+                        "podcast-tui: failed to write sync data to {}: {e}",
+                        tmp.display()
+                    );
                     return;
                 }
                 if let Err(e) = std::fs::rename(&tmp, path) {
-                    eprintln!("podcast-tui: failed to persist sync data to {}: {e}", path.display());
+                    eprintln!(
+                        "podcast-tui: failed to persist sync data to {}: {e}",
+                        path.display()
+                    );
                 }
             }
             Err(e) => {
-                eprintln!("podcast-tui: failed to serialize sync data for {}: {e}", path.display());
+                eprintln!(
+                    "podcast-tui: failed to serialize sync data for {}: {e}",
+                    path.display()
+                );
             }
         }
     }
@@ -776,6 +848,17 @@ impl Buffer for SyncBuffer {
             "  Enter       Select current directory as sync target".to_string(),
             "  Esc         Cancel — return to Overview".to_string(),
             "".to_string(),
+            "Dry-Run Preview (after pressing d):".to_string(),
+            "  [/]         Cycle between To Copy / To Delete / Skipped / Errors tabs".to_string(),
+            "  ↑/↓         Scroll file list within the active tab".to_string(),
+            "  Enter / s   Confirm — start real sync to the previewed target".to_string(),
+            "  Esc         Cancel — return to Overview without syncing".to_string(),
+            "".to_string(),
+            "Progress View (during active sync):".to_string(),
+            "  (read-only) Byte-based progress bar + live counters + elapsed time".to_string(),
+            "              Automatically transitions back to Overview when sync completes"
+                .to_string(),
+            "".to_string(),
             "  C-h / F1    Show this help".to_string(),
         ]
     }
@@ -977,6 +1060,76 @@ impl UIComponent for SyncBuffer {
                 }
                 _ => UIAction::None,
             },
+            SyncBufferMode::DryRunPreview {
+                ref report,
+                ref device_path,
+                ref mut active_tab,
+                ref mut selected,
+                ref mut scroll,
+            } => match action {
+                UIAction::MoveUp => {
+                    *selected = selected.saturating_sub(1);
+                    if *selected < *scroll {
+                        *scroll = *selected;
+                    }
+                    UIAction::Render
+                }
+                UIAction::MoveDown => {
+                    let max = current_tab_len(report, active_tab).saturating_sub(1);
+                    if *selected < max {
+                        *selected += 1;
+                        let min_scroll = selected.saturating_sub(20);
+                        if *scroll < min_scroll {
+                            *scroll = min_scroll;
+                        }
+                    }
+                    UIAction::Render
+                }
+                UIAction::PageUp => {
+                    *selected = selected.saturating_sub(10);
+                    if *selected < *scroll {
+                        *scroll = *selected;
+                    }
+                    UIAction::Render
+                }
+                UIAction::PageDown => {
+                    let max = current_tab_len(report, active_tab).saturating_sub(1);
+                    *selected = (*selected + 10).min(max);
+                    let min_scroll = selected.saturating_sub(20);
+                    if *scroll < min_scroll {
+                        *scroll = min_scroll;
+                    }
+                    UIAction::Render
+                }
+                UIAction::PreviousTab => {
+                    *active_tab = active_tab.prev();
+                    *selected = 0;
+                    *scroll = 0;
+                    UIAction::Render
+                }
+                UIAction::NextTab => {
+                    *active_tab = active_tab.next();
+                    *selected = 0;
+                    *scroll = 0;
+                    UIAction::Render
+                }
+                UIAction::SelectItem | UIAction::SyncToDevice => {
+                    // Enter or 's' from preview → start real sync
+                    let path = device_path.clone();
+                    UIAction::TriggerDeviceSync {
+                        device_path: path,
+                        delete_orphans: false,
+                        dry_run: false,
+                    }
+                }
+                UIAction::HideMinibuffer => {
+                    // Esc → back to Overview
+                    self.mode = SyncBufferMode::Overview;
+                    UIAction::Render
+                }
+                _ => UIAction::Render,
+            },
+            SyncBufferMode::Progress { .. } => UIAction::Render,
         }
     }
 
@@ -994,25 +1147,28 @@ impl UIComponent for SyncBuffer {
 
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         // Extract picker state before the borrow checker makes life difficult
-        let is_picker = matches!(self.mode, SyncBufferMode::DirectoryPicker { .. });
-
-        if is_picker {
-            if let SyncBufferMode::DirectoryPicker {
+        match &self.mode {
+            SyncBufferMode::DirectoryPicker {
                 ref current_path,
                 ref entries,
                 selected,
                 scroll,
-            } = self.mode
-            {
-                // Clone so we can call `self.render_directory_picker`
+            } => {
                 let cp = current_path.clone();
                 let ents: Vec<DirectoryEntry> = entries.clone();
-                let sel = selected;
-                let scr = scroll;
+                let sel = *selected;
+                let scr = *scroll;
                 self.render_directory_picker(frame, area, &cp, &ents, sel, scr);
             }
-        } else {
-            self.render_overview(frame, area);
+            SyncBufferMode::DryRunPreview { .. } => {
+                self.render_dry_run_preview(frame, area);
+            }
+            SyncBufferMode::Progress { .. } => {
+                self.render_progress(frame, area);
+            }
+            SyncBufferMode::Overview => {
+                self.render_overview(frame, area);
+            }
         }
     }
 }
@@ -1035,6 +1191,425 @@ impl SyncBuffer {
             .sort_by(|a, b| b.last_used.cmp(&a.last_used));
         self.saved_targets.truncate(MAX_SAVED_TARGETS);
         self.persist_targets();
+    }
+
+    /// Switch to DryRunPreview mode with the given report.
+    pub fn enter_dry_run_preview(&mut self, device_path: PathBuf, report: SyncReport) {
+        self.mode = SyncBufferMode::DryRunPreview {
+            report,
+            device_path,
+            active_tab: PreviewTab::ToCopy,
+            selected: 0,
+            scroll: 0,
+        };
+    }
+
+    /// Switch to Progress mode for an in-progress sync.
+    pub fn enter_progress_mode(&mut self, device_path: PathBuf) {
+        self.mode = SyncBufferMode::Progress {
+            device_path,
+            total_bytes: 0,
+            bytes_copied: 0,
+            current_file: None,
+            copied_count: 0,
+            deleted_count: 0,
+            skipped_count: 0,
+            error_count: 0,
+            start_time: Instant::now(),
+        };
+    }
+
+    /// Return `true` if currently in Progress mode.
+    pub fn is_in_progress_mode(&self) -> bool {
+        matches!(self.mode, SyncBufferMode::Progress { .. })
+    }
+
+    /// Return `true` if currently in DryRunPreview mode.
+    pub fn is_in_dry_run_preview_mode(&self) -> bool {
+        matches!(self.mode, SyncBufferMode::DryRunPreview { .. })
+    }
+
+    /// Return to Overview mode (e.g., on sync error).
+    pub fn reset_to_overview(&mut self) {
+        self.mode = SyncBufferMode::Overview;
+    }
+
+    /// Update Progress mode state from an incoming `SyncProgressEvent`.
+    ///
+    /// Returns `true` if the sync has completed (caller should handle transition).
+    pub fn handle_progress_event(&mut self, event: SyncProgressEvent) -> bool {
+        if let SyncBufferMode::Progress {
+            ref mut total_bytes,
+            ref mut bytes_copied,
+            ref mut current_file,
+            ref mut copied_count,
+            ref mut deleted_count,
+            ref mut skipped_count,
+            ref mut error_count,
+            ..
+        } = self.mode
+        {
+            match event {
+                SyncProgressEvent::ScanComplete {
+                    total_bytes: tb, ..
+                } => {
+                    *total_bytes = tb;
+                }
+                SyncProgressEvent::FileCopied { path, bytes } => {
+                    *bytes_copied += bytes;
+                    *copied_count += 1;
+                    *current_file = Some(path);
+                }
+                SyncProgressEvent::FileDeleted { .. } => {
+                    *deleted_count += 1;
+                }
+                SyncProgressEvent::FileSkipped { .. } => {
+                    *skipped_count += 1;
+                }
+                SyncProgressEvent::Error { .. } => {
+                    *error_count += 1;
+                }
+                SyncProgressEvent::Complete { .. } => {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    // ── Dry-run preview rendering ─────────────────────────────────────────────
+
+    fn render_dry_run_preview(&self, frame: &mut Frame, area: Rect) {
+        let (report, device_path, active_tab, selected, scroll) =
+            if let SyncBufferMode::DryRunPreview {
+                ref report,
+                ref device_path,
+                ref active_tab,
+                selected,
+                scroll,
+            } = self.mode
+            {
+                (report, device_path, active_tab, selected, scroll)
+            } else {
+                return;
+            };
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Summary bar
+                Constraint::Length(3), // Tab bar
+                Constraint::Min(5),    // File list
+                Constraint::Length(3), // Hints
+            ])
+            .split(area);
+
+        // Summary bar
+        let total_copy_bytes: u64 = report
+            .files_copied
+            .iter()
+            .filter_map(|p| report.file_sizes.get(p))
+            .sum();
+        let summary = format!(
+            "📋 {} to copy ({})  ·  🗑️  {} to delete  ·  ⏭ {} skip  ·  ⚠ {} errors",
+            report.files_copied.len(),
+            format_bytes(total_copy_bytes),
+            report.files_deleted.len(),
+            report.files_skipped.len(),
+            report.errors.len(),
+        );
+        let summary_para = Paragraph::new(summary)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!("Sync Preview → {}", device_path.display()))
+                    .border_style(self.border_style()),
+            )
+            .style(self.theme.text_style());
+        frame.render_widget(summary_para, chunks[0]);
+
+        // Tab bar
+        let tabs = [
+            PreviewTab::ToCopy,
+            PreviewTab::ToDelete,
+            PreviewTab::Skipped,
+            PreviewTab::Errors,
+        ];
+        let tab_spans: Vec<Span> = tabs
+            .iter()
+            .flat_map(|tab| {
+                let label = if tab == active_tab {
+                    format!("[{} ▾]", tab.label())
+                } else {
+                    format!("[{}]", tab.label())
+                };
+                let style = if tab == active_tab {
+                    self.theme
+                        .text_style()
+                        .add_modifier(Modifier::BOLD)
+                        .add_modifier(Modifier::UNDERLINED)
+                } else {
+                    self.theme.text_style().add_modifier(Modifier::DIM)
+                };
+                vec![Span::styled(label, style), Span::raw("  ")]
+            })
+            .collect();
+        let tab_line = Line::from(tab_spans);
+        let tab_para = Paragraph::new(tab_line)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("[/] switch tab")
+                    .border_style(self.border_style()),
+            )
+            .style(self.theme.text_style());
+        frame.render_widget(tab_para, chunks[1]);
+
+        // File list for active tab
+        let (entries, total_bytes) = match active_tab {
+            PreviewTab::ToCopy => {
+                let total: u64 = report
+                    .files_copied
+                    .iter()
+                    .filter_map(|p| report.file_sizes.get(p))
+                    .sum();
+                let items: Vec<String> = report
+                    .files_copied
+                    .iter()
+                    .map(|p| {
+                        let size = report
+                            .file_sizes
+                            .get(p)
+                            .map(|b| format_bytes(*b))
+                            .unwrap_or_default();
+                        format!("📄 {}  {}", p.display(), size)
+                    })
+                    .collect();
+                (items, Some(total))
+            }
+            PreviewTab::ToDelete => (
+                report
+                    .files_deleted
+                    .iter()
+                    .map(|p| format!("🗑️  {}", p.display()))
+                    .collect(),
+                None,
+            ),
+            PreviewTab::Skipped => (
+                report
+                    .files_skipped
+                    .iter()
+                    .map(|p| format!("⏭  {}", p.display()))
+                    .collect(),
+                None,
+            ),
+            PreviewTab::Errors => (
+                report
+                    .errors
+                    .iter()
+                    .map(|(p, e)| format!("⚠  {}  {}", p.display(), e))
+                    .collect(),
+                None,
+            ),
+        };
+
+        let visible_height = chunks[2].height.saturating_sub(2) as usize;
+        let end = (scroll + visible_height).min(entries.len());
+        let visible = if entries.is_empty() {
+            vec!["  (none)".to_string()]
+        } else {
+            entries[scroll..end].to_vec()
+        };
+        let list_items: Vec<ListItem> = visible
+            .iter()
+            .enumerate()
+            .map(|(vi, line)| {
+                let actual_i = scroll + vi;
+                let style = if actual_i == selected {
+                    self.theme.selected_style()
+                } else {
+                    self.theme.text_style()
+                };
+                ListItem::new(line.as_str()).style(style)
+            })
+            .collect();
+        let footer = if let Some(tb) = total_bytes {
+            format!("Total: {}  ({} files)", format_bytes(tb), entries.len())
+        } else {
+            format!("{} files", entries.len())
+        };
+        let list = List::new(list_items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(footer)
+                    .border_style(self.border_style()),
+            )
+            .style(self.theme.text_style());
+        frame.render_widget(list, chunks[2]);
+
+        // Hints
+        let hints =
+            Paragraph::new("↑↓/j/k scroll  [/] cycle tabs  Enter/s confirm & sync  Esc cancel")
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("Actions")
+                        .border_style(self.border_style()),
+                )
+                .style(self.theme.text_style());
+        frame.render_widget(hints, chunks[3]);
+    }
+
+    // ── Progress view rendering ──────────────────────────────────────────────
+
+    fn render_progress(&self, frame: &mut Frame, area: Rect) {
+        let (
+            device_path,
+            total_bytes,
+            bytes_copied,
+            current_file,
+            copied,
+            deleted,
+            skipped,
+            errors,
+            start_time,
+        ) = if let SyncBufferMode::Progress {
+            ref device_path,
+            total_bytes,
+            bytes_copied,
+            ref current_file,
+            copied_count,
+            deleted_count,
+            skipped_count,
+            error_count,
+            ref start_time,
+        } = self.mode
+        {
+            (
+                device_path,
+                total_bytes,
+                bytes_copied,
+                current_file,
+                copied_count,
+                deleted_count,
+                skipped_count,
+                error_count,
+                start_time,
+            )
+        } else {
+            return;
+        };
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Progress bar
+                Constraint::Length(3), // Current file
+                Constraint::Length(3), // Counters
+                Constraint::Min(1),    // Status / padding
+            ])
+            .split(area);
+
+        // Progress bar
+        let pct = if total_bytes > 0 {
+            ((bytes_copied as f64 / total_bytes as f64) * 100.0).min(100.0) as u16
+        } else {
+            0
+        };
+        let bar_label = format!(
+            "{}%   {} / {}",
+            pct,
+            format_bytes(bytes_copied),
+            format_bytes(total_bytes)
+        );
+        let gauge = Gauge::default()
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!("Syncing → {}", device_path.display()))
+                    .border_style(self.border_style()),
+            )
+            .gauge_style(self.theme.selected_style())
+            .percent(pct)
+            .label(bar_label);
+        frame.render_widget(gauge, chunks[0]);
+
+        // Current file
+        let current_label = current_file
+            .as_ref()
+            .map(|p| format!("Currently:  {}", p.display()))
+            .unwrap_or_else(|| "Scanning…".to_string());
+        let current_para = Paragraph::new(current_label)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(self.border_style()),
+            )
+            .style(self.theme.text_style());
+        frame.render_widget(current_para, chunks[1]);
+
+        // Counters + elapsed
+        let elapsed = start_time.elapsed();
+        let elapsed_str = if elapsed.as_secs() >= 3600 {
+            format!(
+                "{}h {}m {}s",
+                elapsed.as_secs() / 3600,
+                (elapsed.as_secs() % 3600) / 60,
+                elapsed.as_secs() % 60
+            )
+        } else {
+            format!("{}m {}s", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
+        };
+        let counters = format!(
+            "✅ Copied: {}    🗑️ Deleted: {}    ⏭ Skipped: {}    ❌ Errors: {}    Elapsed: {}",
+            copied, deleted, skipped, errors, elapsed_str
+        );
+        let counters_para = Paragraph::new(counters)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(self.border_style()),
+            )
+            .style(self.theme.text_style())
+            .wrap(Wrap { trim: true });
+        frame.render_widget(counters_para, chunks[2]);
+
+        // Status
+        let status_para = Paragraph::new("  (sync in progress…)")
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(self.border_style()),
+            )
+            .style(self.theme.text_style().add_modifier(Modifier::DIM));
+        frame.render_widget(status_para, chunks[3]);
+    }
+}
+
+/// Format a byte count as a human-readable string (e.g. "1.5 MB").
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+/// Return the number of items in the active tab (for scroll clamping).
+fn current_tab_len(report: &SyncReport, tab: &PreviewTab) -> usize {
+    match tab {
+        PreviewTab::ToCopy => report.files_copied.len(),
+        PreviewTab::ToDelete => report.files_deleted.len(),
+        PreviewTab::Skipped => report.files_skipped.len(),
+        PreviewTab::Errors => report.errors.len(),
     }
 }
 
@@ -1277,5 +1852,214 @@ mod tests {
         // Assert
         assert_eq!(action, UIAction::Render);
         assert!(matches!(buffer.mode, SyncBufferMode::Overview));
+    }
+
+    // ── PreviewTab cycling ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_preview_tab_cycle_next_wraps() {
+        // Arrange / Act / Assert — full forward cycle
+        assert_eq!(PreviewTab::ToCopy.next(), PreviewTab::ToDelete);
+        assert_eq!(PreviewTab::ToDelete.next(), PreviewTab::Skipped);
+        assert_eq!(PreviewTab::Skipped.next(), PreviewTab::Errors);
+        assert_eq!(PreviewTab::Errors.next(), PreviewTab::ToCopy);
+    }
+
+    #[test]
+    fn test_preview_tab_cycle_prev_wraps() {
+        // Arrange / Act / Assert — full backward cycle
+        assert_eq!(PreviewTab::ToCopy.prev(), PreviewTab::Errors);
+        assert_eq!(PreviewTab::Errors.prev(), PreviewTab::Skipped);
+        assert_eq!(PreviewTab::Skipped.prev(), PreviewTab::ToDelete);
+        assert_eq!(PreviewTab::ToDelete.prev(), PreviewTab::ToCopy);
+    }
+
+    #[test]
+    fn test_dry_run_preview_mode_tab_cycling() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        buffer.enter_dry_run_preview(PathBuf::from("/media/usb"), SyncReport::new());
+        assert!(matches!(
+            buffer.mode,
+            SyncBufferMode::DryRunPreview {
+                active_tab: PreviewTab::ToCopy,
+                ..
+            }
+        ));
+
+        // Act — advance tabs via NextTab
+        buffer.handle_action(UIAction::NextTab);
+        assert!(matches!(
+            buffer.mode,
+            SyncBufferMode::DryRunPreview {
+                active_tab: PreviewTab::ToDelete,
+                ..
+            }
+        ));
+
+        // Act — go back via PreviousTab
+        buffer.handle_action(UIAction::PreviousTab);
+        assert!(matches!(
+            buffer.mode,
+            SyncBufferMode::DryRunPreview {
+                active_tab: PreviewTab::ToCopy,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_dry_run_preview_esc_returns_to_overview() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        buffer.enter_dry_run_preview(PathBuf::from("/media/usb"), SyncReport::new());
+
+        // Act
+        let action = buffer.handle_action(UIAction::HideMinibuffer);
+
+        // Assert
+        assert_eq!(action, UIAction::Render);
+        assert!(matches!(buffer.mode, SyncBufferMode::Overview));
+    }
+
+    #[test]
+    fn test_dry_run_preview_enter_triggers_sync() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        let path = PathBuf::from("/media/usb");
+        buffer.enter_dry_run_preview(path.clone(), SyncReport::new());
+
+        // Act — pressing Enter from preview should start real sync
+        let action = buffer.handle_action(UIAction::SelectItem);
+
+        // Assert
+        match action {
+            UIAction::TriggerDeviceSync {
+                device_path,
+                dry_run,
+                ..
+            } => {
+                assert_eq!(device_path, path);
+                assert!(!dry_run, "Confirming from preview must use dry_run=false");
+            }
+            other => panic!("Expected TriggerDeviceSync, got {:?}", other),
+        }
+    }
+
+    // ── Progress mode ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_progress_mode_enter_and_mode_flag() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        assert!(!buffer.is_in_progress_mode());
+
+        // Act
+        buffer.enter_progress_mode(PathBuf::from("/media/usb"));
+
+        // Assert
+        assert!(buffer.is_in_progress_mode());
+    }
+
+    #[test]
+    fn test_progress_handle_scan_complete_sets_total_bytes() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        buffer.enter_progress_mode(PathBuf::from("/media/usb"));
+
+        // Act
+        let complete = buffer.handle_progress_event(SyncProgressEvent::ScanComplete {
+            total_bytes: 1_000_000,
+            total_files: 5,
+        });
+
+        // Assert
+        assert!(!complete, "ScanComplete should not signal completion");
+        if let SyncBufferMode::Progress { total_bytes, .. } = &buffer.mode {
+            assert_eq!(*total_bytes, 1_000_000);
+        } else {
+            panic!("Expected Progress mode");
+        }
+    }
+
+    #[test]
+    fn test_progress_handle_file_copied_increments_counters() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        buffer.enter_progress_mode(PathBuf::from("/media/usb"));
+
+        // Act
+        buffer.handle_progress_event(SyncProgressEvent::FileCopied {
+            path: PathBuf::from("Podcasts/test.mp3"),
+            bytes: 500,
+        });
+
+        // Assert
+        if let SyncBufferMode::Progress {
+            bytes_copied,
+            copied_count,
+            ..
+        } = &buffer.mode
+        {
+            assert_eq!(*bytes_copied, 500);
+            assert_eq!(*copied_count, 1);
+        } else {
+            panic!("Expected Progress mode");
+        }
+    }
+
+    #[test]
+    fn test_progress_handle_complete_returns_true() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        buffer.enter_progress_mode(PathBuf::from("/media/usb"));
+
+        // Act
+        let complete = buffer.handle_progress_event(SyncProgressEvent::Complete {
+            report: SyncReport::new(),
+        });
+
+        // Assert
+        assert!(complete, "Complete event should return true");
+    }
+
+    #[test]
+    fn test_progress_reset_to_overview() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+        buffer.enter_progress_mode(PathBuf::from("/media/usb"));
+        assert!(buffer.is_in_progress_mode());
+
+        // Act
+        buffer.reset_to_overview();
+
+        // Assert
+        assert!(matches!(buffer.mode, SyncBufferMode::Overview));
+        assert!(!buffer.is_in_progress_mode());
+    }
+
+    // ── format_bytes ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_format_bytes_sub_kb() {
+        assert_eq!(format_bytes(0), "0 B");
+        assert_eq!(format_bytes(512), "512 B");
+        assert_eq!(format_bytes(1023), "1023 B");
+    }
+
+    #[test]
+    fn test_format_bytes_kb_range() {
+        assert_eq!(format_bytes(1024), "1.0 KB");
+        assert_eq!(format_bytes(1536), "1.5 KB");
+    }
+
+    #[test]
+    fn test_format_bytes_mb_range() {
+        assert_eq!(format_bytes(1_048_576), "1.0 MB");
+    }
+
+    #[test]
+    fn test_format_bytes_gb_range() {
+        assert_eq!(format_bytes(1_073_741_824), "1.0 GB");
     }
 }

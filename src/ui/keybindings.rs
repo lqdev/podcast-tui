@@ -172,6 +172,10 @@ impl KeyHandler {
         // Search and filter
         self.bind_key(KeyChord::none(KeyCode::Char('/')), UIAction::Search);
         self.bind_key(KeyChord::none(KeyCode::F(6)), UIAction::ClearFilters);
+
+        // Tab cycling (for dry-run preview mode)
+        self.bind_key(KeyChord::none(KeyCode::Char('[')), UIAction::PreviousTab);
+        self.bind_key(KeyChord::none(KeyCode::Char(']')), UIAction::NextTab);
     }
 
     /// Bind a key chord to an action

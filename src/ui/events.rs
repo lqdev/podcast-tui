@@ -351,6 +351,11 @@ pub enum AppEvent {
         error: String,
     },
 
+    /// Device sync progress event
+    DeviceSyncProgress {
+        event: crate::download::SyncProgressEvent,
+    },
+
     /// Download cleanup completed (age-based cleanup)
     DownloadCleanupCompleted {
         deleted_count: usize,

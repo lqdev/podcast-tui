@@ -197,6 +197,10 @@ pub enum UIAction {
         delete_orphans: bool,
         dry_run: bool,
     },
+    /// Cycle to previous tab (e.g. in dry-run preview)
+    PreviousTab,
+    /// Cycle to next tab (e.g. in dry-run preview)
+    NextTab,
 
     // Search & filter actions
     /// Activate text search in the current buffer (opens minibuffer for input)

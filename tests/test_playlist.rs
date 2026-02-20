@@ -218,6 +218,7 @@ async fn test_sync_with_playlists_creates_sibling_device_dirs() {
             false,
             false,
             false,
+            None,
         )
         .await
         .expect("Sync should succeed");

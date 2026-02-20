@@ -130,6 +130,14 @@ pub struct DownloadConfig {
     pub sync_dry_run: bool, // Default to dry-run mode for safety (default: false)
     #[serde(default = "default_sync_include_playlists")]
     pub sync_include_playlists: bool, // Include playlists in device sync (default: true)
+
+    // Phase 3 sync options (with defaults for backward compatibility)
+    /// If true, pressing 's' (sync) shows a dry-run preview first, requiring confirmation.
+    #[serde(default)]
+    pub sync_preview_before_sync: bool, // Default: false (immediate sync)
+    /// If true, directory picker only shows removable/external drives.
+    #[serde(default)]
+    pub sync_filter_removable_only: bool, // Default: false (show all directories)
 }
 
 // Default functions for serde
@@ -195,6 +203,8 @@ impl Default for DownloadConfig {
             sync_preserve_structure: true,
             sync_dry_run: false,
             sync_include_playlists: true,
+            sync_preview_before_sync: false,
+            sync_filter_removable_only: false,
         }
     }
 }
@@ -442,6 +452,19 @@ mod tests {
         let config: Config = serde_json::from_str(legacy_json).expect("Legacy config should parse");
         assert_eq!(config.playlist.today_refresh_policy, "daily");
         assert!(config.downloads.sync_include_playlists);
+        // Phase 3 fields should default to false when absent from legacy config
+        assert!(!config.downloads.sync_preview_before_sync);
+        assert!(!config.downloads.sync_filter_removable_only);
+    }
+
+    #[test]
+    fn test_config_phase3_sync_fields_default() {
+        // Arrange / Act
+        let config = Config::default();
+
+        // Assert — new fields default to false (non-breaking)
+        assert!(!config.downloads.sync_preview_before_sync);
+        assert!(!config.downloads.sync_filter_removable_only);
     }
 
     #[test]

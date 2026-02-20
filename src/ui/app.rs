@@ -555,11 +555,21 @@ impl UIApp {
             }
             UIAction::DeletePodcast => {
                 if self.buffer_manager.current_buffer_id().as_deref() == Some("sync") {
-                    let default_path = self.get_default_sync_path();
-                    self.minibuffer.set_content(MinibufferContent::Input {
-                        prompt: format!("Dry run sync to (default: {}): ", default_path),
-                        input: String::new(),
-                    });
+                    // 'd' in sync buffer → dry-run with active target (or prompt if none)
+                    if let Some(active_path) = self
+                        .buffer_manager
+                        .get_sync_buffer_mut()
+                        .and_then(|b| b.active_target().cloned())
+                    {
+                        let path_str = active_path.to_string_lossy().to_string();
+                        self.trigger_async_device_sync(path_str, false, true, false);
+                    } else {
+                        let default_path = self.get_default_sync_path();
+                        self.minibuffer.set_content(MinibufferContent::Input {
+                            prompt: format!("Dry run sync to (default: {}): ", default_path),
+                            input: String::new(),
+                        });
+                    }
                     return Ok(true);
                 }
 
@@ -1241,9 +1251,22 @@ impl UIApp {
                         UIAction::TriggerDeviceSync {
                             device_path,
                             delete_orphans,
-                            dry_run,
+                            mut dry_run,
                         } => {
-                            // Buffer has an active target and wants to sync directly (no prompt)
+                            // Buffer has an active target and wants to sync directly (no prompt).
+                            // If sync_preview_before_sync is set and we're NOT already coming from
+                            // the DryRunPreview mode, convert to a dry-run first.
+                            let is_from_preview = self
+                                .buffer_manager
+                                .get_sync_buffer_mut()
+                                .map(|b| b.is_in_dry_run_preview_mode())
+                                .unwrap_or(false);
+                            if !dry_run
+                                && self.config.downloads.sync_preview_before_sync
+                                && !is_from_preview
+                            {
+                                dry_run = true;
+                            }
                             let path_str = device_path.to_string_lossy().to_string();
                             self.trigger_async_device_sync(
                                 path_str,
@@ -1592,37 +1615,74 @@ impl UIApp {
                 report,
                 dry_run,
             } => {
-                // Update sync buffer with results
-                if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
-                    sync_buffer.add_sync_result(device_path.clone(), report.clone(), dry_run);
-                }
-
-                let mode = if dry_run { " (dry run)" } else { "" };
-                let summary = if report.is_success() {
-                    format!(
-                        "Sync completed successfully{}: {} copied, {} deleted, {} skipped",
-                        mode,
-                        report.files_copied.len(),
-                        report.files_deleted.len(),
-                        report.files_skipped.len()
-                    )
+                if dry_run {
+                    // Enter dry-run preview mode so the user can review and confirm
+                    if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
+                        sync_buffer.enter_dry_run_preview(device_path.clone(), report.clone());
+                    }
+                    let summary = if report.is_success() {
+                        format!(
+                            "Dry run: {} to copy, {} to delete, {} skip — press Enter/s to confirm",
+                            report.files_copied.len(),
+                            report.files_deleted.len(),
+                            report.files_skipped.len()
+                        )
+                    } else {
+                        format!(
+                            "Dry run: {} to copy, {} to delete, {} skip ({} errors)",
+                            report.files_copied.len(),
+                            report.files_deleted.len(),
+                            report.files_skipped.len(),
+                            report.errors.len()
+                        )
+                    };
+                    self.show_message(summary);
                 } else {
-                    format!(
-                        "Sync completed{} with {} errors: {} copied, {} deleted, {} skipped",
-                        mode,
-                        report.errors.len(),
-                        report.files_copied.len(),
-                        report.files_deleted.len(),
-                        report.files_skipped.len()
-                    )
-                };
-                self.load_playlists_into_buffer().await;
-                self.show_message(summary);
+                    // Real sync completed — update history, return to overview
+                    if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
+                        sync_buffer.add_sync_result(device_path.clone(), report.clone(), dry_run);
+                        sync_buffer.reset_to_overview();
+                    }
+
+                    let summary = if report.is_success() {
+                        format!(
+                            "Sync complete: {} copied, {} deleted, {} skipped",
+                            report.files_copied.len(),
+                            report.files_deleted.len(),
+                            report.files_skipped.len()
+                        )
+                    } else {
+                        format!(
+                            "Sync complete with {} errors: {} copied, {} deleted, {} skipped",
+                            report.errors.len(),
+                            report.files_copied.len(),
+                            report.files_deleted.len(),
+                            report.files_skipped.len()
+                        )
+                    };
+                    self.load_playlists_into_buffer().await;
+                    self.show_message(summary);
+                }
+            }
+            AppEvent::DeviceSyncProgress { event } => {
+                if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
+                    let complete = sync_buffer.handle_progress_event(event);
+                    if complete {
+                        // Complete event will be followed by DeviceSyncCompleted; nothing extra needed
+                    }
+                }
             }
             AppEvent::DeviceSyncFailed {
                 device_path: _,
                 error,
             } => {
+                // On failure, return sync buffer to Overview
+                if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
+                    // enter_progress_mode is only called for real syncs; reset to overview on error
+                    if sync_buffer.is_in_progress_mode() {
+                        sync_buffer.reset_to_overview();
+                    }
+                }
                 self.show_error(format!("Could not sync device: {}", error));
             }
             AppEvent::DownloadCleanupCompleted {
@@ -3150,6 +3210,25 @@ impl UIApp {
             hard_sync,
         });
 
+        // For real syncs (not dry-run): create a progress channel and enter Progress mode.
+        let progress_tx = if !dry_run {
+            if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
+                sync_buffer.enter_progress_mode(device_path.clone());
+            }
+            let (tx, mut rx) =
+                tokio::sync::mpsc::unbounded_channel::<crate::download::SyncProgressEvent>();
+            // Relay progress events to app_event_tx
+            let relay_tx = app_event_tx.clone();
+            tokio::spawn(async move {
+                while let Some(event) = rx.recv().await {
+                    let _ = relay_tx.send(AppEvent::DeviceSyncProgress { event });
+                }
+            });
+            Some(tx)
+        } else {
+            None
+        };
+
         tokio::spawn(async move {
             match download_manager
                 .sync_to_device(
@@ -3158,6 +3237,7 @@ impl UIApp {
                     delete_orphans,
                     dry_run,
                     hard_sync,
+                    progress_tx,
                 )
                 .await
             {

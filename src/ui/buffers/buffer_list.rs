@@ -50,7 +50,7 @@ impl BufferListBuffer {
         self.buffer_items = buffers
             .into_iter()
             .map(|(id, name)| {
-                let is_current = current_buffer.map_or(false, |current| current == &id);
+                let is_current = current_buffer == Some(&id);
                 (id, name, is_current)
             })
             .collect();

@@ -24,6 +24,12 @@ pub struct PlaylistListBuffer {
     playlist_manager: Option<Arc<PlaylistManager>>,
 }
 
+impl Default for PlaylistListBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PlaylistListBuffer {
     pub fn new() -> Self {
         Self {

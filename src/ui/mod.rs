@@ -122,7 +122,7 @@ pub enum UIAction {
     },
     /// Open episode detail view
     OpenEpisodeDetail {
-        episode: crate::podcast::Episode,
+        episode: Box<crate::podcast::Episode>,
     },
     /// Open episode detail by IDs (used by playlist entries)
     OpenEpisodeDetailById {

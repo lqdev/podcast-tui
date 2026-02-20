@@ -297,7 +297,7 @@ impl<S: Storage> DownloadManager<S> {
 
                 // Embed ID3 metadata if configured and file is MP3
                 if self.config.embed_id3_metadata
-                    && file_path.extension().map_or(false, |ext| ext == "mp3")
+                    && file_path.extension().is_some_and(|ext| ext == "mp3")
                 {
                     if let Err(e) = self
                         .embed_id3_metadata(&file_path, &episode, &podcast)
@@ -400,8 +400,11 @@ impl<S: Storage> DownloadManager<S> {
                                 episode.status = EpisodeStatus::New;
 
                                 // Save updated episode
-                                if let Err(_) =
-                                    self.storage.save_episode(podcast_id, &episode).await
+                                if self
+                                    .storage
+                                    .save_episode(podcast_id, &episode)
+                                    .await
+                                    .is_err()
                                 {
                                     failed_count += 1;
                                 }
@@ -416,7 +419,12 @@ impl<S: Storage> DownloadManager<S> {
                         episode.local_path = None;
                         episode.status = EpisodeStatus::New;
 
-                        if let Err(_) = self.storage.save_episode(podcast_id, &episode).await {
+                        if self
+                            .storage
+                            .save_episode(podcast_id, &episode)
+                            .await
+                            .is_err()
+                        {
                             failed_count += 1;
                         }
                     }
@@ -424,7 +432,7 @@ impl<S: Storage> DownloadManager<S> {
             }
         }
 
-        // Try to remove the podcast-specific directory if it exists and is empty
+        // Try to remove the podcast-specific directoryif it exists and is empty
         self.cleanup_podcast_directory_by_name(&folder_name).await?;
 
         if failed_count > 0 {
@@ -471,8 +479,11 @@ impl<S: Storage> DownloadManager<S> {
                                     episode.status = EpisodeStatus::New;
 
                                     // Save updated episode
-                                    if let Err(_) =
-                                        self.storage.save_episode(&podcast_id, &episode).await
+                                    if self
+                                        .storage
+                                        .save_episode(&podcast_id, &episode)
+                                        .await
+                                        .is_err()
                                     {
                                         failed_count += 1;
                                     }
@@ -487,7 +498,12 @@ impl<S: Storage> DownloadManager<S> {
                             episode.local_path = None;
                             episode.status = EpisodeStatus::New;
 
-                            if let Err(_) = self.storage.save_episode(&podcast_id, &episode).await {
+                            if self
+                                .storage
+                                .save_episode(&podcast_id, &episode)
+                                .await
+                                .is_err()
+                            {
                                 failed_count += 1;
                             }
                         }
@@ -1419,6 +1435,7 @@ impl<S: Storage> DownloadManager<S> {
     /// * `root_path` - The original root path for computing relative paths
     /// * `current_path` - The current directory being scanned (for recursion)
     /// * `files` - The map to populate with file information
+    #[allow(clippy::only_used_in_recursion)]
     fn scan_directory_impl<'a>(
         &'a self,
         root_path: &'a Path,
@@ -1445,10 +1462,10 @@ impl<S: Storage> DownloadManager<S> {
                             let relative_path = path
                                 .strip_prefix(root_path)
                                 .map_err(|e| {
-                                    SyncError::Io(std::io::Error::new(
-                                        std::io::ErrorKind::Other,
-                                        format!("Failed to compute relative path: {}", e),
-                                    ))
+                                    SyncError::Io(std::io::Error::other(format!(
+                                        "Failed to compute relative path: {}",
+                                        e
+                                    )))
                                 })?
                                 .to_path_buf();
 
@@ -1554,6 +1571,7 @@ impl<S: Storage> DownloadManager<S> {
     }
 
     /// Clean up empty directories within a given path
+    #[allow(clippy::only_used_in_recursion)]
     fn cleanup_empty_directories_in<'a>(
         &'a self,
         base_path: &'a Path,

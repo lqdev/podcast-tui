@@ -73,6 +73,16 @@ impl KeyHandler {
         self.bind_key(KeyChord::ctrl(KeyCode::Up), UIAction::MoveEpisodeUp);
         self.bind_key(KeyChord::ctrl(KeyCode::Down), UIAction::MoveEpisodeDown);
 
+        // Vim-style navigation aliases
+        self.bind_key(KeyChord::none(KeyCode::Char('j')), UIAction::MoveDown);
+        self.bind_key(KeyChord::none(KeyCode::Char('k')), UIAction::MoveUp);
+        self.bind_key(KeyChord::none(KeyCode::Char('g')), UIAction::MoveToTop);
+        self.bind_key(KeyChord::shift(KeyCode::Char('G')), UIAction::MoveToBottom);
+
+        // Emacs-style navigation aliases (C-n/C-p globally, not just minibuffer)
+        self.bind_key(KeyChord::ctrl(KeyCode::Char('n')), UIAction::MoveDown);
+        self.bind_key(KeyChord::ctrl(KeyCode::Char('p')), UIAction::MoveUp);
+
         // Function keys - rarely clash
         self.bind_key(KeyChord::none(KeyCode::F(1)), UIAction::ShowHelp);
         self.bind_key(
@@ -258,5 +268,47 @@ mod tests {
         let key_event = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE);
         let action = handler.handle_key(key_event);
         assert_eq!(action, UIAction::SyncToDevice);
+    }
+
+    #[test]
+    fn test_vim_navigation_j_moves_down() {
+        let mut handler = KeyHandler::new();
+        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        assert_eq!(handler.handle_key(key), UIAction::MoveDown);
+    }
+
+    #[test]
+    fn test_vim_navigation_k_moves_up() {
+        let mut handler = KeyHandler::new();
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        assert_eq!(handler.handle_key(key), UIAction::MoveUp);
+    }
+
+    #[test]
+    fn test_vim_navigation_g_moves_to_top() {
+        let mut handler = KeyHandler::new();
+        let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
+        assert_eq!(handler.handle_key(key), UIAction::MoveToTop);
+    }
+
+    #[test]
+    fn test_vim_navigation_shift_g_moves_to_bottom() {
+        let mut handler = KeyHandler::new();
+        let key = KeyEvent::new(KeyCode::Char('G'), KeyModifiers::SHIFT);
+        assert_eq!(handler.handle_key(key), UIAction::MoveToBottom);
+    }
+
+    #[test]
+    fn test_ctrl_n_moves_down() {
+        let mut handler = KeyHandler::new();
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL);
+        assert_eq!(handler.handle_key(key), UIAction::MoveDown);
+    }
+
+    #[test]
+    fn test_ctrl_p_moves_up() {
+        let mut handler = KeyHandler::new();
+        let key = KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL);
+        assert_eq!(handler.handle_key(key), UIAction::MoveUp);
     }
 }

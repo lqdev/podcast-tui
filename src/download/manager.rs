@@ -432,7 +432,7 @@ impl<S: Storage> DownloadManager<S> {
             }
         }
 
-        // Try to remove the podcast-specific directoryif it exists and is empty
+        // Try to remove the podcast-specific directory if it exists and is empty
         self.cleanup_podcast_directory_by_name(&folder_name).await?;
 
         if failed_count > 0 {

@@ -433,6 +433,143 @@ test: add property-based tests for validation
 
 ---
 
+## 🔨 Implementation Best Practices
+
+When you work on an issue, follow these practices to keep changes high-quality, reviewable, and maintainable.
+
+### 1. Make Changes Small, Atomic, and Self-Contained
+
+**You must** scope each PR to a single, clear purpose. If an issue requires multiple logical steps, break it into sub-issues or multiple commits within a single PR.
+
+**Rationale**: Reviewers can understand the change in one sitting. Bugs are easier to isolate. You can confidently test the narrower scope.
+
+**Examples:**
+- ✅ PR #72: "Fix Cargo.toml metadata" (1 focused change + 4 related commits for phased rollout)
+- ✅ PR #70: "Add MockStorage for test coverage" (1 new feature, 1 test)
+- ✅ PR #71: "Backfill winget manifests" (add 3 missing versions, validate each)
+- ❌ Don't: "Add sync buffer + fix downloads + update keybindings" (multiple unrelated changes)
+
+**Do this:**
+- One issue → one focused branch
+- One logical unit of work → one commit (or grouped logically: scaffolding → implementation → tests)
+- If you discover unrelated bugs, file a new issue for them
+
+### 2. Test Early and Often
+
+**You must** write tests alongside code changes. Run them after every logical step, not just at the end.
+
+**Rationale**: Catches bugs immediately. Gives confidence before pushing. Makes refactoring safe.
+
+**What to test:**
+- Business logic: unit tests (storage operations, download logic, etc.)
+- User workflows: integration tests (e.g., `tests/test_sync_commands.rs`)
+- Error paths: test that errors are handled gracefully, not silently
+- Edge cases: empty lists, network timeouts, file permission errors
+
+**Do this:**
+```bash
+# After implementing a function, immediately test it
+cargo test test_my_new_function
+
+# Before committing, run all tests
+cargo test
+
+# For doc-only changes, verify no regressions
+cargo fmt --check && cargo clippy && cargo test
+```
+
+### 3. Commit and Checkpoint Early and Often
+
+**You must** commit with descriptive messages as you progress. Use atomic commits so each commit is a complete, working step.
+
+**Rationale**: Easy to revert a bad change. Clear history for future readers. Checkpoints help you recover if something breaks.
+
+**Commit format:**
+```
+type(scope): brief description
+
+[Optional: Detailed explanation of what changed and why]
+
+[Optional footer: Closes #N or Part of #N]
+```
+
+**Types**: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+
+**Example:**
+```
+feat(sync): add dry-run preview mode for device sync
+
+Implement a new config flag sync_preview_before_sync (default: false) that
+gates whether the sync buffer shows a diff preview before executing the sync.
+This helps users avoid accidental data loss on USB devices.
+
+Changes:
+- DownloadConfig: new field sync_preview_before_sync
+- SyncBuffer: new DryRunPreview mode in state machine
+- UIApp: dispatch DryRunPreview → show preview overlay
+
+Tests: 2 unit tests (config parsing, state transitions)
+
+Closes #74
+```
+
+### 4. Document Your Progress, Changes, and Decisions Thoroughly
+
+**You must** explain the "why" in code, commits, and documentation — not just the "what".
+
+**Where to document:**
+
+| Location | What | Example |
+|----------|------|---------|
+| **Code comments** | Non-obvious logic, invariants, gotchas | `// Atomic write: temp file then rename to avoid partial writes` |
+| **Commit messages** | Why this change was needed, design trade-offs | `Part of #75: Directory picker needs ranger-style navigation to mimic fzf. See RFC-003 for nav spec.` |
+| **PR body** | Summary of changes, testing done, edge cases handled | See PR #70, #71, #72 for examples |
+| **ADR/RFC** | Architectural decisions, alternatives considered | New buffer? Create ADR. New feature? Create RFC. |
+| **CHANGELOG.md** | User-facing changes (features, commands, config fields) | Use `update-changelog` skill |
+
+**Do this:**
+- Explain trade-offs you made ("We chose X over Y because Z")
+- Link to related ADRs/RFCs in commit messages
+- Update documentation when adding features (KEYBINDINGS.md, ARCHITECTURE.md, etc.)
+- Include "why" not just "what" in PR descriptions
+
+### 5. Don't Introduce Bugs or Regressions
+
+**You must** verify that existing functionality still works after your changes.
+
+**Rationale**: Regressions silently break user workflows. One bug spreads through multiple sub-issues. A clean main branch is a reliable baseline.
+
+**Before pushing:**
+
+```bash
+# 1. Run full test suite
+cargo test
+
+# 2. Check formatting
+cargo fmt --check
+
+# 3. Run linter with strict warnings
+cargo clippy -- -D warnings
+
+# 4. Build release binary (catches optimization-only bugs)
+cargo build --release
+
+# 5. For UI changes, manual test in the terminal
+cargo run
+```
+
+**For PRs:**
+- Verify cross-platform compatibility (Windows + Linux if you changed file paths)
+- Test with the actual config files (not just defaults)
+- Check that error messages are user-friendly, not panics
+- Ensure async operations don't deadlock or drop errors silently
+
+**If you find a pre-existing bug:**
+- File a new issue, don't mix it into your PR
+- Document in your PR: "Pre-existing issue: ..."
+
+---
+
 ## 🎯 Issue Workflow & Project Management
 
 ### Project Board

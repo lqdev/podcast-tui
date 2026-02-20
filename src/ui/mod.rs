@@ -11,6 +11,7 @@ pub mod buffers;
 pub mod components;
 pub mod events;
 pub mod filters;
+pub mod key_parser;
 pub mod keybindings;
 pub mod themes;
 

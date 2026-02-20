@@ -17,7 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added vim-style navigation keys `j`/`k` (down/up), `g` (top), `G` (bottom) as aliases for arrow keys, Home, and End in all list buffers. Also added `C-n`/`C-p` as global Emacs-style navigation aliases. Closes [#93](https://github.com/lqdev/podcast-tui/issues/93).
+**Key Notation Parser (String ↔ KeyChord) — February 2026**
+- **Foundation for configurable keybindings**: new `key_parser` module (`src/ui/key_parser.rs`) converts human-readable key notation strings to `KeyChord` structs and back
+  - Supports modifier prefixes: `C-` (Ctrl), `S-` (Shift), `A-`/`M-` (Alt), and combinations like `C-S-x`
+  - Named keys: `Enter`, `Tab`, `Esc`, `Backspace`, `Delete`, `Space`/`SPC`, arrow keys, `Home`, `End`, `PgUp`/`PgDn`
+  - Function keys `F1`–`F12` with optional modifier prefix (e.g., `C-F3`)
+  - Single character literals (e.g., `q`, `?`, `3`)
+  - `key_to_notation()` serializes a `KeyChord` back to its canonical string (full round-trip support)
+  - Descriptive `KeyParseError` variants for empty input, unknown key names, and missing keys after modifier
+  - Tests added: 31 unit tests covering all key types, modifiers, combinations, round-trips, and error cases. Closes [#96](https://github.com/lqdev/podcast-tui/issues/96).
+
+- Added vim-style navigation keys`j`/`k` (down/up), `g` (top), `G` (bottom) as aliases for arrow keys, Home, and End in all list buffers. Also added `C-n`/`C-p` as global Emacs-style navigation aliases. Closes [#93](https://github.com/lqdev/podcast-tui/issues/93).
 
 - Implemented `m` (mark played) and `u` (mark unplayed) keybindings for episodes. Pressing `m` on a selected episode marks it as played (persists to storage), `u` marks it as unplayed. Works in the episode list, What's New, and playlist detail buffers. Visual status updates immediately; storage is written asynchronously. Closes [#94](https://github.com/lqdev/podcast-tui/issues/94).
   - Keybindings: `m` → Mark episode as played, `u` → Mark episode as unplayed

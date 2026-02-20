@@ -20,6 +20,9 @@ Cargo.lock
 *.swo
 *~
 
+# Copilot session state (ephemeral per-session artifacts)
+.copilot/
+
 # OS generated files
 .DS_Store
 .DS_Store?

@@ -81,7 +81,7 @@ PR requirements:
 - Note any testing done beyond automated tests
 
 ### 8. Update changelog (if user-facing)
-If the change is user-facing, update `CHANGELOG.md` following the `update-changelog` skill.
+If the change is user-facing, update `CHANGELOG.md` following the `update-changelog` skill **before pushing**. Add the entry to `[Unreleased]` and include it in the same commit as the code change. This is what prevents changelog gaps when multiple releases are cut quickly.
 
 ## Tips
 - One issue per branch — don't combine unrelated changes

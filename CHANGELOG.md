@@ -11,12 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.9.0] - 2026-02-20
 
-### Fixed
-
-**Sync buffer inaccessible at startup — February 2026**
-- **F8 and `:buffer sync` now work**: the sync buffer was missing from the `initialize()` code path that runs at startup, making it unreachable via F8 or `:buffer sync` ([#86](https://github.com/lqdev/podcast-tui/issues/86))
-
 ### Added
+
+**Sync Buffer Phase 2: Saved Targets, Directory Picker, History Persistence — February 2026**
+- **Saved Targets**: Up to 5 recently-used sync destinations are remembered and shown in the overview, ranked by use count
+- **Ranger-Style Directory Picker**: Press `p` from the sync buffer overview to browse the filesystem and select a sync target directory
+  - Platform-aware quick access: drive letters (Windows), `/Volumes` + `~/Music` (macOS), `/media` + `/mnt` (Linux)
+  - `→` / `MoveRight` to enter a directory; `←` / `MoveLeft` to go up; `Enter` on a regular directory to select it as the target
+  - `Esc` cancels picker and returns to overview
+- **History Persistence**: Sync results are saved across sessions in `{data_dir}/sync_history.json` (up to 10 entries with file counts)
+- **Target Persistence**: Saved targets and the active target are stored in `{data_dir}/sync_targets.json`
+- **Overview Status Panel**: Shows active target path and last sync summary (timestamp, mode, files copied/deleted)
+  - Falls back to persisted history when in-memory sync hasn't run yet
+- Keybindings: `p` → open directory picker, `Enter` → activate selected target (overview), `→`/`←` → navigate picker
+- Tests added: 12 unit tests
 
 **Sync Buffer Phase 3: Dry-Run Preview, Progress View, Config Options — February 2026**
 - **Dry-Run Preview Mode**: After pressing `d`, a tabbed preview shows exactly what would happen before committing
@@ -56,20 +64,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Keybinding: `d` → dry-run preview (sync buffer only)
   - Tests added: 5 unit tests
 
+**Sync buffer inaccessible at startup — February 2026**
+- **F8 and `:buffer sync` now work**: the sync buffer was missing from the `initialize()` code path that runs at startup, making it unreachable via F8 or `:buffer sync` ([#86](https://github.com/lqdev/podcast-tui/issues/86))
+
+### Changed
+
+- **Zero clippy warnings** ([#85](https://github.com/lqdev/podcast-tui/pull/85)): Fixed all 42 clippy warnings (`unnecessary_map_or`, `redundant_closure`, `redundant_pattern_matching`, missing `Default` impls, `large_enum_variant`); `cargo clippy -- -D warnings` now passes clean
+
+---
+
+## [1.8.0] - 2026-02-19
+
 ### Added
 
-**Sync Buffer Phase 2: Saved Targets, Directory Picker, History Persistence — February 2026**
-- **Saved Targets**: Up to 5 recently-used sync destinations are remembered and shown in the overview, ranked by use count
-- **Ranger-Style Directory Picker**: Press `p` from the sync buffer overview to browse the filesystem and select a sync target directory
-  - Platform-aware quick access: drive letters (Windows), `/Volumes` + `~/Music` (macOS), `/media` + `/mnt` (Linux)
-  - `→` / `MoveRight` to enter a directory; `←` / `MoveLeft` to go up; `Enter` on a regular directory to select it as the target
-  - `Esc` cancels picker and returns to overview
-- **History Persistence**: Sync results are saved across sessions in `{data_dir}/sync_history.json` (up to 10 entries with file counts)
-- **Target Persistence**: Saved targets and the active target are stored in `{data_dir}/sync_targets.json`
-- **Overview Status Panel**: Shows active target path and last sync summary (timestamp, mode, files copied/deleted)
-  - Falls back to persisted history when in-memory sync hasn't run yet
-- Keybindings: `p` → open directory picker, `Enter` → activate selected target (overview), `→`/`←` → navigate picker
-- Tests added: 12 unit tests
+- **Enter key opens episode details in playlist** ([#58](https://github.com/lqdev/podcast-tui/pull/58)): Press `Enter` on a playlist entry to open the Episode Detail buffer (closes [#56](https://github.com/lqdev/podcast-tui/issues/56))
+- **Add-to-playlist from Episode Detail and What's New** ([#60](https://github.com/lqdev/podcast-tui/pull/60)): The `p` keybinding now works in Episode Detail and What's New buffers to add an episode to a playlist (closes [#55](https://github.com/lqdev/podcast-tui/issues/55))
+- **MockStorage test infrastructure** ([#70](https://github.com/lqdev/podcast-tui/pull/70)): `MockStorage` auto-generated via `mockall::automock` on the `Storage` trait; includes failure-tracking test for `cleanup_old_downloads_hours`
+
+### Changed
+
+- **Documentation overhaul** ([#61](https://github.com/lqdev/podcast-tui/pull/61)): Comprehensive rewrite of README, ARCHITECTURE, GETTING_STARTED, KEYBINDINGS, and all feature docs
+- **Friendly error messages** ([#62](https://github.com/lqdev/podcast-tui/pull/62)): `StorageError` variants now display human-readable copy (e.g., "Could not find podcast.") instead of internal UUIDs and file paths; `technical_details()` method preserves internals for logging
+- **F3 remapped to Search** ([#65](https://github.com/lqdev/podcast-tui/pull/65)): `F3` now triggers `Search`, consistent with VS Code and Vim conventions. Previous `SwitchBuffer("*Help*")` binding was silently a no-op. Help remains on `F1`, `h`, and `?`
+
+### Fixed
+
+- **Selection feedback severity** ([#66](https://github.com/lqdev/podcast-tui/pull/66)): "No X selected" messages across playlist buffers changed from `show_error` to `show_message`
+- **`PodcastId::as_str()` memory leak** ([#67](https://github.com/lqdev/podcast-tui/pull/67)): Removed unsafe implementation that leaked heap-allocated strings; replaced with safe alternative
+- **Error context in download cleanup** ([#68](https://github.com/lqdev/podcast-tui/pull/68)): `cleanup_old_downloads_hours` failure paths now include podcast-level context in error messages
+
+---
+
+## [1.7.0] - 2026-02-18
+
+### Added
 
 **User Playlists & Today Playlist — February 2026**
 - **User Playlists**: Create, delete, and manage custom playlists with copied audio files for device compatibility
@@ -87,6 +115,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `<sync_device_path>/Playlists/<playlist>/...`
   - New config option: `downloads.sync_include_playlists` (default: `true`)
 - **Configuration**: Added `playlist` config section for refresh policy and playlist download behavior
+- **Hard sync (`--hard`) mode**: Wipes managed `Podcasts/` and `Playlists/` directories on the device before a fresh copy, while preserving unmanaged files
+
+### Fixed
+
+- **Device sync orphan scope**: Orphan file deletion now scoped to managed `Podcasts/` and `Playlists/` roots only — regular sync no longer risks deleting unrelated audio files on the device
+- **Safe buffer downcasting**: Replaced unsafe raw pointer casts with `Any` trait for correct buffer type dispatch
+- **Today playlist filename normalization**: Retained episodes are re-copied with correct download-stem filenames on refresh
 
 ---
 
@@ -463,6 +498,9 @@ Initial MVP release: Core UI framework, RSS subscription management, episode bro
 
 ### Version History
 All tagged releases and their major features:
+- **v1.9.0**: Sync buffer overhaul (Phase 2 + 3: saved targets, dry-run preview, live progress), sync buffer keybinding fixes, clippy clean pass
+- **v1.8.0**: Playlist UX polish, docs overhaul, friendly error messages, F3→Search, MockStorage tests
+- **v1.7.0**: User playlists, Today playlist, hard sync mode, device sync orphan scope fix
 - **v1.6.0**: Search & filter, winget publishing
 - **v1.5.0-mvp**: Download cleanup (auto + manual)
 - **v1.4.0-mvp**: Device sync for MP3 players

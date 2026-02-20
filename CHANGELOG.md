@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - Playlist Enhancements (post-v1.6.0)
 
+### Fixed
+
+**Sync buffer inaccessible at startup — February 2026**
+- **F8 and `:buffer sync` now work**: the sync buffer was missing from the `initialize()` code path that runs at startup, making it unreachable via F8 or `:buffer sync` ([#86](https://github.com/lqdev/podcast-tui/issues/86))
+
 ### Added
 
 **Sync Buffer Phase 3: Dry-Run Preview, Progress View, Config Options — February 2026**

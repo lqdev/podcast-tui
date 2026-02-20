@@ -559,7 +559,13 @@ mod tests {
             .await
             .expect("Failed to load today");
 
-        let audio_dir = ctx.tmp.path().join("data").join("Playlists").join("Today").join("audio");
+        let audio_dir = ctx
+            .tmp
+            .path()
+            .join("data")
+            .join("Playlists")
+            .join("Today")
+            .join("audio");
         tokio::fs::create_dir_all(&audio_dir)
             .await
             .expect("Failed to create playlist audio dir");
@@ -596,10 +602,7 @@ mod tests {
             .expect("Retained episode filename missing");
         assert!(refreshed_filename.starts_with("001-"));
         assert!(refreshed_filename.contains("retained-episode"));
-        assert_eq!(
-            refreshed.episode_title.as_deref(),
-            Some("retained-episode")
-        );
+        assert_eq!(refreshed.episode_title.as_deref(), Some("retained-episode"));
         assert!(!audio_dir.join(stale_filename).exists());
     }
 

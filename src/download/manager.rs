@@ -1775,7 +1775,13 @@ mod tests {
         fs::create_dir_all(&device_path).await.unwrap();
 
         let report = manager
-            .sync_to_device(device_path.clone(), Some(playlists_dir), false, false, false)
+            .sync_to_device(
+                device_path.clone(),
+                Some(playlists_dir),
+                false,
+                false,
+                false,
+            )
             .await
             .unwrap();
 
@@ -1809,7 +1815,13 @@ mod tests {
         fs::create_dir_all(&device_path).await.unwrap();
 
         let report = manager
-            .sync_to_device(device_path.clone(), Some(playlists_dir), false, false, false)
+            .sync_to_device(
+                device_path.clone(),
+                Some(playlists_dir),
+                false,
+                false,
+                false,
+            )
             .await
             .unwrap();
 
@@ -1947,26 +1959,22 @@ mod tests {
         fs::write(&unmanaged_file, b"keep").await.unwrap();
 
         let report = manager
-            .sync_to_device(
-                device_path.clone(),
-                Some(playlists_dir),
-                true,
-                false,
-                true,
-            )
+            .sync_to_device(device_path.clone(), Some(playlists_dir), true, false, true)
             .await
             .unwrap();
 
         assert_eq!(report.files_copied.len(), 2);
         assert_eq!(report.errors.len(), 0);
-        assert!(report
-            .files_deleted
-            .iter()
-            .any(|path| path.ends_with(Path::new("Podcasts").join("Test Podcast").join("old_episode.mp3"))));
-        assert!(report
-            .files_deleted
-            .iter()
-            .any(|path| path.ends_with(Path::new("Playlists").join("Old Playlist").join("001-old.mp3"))));
+        assert!(report.files_deleted.iter().any(|path| path.ends_with(
+            Path::new("Podcasts")
+                .join("Test Podcast")
+                .join("old_episode.mp3")
+        )));
+        assert!(report.files_deleted.iter().any(|path| path.ends_with(
+            Path::new("Playlists")
+                .join("Old Playlist")
+                .join("001-old.mp3")
+        )));
         assert!(!stale_podcast_file.exists());
         assert!(!stale_playlist_file.exists());
         assert!(unmanaged_file.exists());
@@ -2015,7 +2023,11 @@ mod tests {
         assert_eq!(report.files_copied.len(), 1);
         assert_eq!(report.errors.len(), 0);
         assert!(report.files_deleted.iter().any(|path| {
-            path.ends_with(Path::new("Podcasts").join("Test Podcast").join("old_episode.mp3"))
+            path.ends_with(
+                Path::new("Podcasts")
+                    .join("Test Podcast")
+                    .join("old_episode.mp3"),
+            )
         }));
         assert!(stale_podcast_file.exists());
         assert!(!device_path

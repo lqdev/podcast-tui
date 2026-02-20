@@ -86,6 +86,10 @@ impl KeyHandler {
         );
         self.bind_key(KeyChord::none(KeyCode::F(5)), UIAction::Refresh);
         self.bind_key(KeyChord::none(KeyCode::F(7)), UIAction::OpenPlaylistList);
+        self.bind_key(
+            KeyChord::none(KeyCode::F(8)),
+            UIAction::SwitchBuffer("sync".to_string()),
+        );
         self.bind_key(KeyChord::none(KeyCode::F(10)), UIAction::Quit);
 
         // Tab navigation
@@ -107,6 +111,7 @@ impl KeyHandler {
         // Simple letter commands (when not in input mode)
         self.bind_key(KeyChord::none(KeyCode::Char('a')), UIAction::AddPodcast);
         self.bind_key(KeyChord::none(KeyCode::Char('d')), UIAction::DeletePodcast);
+        self.bind_key(KeyChord::none(KeyCode::Char('s')), UIAction::SyncToDevice);
         self.bind_key(KeyChord::none(KeyCode::Char('c')), UIAction::CreatePlaylist);
         self.bind_key(KeyChord::none(KeyCode::Char('p')), UIAction::AddToPlaylist);
         self.bind_key(KeyChord::none(KeyCode::Char('r')), UIAction::RefreshPodcast);
@@ -231,5 +236,23 @@ mod tests {
         let key_event = KeyEvent::new(KeyCode::F(7), KeyModifiers::NONE);
         let action = handler.handle_key(key_event);
         assert_eq!(action, UIAction::OpenPlaylistList);
+    }
+
+    #[test]
+    fn test_sync_function_key_f8() {
+        let mut handler = KeyHandler::new();
+
+        let key_event = KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE);
+        let action = handler.handle_key(key_event);
+        assert_eq!(action, UIAction::SwitchBuffer("sync".to_string()));
+    }
+
+    #[test]
+    fn test_s_key_triggers_sync_to_device() {
+        let mut handler = KeyHandler::new();
+
+        let key_event = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE);
+        let action = handler.handle_key(key_event);
+        assert_eq!(action, UIAction::SyncToDevice);
     }
 }

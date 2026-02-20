@@ -150,13 +150,11 @@ impl EpisodeFilter {
     fn matches_duration(&self, episode: &Episode) -> bool {
         match &self.duration {
             None => true,
-            Some(filter) => {
-                filter.matches_with_thresholds(
-                    episode.duration,
-                    self.short_max_minutes,
-                    self.long_min_minutes,
-                )
-            }
+            Some(filter) => filter.matches_with_thresholds(
+                episode.duration,
+                self.short_max_minutes,
+                self.long_min_minutes,
+            ),
         }
     }
 }
@@ -180,7 +178,10 @@ impl EpisodeStatusFilter {
                 | (EpisodeStatusFilter::Downloaded, EpisodeStatus::Downloaded)
                 | (EpisodeStatusFilter::Played, EpisodeStatus::Played)
                 | (EpisodeStatusFilter::Downloading, EpisodeStatus::Downloading)
-                | (EpisodeStatusFilter::DownloadFailed, EpisodeStatus::DownloadFailed)
+                | (
+                    EpisodeStatusFilter::DownloadFailed,
+                    EpisodeStatus::DownloadFailed
+                )
         )
     }
 }
@@ -651,10 +652,7 @@ mod tests {
             status: Some(EpisodeStatusFilter::Downloaded),
             ..Default::default()
         };
-        assert_eq!(
-            filter.description(),
-            "search: \"rust\", status: downloaded"
-        );
+        assert_eq!(filter.description(), "search: \"rust\", status: downloaded");
     }
 
     #[test]

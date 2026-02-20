@@ -72,7 +72,8 @@ impl EpisodeListBuffer {
 
     /// Set configurable duration filter thresholds from user config.
     pub fn set_filter_thresholds(&mut self, short_max_minutes: u32, long_min_minutes: u32) {
-        self.filter.set_duration_thresholds(short_max_minutes, long_min_minutes);
+        self.filter
+            .set_duration_thresholds(short_max_minutes, long_min_minutes);
     }
 
     /// Load episodes for the podcast
@@ -358,11 +359,7 @@ impl UIComponent for EpisodeListBuffer {
                 UIAction::Search
             }
             UIAction::ApplySearch { query } => {
-                self.filter.text_query = if query.is_empty() {
-                    None
-                } else {
-                    Some(query)
-                };
+                self.filter.text_query = if query.is_empty() { None } else { Some(query) };
                 self.apply_filters();
                 UIAction::Render
             }
@@ -382,7 +379,10 @@ impl UIComponent for EpisodeListBuffer {
                     self.apply_filters();
                     UIAction::Render
                 } else {
-                    UIAction::ShowError(format!("Unknown status: '{}'. Use: new, downloaded, played, downloading, failed", status))
+                    UIAction::ShowError(format!(
+                        "Unknown status: '{}'. Use: new, downloaded, played, downloading, failed",
+                        status
+                    ))
                 }
             }
             UIAction::SetDateRangeFilter { range } => {
@@ -392,7 +392,10 @@ impl UIComponent for EpisodeListBuffer {
                     self.apply_filters();
                     UIAction::Render
                 } else {
-                    UIAction::ShowError(format!("Unknown date range: '{}'. Use: today, 12h, 7d, 2w, 1m", range))
+                    UIAction::ShowError(format!(
+                        "Unknown date range: '{}'. Use: today, 12h, 7d, 2w, 1m",
+                        range
+                    ))
                 }
             }
             _ => UIAction::None,
@@ -514,7 +517,8 @@ impl UIComponent for EpisodeListBuffer {
             frame.render_widget(status, status_area);
         } else if filtered_count == 0 && self.filter.is_active() {
             // Filter active but nothing matches
-            let empty_msg = "No episodes match the current filter. Press F6 or :clear-filters to reset.";
+            let empty_msg =
+                "No episodes match the current filter. Press F6 or :clear-filters to reset.";
             let status_area = Rect {
                 x: area.x + 2,
                 y: area.y + area.height / 2,
@@ -709,7 +713,10 @@ mod tests {
         );
 
         // Scroll offset resets
-        assert_eq!(buffer.scroll_offset, 0, "Scroll offset resets after set_episodes");
+        assert_eq!(
+            buffer.scroll_offset, 0,
+            "Scroll offset resets after set_episodes"
+        );
     }
 
     #[test]

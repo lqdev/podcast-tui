@@ -305,11 +305,7 @@ impl UIComponent for PodcastListBuffer {
             }
             UIAction::Search => UIAction::Search,
             UIAction::ApplySearch { query } => {
-                self.filter.text_query = if query.is_empty() {
-                    None
-                } else {
-                    Some(query)
-                };
+                self.filter.text_query = if query.is_empty() { None } else { Some(query) };
                 self.apply_filters();
                 UIAction::Render
             }
@@ -385,10 +381,7 @@ impl UIComponent for PodcastListBuffer {
                     frame.render_widget(empty_text, chunks[0]);
                 } else if self.visible_count() == 0 && self.filter.is_active() {
                     // Filter active but nothing matches
-                    let title = format!(
-                        "Podcasts [{}]",
-                        self.filter.description()
-                    );
+                    let title = format!("Podcasts [{}]", self.filter.description());
                     let filter_block = Block::default()
                         .title(title)
                         .borders(Borders::ALL)
@@ -438,10 +431,7 @@ impl UIComponent for PodcastListBuffer {
 
                     // Build title with filter indicator
                     let block_title = if self.filter.is_active() {
-                        format!(
-                            "Podcasts [{}]",
-                            self.filter.description()
-                        )
+                        format!("Podcasts [{}]", self.filter.description())
                     } else {
                         "Podcasts".to_string()
                     };

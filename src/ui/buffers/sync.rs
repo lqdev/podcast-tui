@@ -183,8 +183,8 @@ impl UIComponent for SyncBuffer {
                 UIAction::Render
             }
             UIAction::SyncToDevice => {
-                // Prompt for device path
-                UIAction::PromptInput("Enter device path: ".to_string())
+                // Prompt for device path — prefix must match handle_minibuffer_input_with_context
+                UIAction::PromptInput("Sync to device path: ".to_string())
             }
             UIAction::SelectItem => {
                 if let Some(entry) = self.sync_history.get(self.selected_index) {
@@ -332,5 +332,59 @@ impl UIComponent for SyncBuffer {
             .style(self.theme.text_style());
 
         frame.render_widget(actions_paragraph, chunks[2]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::{UIAction, UIComponent};
+
+    #[test]
+    fn test_sync_to_device_returns_prompt_input() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+
+        // Act
+        let action = buffer.handle_action(UIAction::SyncToDevice);
+
+        // Assert — prompt must start with "Sync to device path" for context handler
+        match action {
+            UIAction::PromptInput(prompt) => {
+                assert!(
+                    prompt.starts_with("Sync to device path"),
+                    "Prompt must start with 'Sync to device path', got: {}",
+                    prompt
+                );
+            }
+            other => panic!("Expected PromptInput, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_sync_buffer_navigation() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+
+        // Act / Assert — navigation returns Render
+        assert_eq!(buffer.handle_action(UIAction::MoveUp), UIAction::Render);
+        assert_eq!(buffer.handle_action(UIAction::MoveDown), UIAction::Render);
+        assert_eq!(buffer.handle_action(UIAction::PageUp), UIAction::Render);
+        assert_eq!(buffer.handle_action(UIAction::PageDown), UIAction::Render);
+    }
+
+    #[test]
+    fn test_sync_buffer_select_item_empty_history() {
+        // Arrange
+        let mut buffer = SyncBuffer::new();
+
+        // Act
+        let action = buffer.handle_action(UIAction::SelectItem);
+
+        // Assert — no history, should show message
+        assert_eq!(
+            action,
+            UIAction::ShowMessage("No sync history selected".to_string())
+        );
     }
 }

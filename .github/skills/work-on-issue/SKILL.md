@@ -89,6 +89,10 @@ Closes #N — one-paragraph description.
 - `src/ui/app.rs`: what changed
 - `src/ui/keybindings.rs`: what changed
 
+## Manual Testing
+
+(see below for how to fill this section)
+
 ## Tests
 
 - N unit tests, N integration tests
@@ -106,8 +110,65 @@ gh pr create --title "feat(scope): description" --body $body --base main
 PR requirements:
 - Title in conventional commit format (`feat(scope): description`)
 - `Closes #N` in the body
+- A `## Manual Testing` section (see guidance below)
 - Screenshots or terminal output for UI changes
 - Note any testing done beyond automated tests
+
+#### How to write the `## Manual Testing` section
+
+This section tells a human reviewer exactly how to verify the change beyond `cargo test`. **Every PR must include it** — either with real steps or an explicit N/A with reasoning.
+
+**If the change has observable behavior** (new keybinding, new buffer, new message, visual change, config change):
+
+Write 2–5 short, imperative steps a reviewer can follow. Include:
+1. Setup (if any, beyond `cargo run`)
+2. What to do (keys to press, commands to run, config to edit)
+3. What to expect (exact message text, visual state, behavior)
+
+Example for a keybinding change:
+```markdown
+## Manual Testing
+
+1. `cargo run`
+2. Navigate to the episode list
+3. Select an episode and press `m` → status should change to ✓ Played
+4. Press `u` on the same episode → status should revert to unplayed
+5. Quit and reopen → played/unplayed status should persist
+```
+
+Example for a config/storage change:
+```markdown
+## Manual Testing
+
+1. `cargo run` — confirm app starts without errors
+2. Open `~/.config/podcast-tui/config.json` and add `"quit": ["C-q"]`
+3. Restart the app → pressing `C-q` should quit, `q` should still quit (default not removed)
+4. Delete the config file → app should start with all defaults
+```
+
+**If the change is internal/infrastructure** (parser, trait, data model, refactor with no UI effect):
+
+Write `N/A` followed by a short reason explaining why there's nothing a human can manually verify yet:
+
+```markdown
+## Manual Testing
+
+N/A — key notation parser is not wired to the keybinding system yet.
+Consumers will be added in #97 and #98.
+```
+
+```markdown
+## Manual Testing
+
+N/A — internal refactor of storage trait; no change to observable behavior.
+All behavior is covered by the 12 unit tests above.
+```
+
+**Rules:**
+- Never leave the section blank or omit it entirely
+- Never write vague steps like "verify it works" — be specific about what "works" looks like
+- If the PR touches both internal and UI code, write steps for the UI-observable parts
+- For bug fixes, include the reproduction steps and confirm the fix: "Before: X happened. After: Y happens."
 
 ### 8. Update changelog (if user-facing)
 If the change is user-facing, update `CHANGELOG.md` following the `update-changelog` skill **before pushing**. Add the entry to `[Unreleased]` and include it in the same commit as the code change. This is what prevents changelog gaps when multiple releases are cut quickly.

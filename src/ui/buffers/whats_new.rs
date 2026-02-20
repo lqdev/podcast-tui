@@ -379,7 +379,7 @@ impl UIComponent for WhatsNewBuffer {
                     });
                 match result {
                     Some((_, _, _, _, false)) => {
-                        UIAction::ShowMessage("Episode is not marked as played".to_string())
+                        UIAction::ShowMessage("Episode already marked as unplayed".to_string())
                     }
                     Some((actual_idx, podcast_id, episode_id, episode_title, true)) => {
                         self.episodes[actual_idx].episode.mark_unplayed();

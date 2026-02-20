@@ -385,7 +385,7 @@ impl UIComponent for EpisodeListBuffer {
                     });
                 match result {
                     Some((_, _, _, false)) => {
-                        UIAction::ShowMessage("Episode is not marked as played".to_string())
+                        UIAction::ShowMessage("Episode already marked as unplayed".to_string())
                     }
                     Some((actual_idx, episode_id, episode_title, true)) => {
                         self.episodes[actual_idx].mark_unplayed();

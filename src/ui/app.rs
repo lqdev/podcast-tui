@@ -1501,10 +1501,13 @@ impl UIApp {
                 self.show_message(format!("Marked as played: {}", episode_title));
             }
             AppEvent::EpisodeMarkPlayedFailed {
-                podcast_id: _,
+                podcast_id,
                 episode_id: _,
                 error,
             } => {
+                // Refresh buffers to revert optimistic UI update
+                self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
+                self.trigger_background_refresh(BufferRefreshType::WhatsNew);
                 self.show_error(format!("Could not mark episode as played: {}", error));
             }
             AppEvent::EpisodeMarkedUnplayed {
@@ -1517,10 +1520,13 @@ impl UIApp {
                 self.show_message(format!("Marked as unplayed: {}", episode_title));
             }
             AppEvent::EpisodeMarkUnplayedFailed {
-                podcast_id: _,
+                podcast_id,
                 episode_id: _,
                 error,
             } => {
+                // Refresh buffers to revert optimistic UI update
+                self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
+                self.trigger_background_refresh(BufferRefreshType::WhatsNew);
                 self.show_error(format!("Could not mark episode as unplayed: {}", error));
             }
             AppEvent::DownloadsRefreshed => {

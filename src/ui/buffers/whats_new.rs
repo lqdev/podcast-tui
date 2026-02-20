@@ -332,6 +332,66 @@ impl UIComponent for WhatsNewBuffer {
                     UIAction::ShowMessage("No episode selected for download".to_string())
                 }
             }
+            UIAction::MarkPlayed => {
+                let result = self
+                    .selected_index
+                    .and_then(|i| self.filtered_indices.get(i))
+                    .copied()
+                    .map(|actual_idx| {
+                        let agg = &self.episodes[actual_idx];
+                        (
+                            actual_idx,
+                            agg.podcast_id.clone(),
+                            agg.episode.id.clone(),
+                            agg.episode.title.clone(),
+                            agg.episode.is_played(),
+                        )
+                    });
+                match result {
+                    Some((_, _, _, _, true)) => {
+                        UIAction::ShowMessage("Episode already marked as played".to_string())
+                    }
+                    Some((actual_idx, podcast_id, episode_id, episode_title, false)) => {
+                        self.episodes[actual_idx].episode.mark_played();
+                        UIAction::TriggerMarkPlayed {
+                            podcast_id,
+                            episode_id,
+                            episode_title,
+                        }
+                    }
+                    None => UIAction::ShowMessage("No episode selected".to_string()),
+                }
+            }
+            UIAction::MarkUnplayed => {
+                let result = self
+                    .selected_index
+                    .and_then(|i| self.filtered_indices.get(i))
+                    .copied()
+                    .map(|actual_idx| {
+                        let agg = &self.episodes[actual_idx];
+                        (
+                            actual_idx,
+                            agg.podcast_id.clone(),
+                            agg.episode.id.clone(),
+                            agg.episode.title.clone(),
+                            agg.episode.is_played(),
+                        )
+                    });
+                match result {
+                    Some((_, _, _, _, false)) => {
+                        UIAction::ShowMessage("Episode already marked as unplayed".to_string())
+                    }
+                    Some((actual_idx, podcast_id, episode_id, episode_title, true)) => {
+                        self.episodes[actual_idx].episode.mark_unplayed();
+                        UIAction::TriggerMarkUnplayed {
+                            podcast_id,
+                            episode_id,
+                            episode_title,
+                        }
+                    }
+                    None => UIAction::ShowMessage("No episode selected".to_string()),
+                }
+            }
             UIAction::Search => UIAction::Search,
             UIAction::ApplySearch { query } => {
                 self.filter.text_query = if query.is_empty() { None } else { Some(query) };

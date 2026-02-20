@@ -941,6 +941,66 @@ impl UIApp {
                 self.trigger_async_delete_download(podcast_id, episode_id);
                 Ok(true)
             }
+            UIAction::MarkPlayed => {
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    let result_action = current_buffer.handle_action(action);
+                    match result_action {
+                        UIAction::TriggerMarkPlayed {
+                            podcast_id,
+                            episode_id,
+                            episode_title,
+                        } => {
+                            self.trigger_async_mark_played(podcast_id, episode_id, episode_title);
+                        }
+                        UIAction::ShowMessage(msg) => {
+                            self.show_message(msg);
+                        }
+                        _ => {}
+                    }
+                    Ok(true)
+                } else {
+                    self.show_message("No active buffer".to_string());
+                    Ok(true)
+                }
+            }
+            UIAction::MarkUnplayed => {
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    let result_action = current_buffer.handle_action(action);
+                    match result_action {
+                        UIAction::TriggerMarkUnplayed {
+                            podcast_id,
+                            episode_id,
+                            episode_title,
+                        } => {
+                            self.trigger_async_mark_unplayed(podcast_id, episode_id, episode_title);
+                        }
+                        UIAction::ShowMessage(msg) => {
+                            self.show_message(msg);
+                        }
+                        _ => {}
+                    }
+                    Ok(true)
+                } else {
+                    self.show_message("No active buffer".to_string());
+                    Ok(true)
+                }
+            }
+            UIAction::TriggerMarkPlayed {
+                podcast_id,
+                episode_id,
+                episode_title,
+            } => {
+                self.trigger_async_mark_played(podcast_id, episode_id, episode_title);
+                Ok(true)
+            }
+            UIAction::TriggerMarkUnplayed {
+                podcast_id,
+                episode_id,
+                episode_title,
+            } => {
+                self.trigger_async_mark_unplayed(podcast_id, episode_id, episode_title);
+                Ok(true)
+            }
             UIAction::TriggerRefreshDownloads => {
                 self.show_message("Refreshing downloads...".to_string());
                 self.trigger_async_refresh_downloads();
@@ -1430,6 +1490,44 @@ impl UIApp {
                 self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
                 self.trigger_background_refresh(BufferRefreshType::Downloads);
                 self.show_error(format!("Could not delete episode download: {}", error));
+            }
+            AppEvent::EpisodeMarkedPlayed {
+                podcast_id,
+                episode_id: _,
+                episode_title,
+            } => {
+                self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
+                self.trigger_background_refresh(BufferRefreshType::WhatsNew);
+                self.show_message(format!("Marked as played: {}", episode_title));
+            }
+            AppEvent::EpisodeMarkPlayedFailed {
+                podcast_id,
+                episode_id: _,
+                error,
+            } => {
+                // Refresh buffers to revert optimistic UI update
+                self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
+                self.trigger_background_refresh(BufferRefreshType::WhatsNew);
+                self.show_error(format!("Could not mark episode as played: {}", error));
+            }
+            AppEvent::EpisodeMarkedUnplayed {
+                podcast_id,
+                episode_id: _,
+                episode_title,
+            } => {
+                self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
+                self.trigger_background_refresh(BufferRefreshType::WhatsNew);
+                self.show_message(format!("Marked as unplayed: {}", episode_title));
+            }
+            AppEvent::EpisodeMarkUnplayedFailed {
+                podcast_id,
+                episode_id: _,
+                error,
+            } => {
+                // Refresh buffers to revert optimistic UI update
+                self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
+                self.trigger_background_refresh(BufferRefreshType::WhatsNew);
+                self.show_error(format!("Could not mark episode as unplayed: {}", error));
             }
             AppEvent::DownloadsRefreshed => {
                 // Trigger background refresh of downloads buffer
@@ -2713,6 +2811,94 @@ impl UIApp {
                 }
                 Err(e) => {
                     let _ = app_event_tx.send(AppEvent::EpisodeDownloadDeletionFailed {
+                        podcast_id: podcast_id_clone,
+                        episode_id: episode_id_clone,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    /// Trigger async mark episode as played
+    fn trigger_async_mark_played(
+        &mut self,
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        episode_title: String,
+    ) {
+        let storage = self._storage.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let podcast_id_clone = podcast_id.clone();
+        let episode_id_clone = episode_id.clone();
+
+        tokio::spawn(async move {
+            match storage.load_episode(&podcast_id, &episode_id).await {
+                Ok(mut episode) => {
+                    episode.mark_played();
+                    match storage.save_episode(&podcast_id, &episode).await {
+                        Ok(()) => {
+                            let _ = app_event_tx.send(AppEvent::EpisodeMarkedPlayed {
+                                podcast_id: podcast_id_clone,
+                                episode_id: episode_id_clone,
+                                episode_title,
+                            });
+                        }
+                        Err(e) => {
+                            let _ = app_event_tx.send(AppEvent::EpisodeMarkPlayedFailed {
+                                podcast_id: podcast_id_clone,
+                                episode_id: episode_id_clone,
+                                error: e.to_string(),
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::EpisodeMarkPlayedFailed {
+                        podcast_id: podcast_id_clone,
+                        episode_id: episode_id_clone,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    /// Trigger async mark episode as unplayed
+    fn trigger_async_mark_unplayed(
+        &mut self,
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        episode_title: String,
+    ) {
+        let storage = self._storage.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let podcast_id_clone = podcast_id.clone();
+        let episode_id_clone = episode_id.clone();
+
+        tokio::spawn(async move {
+            match storage.load_episode(&podcast_id, &episode_id).await {
+                Ok(mut episode) => {
+                    episode.mark_unplayed();
+                    match storage.save_episode(&podcast_id, &episode).await {
+                        Ok(()) => {
+                            let _ = app_event_tx.send(AppEvent::EpisodeMarkedUnplayed {
+                                podcast_id: podcast_id_clone,
+                                episode_id: episode_id_clone,
+                                episode_title,
+                            });
+                        }
+                        Err(e) => {
+                            let _ = app_event_tx.send(AppEvent::EpisodeMarkUnplayedFailed {
+                                podcast_id: podcast_id_clone,
+                                episode_id: episode_id_clone,
+                                error: e.to_string(),
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::EpisodeMarkUnplayedFailed {
                         podcast_id: podcast_id_clone,
                         episode_id: episode_id_clone,
                         error: e.to_string(),

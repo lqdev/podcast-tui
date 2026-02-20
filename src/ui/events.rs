@@ -212,6 +212,34 @@ pub enum AppEvent {
         error: String,
     },
 
+    /// Episode marked as played successfully
+    EpisodeMarkedPlayed {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        episode_title: String,
+    },
+
+    /// Episode mark as played failed
+    EpisodeMarkPlayedFailed {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        error: String,
+    },
+
+    /// Episode marked as unplayed successfully
+    EpisodeMarkedUnplayed {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        episode_title: String,
+    },
+
+    /// Episode mark as unplayed failed
+    EpisodeMarkUnplayedFailed {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        error: String,
+    },
+
     /// Downloads buffer refreshed
     DownloadsRefreshed,
 

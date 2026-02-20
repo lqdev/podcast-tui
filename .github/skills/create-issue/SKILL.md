@@ -118,7 +118,23 @@ Always verify before writing:
 - **Depends on another issue?** Add `**Depends on**: #N`
 - **Related to prior work?** Add `**Related**: #N, PR #M`
 
-### 6. Apply labels
+### 6. Create the issue
+
+**Always use a PowerShell here-string for the body** — backtick is PowerShell's escape character and any backtick-quoted code in markdown will corrupt or crash if passed as an inline string literal.
+
+```powershell
+# Single-quoted here-string: backticks, $vars, and quotes are all literal.
+# The closing '@ MUST be at column 0 (no leading spaces).
+$body = @'
+## Summary
+
+<paste your drafted body here>
+'@
+
+gh issue create --title "[Feature] Your title" --body $body
+```
+
+### 7. Apply labels
 
 Use the `triage-issue` skill to apply the correct labels after creation.
 

@@ -223,6 +223,24 @@ pub enum UIAction {
     // from RSS feeds (extract_duration is a stub). See Design Decision #13.
     // SetDurationFilter { duration: String },
 
+    // Episode status actions
+    /// Mark selected episode as played
+    MarkPlayed,
+    /// Mark selected episode as unplayed
+    MarkUnplayed,
+    /// Trigger async mark episode as played (carries IDs for storage update)
+    TriggerMarkPlayed {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        episode_title: String,
+    },
+    /// Trigger async mark episode as unplayed (carries IDs for storage update)
+    TriggerMarkUnplayed {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        episode_title: String,
+    },
+
     // Render request
     Render,
 

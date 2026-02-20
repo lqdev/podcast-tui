@@ -74,9 +74,38 @@ Closes #N"
 git push origin feat/issue-{N}-short-description
 ```
 
+Then create the PR. **Always use a PowerShell here-string for the body** — backtick is PowerShell's escape character, so any backtick-quoted code in a markdown body will corrupt or crash if passed as an inline string literal.
+
+```powershell
+# Single-quoted here-string: backticks, $vars, and quotes are all literal.
+# The closing '@ MUST be at column 0 (no leading spaces).
+$body = @'
+## Summary
+
+Closes #N — one-paragraph description.
+
+## Changes
+
+- `src/ui/app.rs`: what changed
+- `src/ui/keybindings.rs`: what changed
+
+## Tests
+
+- N unit tests, N integration tests
+
+## Quality
+
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo test` ✅
+'@
+
+gh pr create --title "feat(scope): description" --body $body --base main
+```
+
 PR requirements:
-- Descriptive title matching the commit type/scope format
-- Link to the issue (`Closes #N`) in the PR body
+- Title in conventional commit format (`feat(scope): description`)
+- `Closes #N` in the body
 - Screenshots or terminal output for UI changes
 - Note any testing done beyond automated tests
 

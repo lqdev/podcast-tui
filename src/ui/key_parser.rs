@@ -84,7 +84,18 @@ pub fn parse_key_notation(notation: &str) -> Result<KeyChord, KeyParseError> {
                 key_index = i + 1;
             }
             _ => {
-                // Not a modifier — treat everything from here as the key portion.
+                // A single uppercase ASCII letter that isn't a known modifier (C/S/A/M)
+                // is almost certainly a config typo (e.g., "X-n"). Return a specific error
+                // so users get actionable feedback rather than a confusing UnknownKey.
+                if part.len() == 1
+                    && part
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_uppercase())
+                {
+                    return Err(KeyParseError::InvalidModifier(part.to_string()));
+                }
+                // Multi-char or non-uppercase token — treat everything from here as the key.
                 key_index = i;
                 break;
             }
@@ -102,43 +113,52 @@ pub fn parse_key_notation(notation: &str) -> Result<KeyChord, KeyParseError> {
 
 /// Parse a key name (without modifier prefix) into a `KeyCode`.
 fn parse_key_code(key_str: &str) -> Result<KeyCode, KeyParseError> {
-    // Single ASCII character.
+    // Single character (case-sensitive — 'q' and 'Q' are distinct keys).
     if key_str.chars().count() == 1 {
-        return Ok(KeyCode::Char(key_str.chars().next().unwrap()));
+        return Ok(KeyCode::Char(
+            key_str
+                .chars()
+                .next()
+                // SAFETY: count() == 1 guarantees next() returns Some.
+                .expect("chars().next() must exist when count() == 1"),
+        ));
     }
 
-    // Named keys and function keys (case-insensitive for named keys).
-    match key_str {
-        "Enter" | "Return" => Ok(KeyCode::Enter),
-        "Tab" => Ok(KeyCode::Tab),
-        "Esc" | "Escape" => Ok(KeyCode::Esc),
-        "Backspace" | "BS" => Ok(KeyCode::Backspace),
-        "Delete" | "Del" => Ok(KeyCode::Delete),
-        "Space" | "SPC" => Ok(KeyCode::Char(' ')),
-        "Up" => Ok(KeyCode::Up),
-        "Down" => Ok(KeyCode::Down),
-        "Left" => Ok(KeyCode::Left),
-        "Right" => Ok(KeyCode::Right),
-        "Home" => Ok(KeyCode::Home),
-        "End" => Ok(KeyCode::End),
-        "PgUp" | "PageUp" => Ok(KeyCode::PageUp),
-        "PgDn" | "PageDown" => Ok(KeyCode::PageDown),
-        "Insert" | "Ins" => Ok(KeyCode::Insert),
-        "CapsLock" => Ok(KeyCode::CapsLock),
-        "NumLock" => Ok(KeyCode::NumLock),
-        "ScrollLock" => Ok(KeyCode::ScrollLock),
-        "PrintScreen" => Ok(KeyCode::PrintScreen),
-        "Pause" => Ok(KeyCode::Pause),
-        "Menu" => Ok(KeyCode::Menu),
+    // Named keys and function keys — normalize to lowercase for case-insensitive matching.
+    // Single-char keys above are left as-is ('q' and 'Q' are different keys).
+    let key_lower = key_str.to_ascii_lowercase();
+    match key_lower.as_str() {
+        "enter" | "return" => Ok(KeyCode::Enter),
+        "tab" => Ok(KeyCode::Tab),
+        "esc" | "escape" => Ok(KeyCode::Esc),
+        "backspace" | "bs" => Ok(KeyCode::Backspace),
+        "delete" | "del" => Ok(KeyCode::Delete),
+        "space" | "spc" => Ok(KeyCode::Char(' ')),
+        "up" => Ok(KeyCode::Up),
+        "down" => Ok(KeyCode::Down),
+        "left" => Ok(KeyCode::Left),
+        "right" => Ok(KeyCode::Right),
+        "home" => Ok(KeyCode::Home),
+        "end" => Ok(KeyCode::End),
+        "pgup" | "pageup" => Ok(KeyCode::PageUp),
+        "pgdn" | "pagedown" => Ok(KeyCode::PageDown),
+        "insert" | "ins" => Ok(KeyCode::Insert),
+        "capslock" => Ok(KeyCode::CapsLock),
+        "numlock" => Ok(KeyCode::NumLock),
+        "scrolllock" => Ok(KeyCode::ScrollLock),
+        "printscreen" => Ok(KeyCode::PrintScreen),
+        "pause" => Ok(KeyCode::Pause),
+        "menu" => Ok(KeyCode::Menu),
         _ => {
-            // Function keys: F1-F12.
-            if let Some(n_str) = key_str.strip_prefix('F') {
+            // Function keys: F1-F12 (case-insensitive: "F1", "f1" both work).
+            if let Some(n_str) = key_lower.strip_prefix('f') {
                 if let Ok(n) = n_str.parse::<u8>() {
                     if (1..=12).contains(&n) {
                         return Ok(KeyCode::F(n));
                     }
                 }
             }
+            // Preserve original casing in error for user-facing diagnostic.
             Err(KeyParseError::UnknownKey(key_str.to_string()))
         }
     }
@@ -482,5 +502,55 @@ mod tests {
         // F13 is not in 1-12 range.
         let err = parse_key_notation("F13").unwrap_err();
         assert!(matches!(err, KeyParseError::UnknownKey(_)));
+    }
+
+    #[test]
+    fn test_parse_unknown_modifier_prefix_returns_invalid_modifier() {
+        // Single uppercase letter that isn't C/S/A/M should be reported as an
+        // invalid modifier, not silently swallowed into an UnknownKey error.
+        let err = parse_key_notation("X-n").unwrap_err();
+        assert!(matches!(err, KeyParseError::InvalidModifier(ref s) if s == "X"));
+    }
+
+    #[test]
+    fn test_parse_unknown_modifier_prefix_n_returns_invalid_modifier() {
+        // 'N' is a common capitalisation typo for 'n' (the key), used as a modifier.
+        let err = parse_key_notation("N-x").unwrap_err();
+        assert!(matches!(err, KeyParseError::InvalidModifier(_)));
+    }
+
+    // ── Case-insensitive named keys ──────────────────────────────────────────
+
+    #[test]
+    fn test_parse_named_key_lowercase_enter_is_accepted() {
+        // Config files may use lowercase; the parser must accept it.
+        let chord = parse_key_notation("enter").unwrap();
+        assert_eq!(chord.code, KeyCode::Enter);
+    }
+
+    #[test]
+    fn test_parse_named_key_uppercase_enter_is_accepted() {
+        let chord = parse_key_notation("ENTER").unwrap();
+        assert_eq!(chord.code, KeyCode::Enter);
+    }
+
+    #[test]
+    fn test_parse_named_key_lowercase_esc_is_accepted() {
+        let chord = parse_key_notation("esc").unwrap();
+        assert_eq!(chord.code, KeyCode::Esc);
+    }
+
+    #[test]
+    fn test_parse_function_key_lowercase_f_prefix_is_accepted() {
+        // "f1" should parse identically to "F1".
+        let chord = parse_key_notation("f1").unwrap();
+        assert_eq!(chord.code, KeyCode::F(1));
+    }
+
+    #[test]
+    fn test_parse_function_key_uppercase_preserves_existing_behaviour() {
+        // Canonical uppercase "F3" must still work after case-insensitive change.
+        let chord = parse_key_notation("F3").unwrap();
+        assert_eq!(chord.code, KeyCode::F(3));
     }
 }

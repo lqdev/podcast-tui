@@ -61,6 +61,13 @@ Use this exact template. Every section is **required** — write `None` if a sec
 ```markdown
 # Checkpoint NNN — Session Handoff
 
+## Resume command
+
+Paste this into your next session to pick up where you left off:
+
+> Read checkpoint `<full-path-to-this-file>` and resume using the session-resume skill.
+> Then use the next-issue skill to confirm the top of the stack, and work on it using the work-on-issue skill.
+
 ## What was accomplished this session
 
 ### [PR Title] — MERGED ✅ / OPEN 🔄 / DRAFT 📝
@@ -109,10 +116,7 @@ C:\Users\lqdev\.copilot\session-state\<current-session-id>\checkpoints\NNN-sessi
 Tell the user:
 - The checkpoint file path
 - A 2-3 sentence summary of what it contains
-- Remind them to use the `session-resume` skill in the new session:
-
-> Checkpoint saved. In your new session, say:
-> "Read checkpoint `<path>` and resume using the `session-resume` skill."
+- **Output the exact resume command from the checkpoint's `## Resume command` section** so the user can copy-paste it directly into the new session. Format it as a fenced code block for easy copying.
 
 ## Rules
 

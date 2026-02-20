@@ -195,6 +195,13 @@ pub struct EventHandler {
 }
 ```
 
+## Issue Workflow
+
+- Check the [GitHub Projects board](https://github.com/users/lqdev/projects/1) for priority and context before starting work
+- Create branches tied to issues: `feat/issue-{N}-short-desc`, `fix/issue-{N}-short-desc`
+- Reference issues in commits and PRs: `Closes #N` or `Part of #N`
+- Read acceptance criteria and implementation notes in the issue body before coding
+
 ## What NOT to Do
 
 - ❌ Don't use unwrap() or expect() in user-facing code

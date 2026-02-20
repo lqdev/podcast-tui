@@ -279,8 +279,8 @@ mod tests {
 
 ### Project Management
 
+- **[GitHub Projects Board](https://github.com/users/lqdev/projects/1)** - Issue tracking, priorities, and phase planning
 - **[docs/PRD.md](docs/PRD.md)** - Product requirements and scope
-- **[docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md)** - 8-week sprint roadmap
 - **[CHANGELOG.md](CHANGELOG.md)** - Version history and changes
 
 ### Code Guidelines
@@ -430,6 +430,73 @@ test: add property-based tests for validation
    - Test coverage for new functionality
 3. **Address review feedback**
 4. **Ensure CI passes** (formatting, linting, tests)
+
+---
+
+## 🎯 Issue Workflow & Project Management
+
+### Project Board
+
+All work is tracked on the [GitHub Projects board](https://github.com/users/lqdev/projects/1).
+
+**Custom fields on every issue:**
+
+| Field | Values | Meaning |
+|-------|--------|---------|
+| **Priority** | P0, P1, P2, P3 | P0 = blocker, P1 = high, P2 = medium, P3 = low |
+| **Phase** | Phase 1, Phase 2, Phase 3, Backlog | Implementation phase or backlog |
+| **Effort** | XS, S, M, L, XL | XS = trivial, S = half-day, M = full day, L = 2–3 days, XL = 3+ days |
+
+**Status columns:** `Todo` → `In Progress` → `Done`
+
+### Issue Hierarchy
+
+- **Epics** use the `[Epic]` title prefix and contain linked sub-issues (GitHub sub-issues feature)
+- **Sub-issues** are standalone issues linked to their parent epic
+- **Standalone issues** for bugs, small features, or chores that don't need an epic
+
+When working on a sub-issue, read the parent epic for full context.
+
+### Picking Up Work
+
+1. **Read the issue body fully** — look for acceptance criteria, implementation notes, and file references
+2. **Check dependencies** — look for "Depends on #X" or blocked status
+3. **Check the project board** — confirm priority and phase context
+4. **If the issue references an epic**, read the epic for architectural context
+
+### Branch Naming
+
+Always tie branches to an issue number:
+
+```bash
+# Features
+feat/issue-74-fix-sync-foundation
+
+# Bug fixes
+fix/issue-99-download-timeout
+
+# Documentation
+docs/issue-80-update-keybindings
+```
+
+Format: `{type}/issue-{number}-{short-description}`
+
+Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+
+### PR & Issue Closure
+
+- Reference the issue in the PR description: `Closes #74`
+- For partial work toward an epic, reference without closing: `Part of #73`
+- PRs should pass all quality checks before merge (see [Code Quality](#code-quality))
+
+### Labels
+
+| Category | Labels | Usage |
+|----------|--------|-------|
+| **Priority** | `P0`, `P1`, `P2`, `P3` | Severity / importance |
+| **Type** | `bug`, `enhancement`, `documentation` | What kind of work |
+| **Component** | `ui`, `downloads`, `sync`, `storage`, `rss`, `audio`, `performance` | Which module |
+| **Status** | `needs-triage`, `blocked`, `help-wanted` | Workflow state |
 
 ---
 

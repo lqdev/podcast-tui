@@ -34,10 +34,10 @@ Use the appropriate type prefix: `feat/`, `fix/`, `docs/`, `refactor/`, `test/`,
 ### 4. Implement the change
 - Follow the project's code standards (see `AGENTS.md` and `.github/copilot-instructions.md`)
 - Use existing skills where applicable:
-  - Adding a buffer? → See `add-new-buffer.md`
-  - Adding a command? → See `add-new-command.md`
-  - Architectural decision? → See `create-adr.md`
-  - Design document needed? → See `create-rfc.md`
+  - Adding a buffer? → See the `add-new-buffer` skill
+  - Adding a command? → See the `add-new-command` skill
+  - Architectural decision? → See the `create-adr` skill
+  - Design document needed? → See the `create-rfc` skill
 - Make minimal, surgical changes — don't refactor unrelated code
 - Write tests for new functionality
 

@@ -4,6 +4,7 @@ use crate::storage::{EpisodeId, PodcastId, Storage};
 use anyhow::Result;
 use chrono::Datelike;
 use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use thiserror::Error;
@@ -71,6 +72,33 @@ impl SyncReport {
 impl Default for SyncReport {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Serializable summary of a sync operation for history persistence.
+///
+/// `SyncReport` carries full `Vec<PathBuf>` lists, which would bloat history
+/// files, so this leaner struct is used to keep history files compact
+/// (storing counts instead of full path lists).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncHistorySummary {
+    pub files_copied_count: usize,
+    pub files_deleted_count: usize,
+    pub files_skipped_count: usize,
+    pub error_count: usize,
+    /// Error messages only (paths stripped)
+    pub errors: Vec<String>,
+}
+
+impl From<&SyncReport> for SyncHistorySummary {
+    fn from(report: &SyncReport) -> Self {
+        Self {
+            files_copied_count: report.files_copied.len(),
+            files_deleted_count: report.files_deleted.len(),
+            files_skipped_count: report.files_skipped.len(),
+            error_count: report.errors.len(),
+            errors: report.errors.iter().map(|(_, e)| e.clone()).collect(),
+        }
     }
 }
 

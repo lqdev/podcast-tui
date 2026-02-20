@@ -371,206 +371,58 @@ podcast-tui/
 
 ## 🔄 Development Workflow
 
-### Before Starting Work
+> **Full workflow details are in skills.** This section is a quick reference — see the linked skills for step-by-step procedures.
 
-1. **Understand the issue**: Read the issue description and comments
-2. **Review documentation**: Check [ARCHITECTURE.md](docs/ARCHITECTURE.md) for relevant design patterns
-3. **Check project board**: Review the [GitHub Projects board](https://github.com/users/lqdev/projects/1) for current priorities and phase context
-4. **Set up branch**: Create a feature branch from `main`
+| Task | Skill |
+|------|-------|
+| Pick up an issue and submit a PR | `work-on-issue` |
+| File a new issue | `create-issue` |
+| Triage / label an issue | `triage-issue` |
+| Cut a release | `prepare-release` |
+| Update CHANGELOG.md | `update-changelog` |
+| Validate code review feedback | `code-review-validation` |
+| Create an ADR | `create-adr` |
+| Create an RFC | `create-rfc` |
+| Add a new UI buffer | `add-new-buffer` |
+| Add a new minibuffer command | `add-new-command` |
 
-```bash
-git checkout -b feature/description
-```
-
-### During Development
-
-1. **Follow TDD where appropriate**: Write tests first for business logic
-2. **Run tests frequently**: `cargo test` after each change
-3. **Check code quality**: `cargo clippy` to catch common issues
-4. **Format code**: `cargo fmt` before commits
-
-### Before Committing
+### Quick Reference: Quality Checks
 
 ```bash
-# Required quality checks
-cargo fmt --check              # Verify formatting
-cargo clippy -- -D warnings    # Check for warnings
-cargo test                     # Run all tests
-cargo build --release          # Verify release build
+# Required before every commit
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo test
+
+# Required before every PR
+cargo build --release
 ```
 
-### Commit Message Format
+### Quick Reference: Commit Format
 
 ```
 type(scope): brief description
 
 [optional body explaining what and why]
 
-[optional footer with breaking changes or issue refs]
+[optional footer: Closes #N or Part of #N]
 ```
 
 **Types**: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `style`, `perf`
 
-**Examples**:
-```bash
-feat(ui): add episode filtering buffer
-fix(download): handle network timeout gracefully
-docs: update ARCHITECTURE.md with storage patterns
-refactor: extract constants to centralized module
-test: add property-based tests for validation
+### Quick Reference: Branch Naming
+
+```
+{type}/issue-{number}-{short-description}
 ```
 
-### Creating a Pull Request
-
-1. **Push your branch**: `git push origin feature/description`
-2. **Create PR** with:
-   - Descriptive title and description
-   - Link to related issues
-   - Screenshots/demos for UI changes
-   - Test coverage for new functionality
-3. **Address review feedback**
-4. **Ensure CI passes** (formatting, linting, tests)
+Examples: `feat/issue-74-fix-sync-foundation`, `fix/issue-99-download-timeout`
 
 ---
 
-## 🔨 Implementation Best Practices
+## 🎯 Project Management Reference
 
-When you work on an issue, follow these practices to keep changes high-quality, reviewable, and maintainable.
-
-### 1. Make Changes Small, Atomic, and Self-Contained
-
-**You must** scope each PR to a single, clear purpose. If an issue requires multiple logical steps, break it into sub-issues or multiple commits within a single PR.
-
-**Rationale**: Reviewers can understand the change in one sitting. Bugs are easier to isolate. You can confidently test the narrower scope.
-
-**Examples:**
-- ✅ PR #72: "Fix Cargo.toml metadata" (1 focused change + 4 related commits for phased rollout)
-- ✅ PR #70: "Add MockStorage for test coverage" (1 new feature, 1 test)
-- ✅ PR #71: "Backfill winget manifests" (add 3 missing versions, validate each)
-- ❌ Don't: "Add sync buffer + fix downloads + update keybindings" (multiple unrelated changes)
-
-**Do this:**
-- One issue → one focused branch
-- One logical unit of work → one commit (or grouped logically: scaffolding → implementation → tests)
-- If you discover unrelated bugs, file a new issue for them
-
-### 2. Test Early and Often
-
-**You must** write tests alongside code changes. Run them after every logical step, not just at the end.
-
-**Rationale**: Catches bugs immediately. Gives confidence before pushing. Makes refactoring safe.
-
-**What to test:**
-- Business logic: unit tests (storage operations, download logic, etc.)
-- User workflows: integration tests (e.g., `tests/test_sync_commands.rs`)
-- Error paths: test that errors are handled gracefully, not silently
-- Edge cases: empty lists, network timeouts, file permission errors
-
-**Do this:**
-```bash
-# After implementing a function, immediately test it
-cargo test test_my_new_function
-
-# Before committing, run all tests
-cargo test
-
-# For doc-only changes, verify no regressions
-cargo fmt --check && cargo clippy && cargo test
-```
-
-### 3. Commit and Checkpoint Early and Often
-
-**You must** commit with descriptive messages as you progress. Use atomic commits so each commit is a complete, working step.
-
-**Rationale**: Easy to revert a bad change. Clear history for future readers. Checkpoints help you recover if something breaks.
-
-**Commit format:**
-```
-type(scope): brief description
-
-[Optional: Detailed explanation of what changed and why]
-
-[Optional footer: Closes #N or Part of #N]
-```
-
-**Types**: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
-
-**Example:**
-```
-feat(sync): add dry-run preview mode for device sync
-
-Implement a new config flag sync_preview_before_sync (default: false) that
-gates whether the sync buffer shows a diff preview before executing the sync.
-This helps users avoid accidental data loss on USB devices.
-
-Changes:
-- DownloadConfig: new field sync_preview_before_sync
-- SyncBuffer: new DryRunPreview mode in state machine
-- UIApp: dispatch DryRunPreview → show preview overlay
-
-Tests: 2 unit tests (config parsing, state transitions)
-
-Closes #74
-```
-
-### 4. Document Your Progress, Changes, and Decisions Thoroughly
-
-**You must** explain the "why" in code, commits, and documentation — not just the "what".
-
-**Where to document:**
-
-| Location | What | Example |
-|----------|------|---------|
-| **Code comments** | Non-obvious logic, invariants, gotchas | `// Atomic write: temp file then rename to avoid partial writes` |
-| **Commit messages** | Why this change was needed, design trade-offs | `Part of #75: Directory picker needs ranger-style navigation to mimic fzf. See RFC-003 for nav spec.` |
-| **PR body** | Summary of changes, testing done, edge cases handled | See PR #70, #71, #72 for examples |
-| **ADR/RFC** | Architectural decisions, alternatives considered | New buffer? Create ADR. New feature? Create RFC. |
-| **CHANGELOG.md** | User-facing changes (features, commands, config fields) | Use `update-changelog` skill |
-
-**Do this:**
-- Explain trade-offs you made ("We chose X over Y because Z")
-- Link to related ADRs/RFCs in commit messages
-- Update documentation when adding features (KEYBINDINGS.md, ARCHITECTURE.md, etc.)
-- Include "why" not just "what" in PR descriptions
-
-### 5. Don't Introduce Bugs or Regressions
-
-**You must** verify that existing functionality still works after your changes.
-
-**Rationale**: Regressions silently break user workflows. One bug spreads through multiple sub-issues. A clean main branch is a reliable baseline.
-
-**Before pushing:**
-
-```bash
-# 1. Run full test suite
-cargo test
-
-# 2. Check formatting
-cargo fmt --check
-
-# 3. Run linter with strict warnings
-cargo clippy -- -D warnings
-
-# 4. Build release binary (catches optimization-only bugs)
-cargo build --release
-
-# 5. For UI changes, manual test in the terminal
-cargo run
-```
-
-**For PRs:**
-- Verify cross-platform compatibility (Windows + Linux if you changed file paths)
-- Test with the actual config files (not just defaults)
-- Check that error messages are user-friendly, not panics
-- Ensure async operations don't deadlock or drop errors silently
-
-**If you find a pre-existing bug:**
-- File a new issue, don't mix it into your PR
-- Document in your PR: "Pre-existing issue: ..."
-
----
-
-## 🎯 Issue Workflow & Project Management
+> **Procedural details are in skills.** Use the `create-issue` skill to file issues and the `triage-issue` skill to apply labels and project board fields.
 
 ### Project Board
 
@@ -591,40 +443,6 @@ All work is tracked on the [GitHub Projects board](https://github.com/users/lqde
 - **Epics** use the `[Epic]` title prefix and contain linked sub-issues (GitHub sub-issues feature)
 - **Sub-issues** are standalone issues linked to their parent epic
 - **Standalone issues** for bugs, small features, or chores that don't need an epic
-
-When working on a sub-issue, read the parent epic for full context.
-
-### Picking Up Work
-
-1. **Read the issue body fully** — look for acceptance criteria, implementation notes, and file references
-2. **Check dependencies** — look for "Depends on #X" or blocked status
-3. **Check the project board** — confirm priority and phase context
-4. **If the issue references an epic**, read the epic for architectural context
-
-### Branch Naming
-
-Always tie branches to an issue number:
-
-```bash
-# Features
-feat/issue-74-fix-sync-foundation
-
-# Bug fixes
-fix/issue-99-download-timeout
-
-# Documentation
-docs/issue-80-update-keybindings
-```
-
-Format: `{type}/issue-{number}-{short-description}`
-
-Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
-
-### PR & Issue Closure
-
-- Reference the issue in the PR description: `Closes #74`
-- For partial work toward an epic, reference without closing: `Part of #73`
-- PRs should pass all quality checks before merge (see [Code Quality](#code-quality))
 
 ### Labels
 

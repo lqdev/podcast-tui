@@ -40,6 +40,8 @@ Use the appropriate type prefix: `feat/`, `fix/`, `docs/`, `refactor/`, `test/`,
   - Design document needed? → See the `create-rfc` skill
 - Make minimal, surgical changes — don't refactor unrelated code
 - Write tests for new functionality
+- Filing a new issue along the way? → See the `create-issue` skill
+- Need to triage / label? → See the `triage-issue` skill
 
 ### 5. Run quality checks
 

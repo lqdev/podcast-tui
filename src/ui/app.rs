@@ -556,21 +556,8 @@ impl UIApp {
             }
             UIAction::DeletePodcast => {
                 if self.buffer_manager.current_buffer_id().as_deref() == Some("sync") {
-                    // 'd' in sync buffer → dry-run with active target (or prompt if none)
-                    if let Some(active_path) = self
-                        .buffer_manager
-                        .get_sync_buffer_mut()
-                        .and_then(|b| b.active_target().cloned())
-                    {
-                        let path_str = active_path.to_string_lossy().to_string();
-                        self.trigger_async_device_sync(path_str, false, true, false);
-                    } else {
-                        let default_path = self.get_default_sync_path();
-                        self.minibuffer.set_content(MinibufferContent::Input {
-                            prompt: format!("Dry run sync to (default: {}): ", default_path),
-                            input: String::new(),
-                        });
-                    }
+                    // 'd' means delete — nothing to delete in the sync buffer
+                    self.show_message("Nothing to delete in the sync buffer".to_string());
                     return Ok(true);
                 }
 
@@ -865,6 +852,24 @@ impl UIApp {
                 Ok(true)
             }
             UIAction::DownloadEpisode => {
+                // 'D' in sync buffer → dry-run preview with active target (or prompt if none)
+                if self.buffer_manager.current_buffer_id().as_deref() == Some("sync") {
+                    if let Some(active_path) = self
+                        .buffer_manager
+                        .get_sync_buffer_mut()
+                        .and_then(|b| b.active_target().cloned())
+                    {
+                        let path_str = active_path.to_string_lossy().to_string();
+                        self.trigger_async_device_sync(path_str, false, true, false);
+                    } else {
+                        let default_path = self.get_default_sync_path();
+                        self.minibuffer.set_content(MinibufferContent::Input {
+                            prompt: format!("Dry run sync to (default: {}): ", default_path),
+                            input: String::new(),
+                        });
+                    }
+                    return Ok(true);
+                }
                 // Pass to the current buffer to handle
                 if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
                     let result_action = current_buffer.handle_action(action);
@@ -4828,18 +4833,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete_podcast_in_sync_buffer_opens_dry_run_prompt() {
-        // Arrange — 'd' maps to DeletePodcast; sync buffer context guard intercepts it
+    async fn test_download_episode_in_sync_buffer_opens_dry_run_prompt() {
+        // Arrange — 'D' maps to DownloadEpisode; sync buffer context guard intercepts it
         let mut app = make_app_with_sync_buffer().await;
 
         // Act
-        let result = app.handle_action(UIAction::DeletePodcast).await;
+        let result = app.handle_action(UIAction::DownloadEpisode).await;
 
-        // Assert — should open dry-run prompt, not delete-podcast flow
+        // Assert — should open dry-run prompt, not download-episode flow
         assert!(result.is_ok());
         assert!(
             app.minibuffer.is_input_mode(),
-            "Minibuffer should be in input mode after 'd' in sync buffer"
+            "Minibuffer should be in input mode after 'D' in sync buffer"
         );
         assert!(
             app.minibuffer
@@ -4847,6 +4852,27 @@ mod tests {
                 .map(|p| p.starts_with("Dry run sync to"))
                 .unwrap_or(false),
             "Prompt should start with 'Dry run sync to'"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_podcast_in_sync_buffer_shows_nothing_to_delete() {
+        // Arrange — 'd' now consistently means delete; sync buffer has nothing to delete
+        let mut app = make_app_with_sync_buffer().await;
+
+        // Act
+        let result = app.handle_action(UIAction::DeletePodcast).await;
+
+        // Assert — should show info message, not open a dry-run prompt
+        assert!(result.is_ok());
+        assert!(
+            !app.minibuffer.is_input_mode(),
+            "Minibuffer should NOT enter input mode for 'd' in sync buffer"
+        );
+        // Verify show_message was actually called (not a silent no-op)
+        assert!(
+            app.minibuffer.is_visible(),
+            "Minibuffer should be visible (showing 'nothing to delete' message)"
         );
     }
 

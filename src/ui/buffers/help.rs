@@ -154,11 +154,11 @@ impl HelpBuffer {
             "DEVICE SYNC:".to_string(),
             "  F8                   Switch to sync buffer".to_string(),
             "  s                    Sync to active target (no prompt if target set)".to_string(),
-            "  d                    Dry-run preview (sync buffer only)".to_string(),
+            "  D (Shift-D)          Dry-run preview (sync buffer only)".to_string(),
             "  p                    Open directory picker (sync buffer only)".to_string(),
             "  r                    Refresh sync view (sync buffer only)".to_string(),
             "  Enter                Activate selected saved target (sync buffer only)".to_string(),
-            "Dry-Run Preview (after pressing d):".to_string(),
+            "Dry-Run Preview (after pressing D):".to_string(),
             "  [/]                  Cycle between tabs: To Copy, To Delete, Skipped, Errors"
                 .to_string(),
             "  ↑↓                   Scroll file list".to_string(),
@@ -277,7 +277,7 @@ impl HelpBuffer {
             "".to_string(),
             "SYNC:".to_string(),
             "  s             Sync to device".to_string(),
-            "  d             Dry-run preview (sync buffer only)".to_string(),
+            "  D (Shift-D)   Dry-run preview (sync buffer only)".to_string(),
             "  p             Open directory picker (sync buffer only)".to_string(),
             "  [ / ]         Cycle dry-run preview tabs".to_string(),
         ]

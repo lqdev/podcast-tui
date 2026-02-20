@@ -5,7 +5,7 @@
 
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     widgets::{Block, Borders, List, ListItem, ListState},
     Frame,
 };
@@ -182,7 +182,7 @@ impl UIComponent for BufferListBuffer {
                 };
 
                 let style = if *is_current {
-                    Style::default().fg(Color::Yellow)
+                    self.theme.active_indicator_style()
                 } else {
                     Style::default()
                 };

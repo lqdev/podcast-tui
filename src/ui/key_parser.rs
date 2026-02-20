@@ -87,12 +87,7 @@ pub fn parse_key_notation(notation: &str) -> Result<KeyChord, KeyParseError> {
                 // A single uppercase ASCII letter that isn't a known modifier (C/S/A/M)
                 // is almost certainly a config typo (e.g., "X-n"). Return a specific error
                 // so users get actionable feedback rather than a confusing UnknownKey.
-                if part.len() == 1
-                    && part
-                        .chars()
-                        .next()
-                        .is_some_and(|c| c.is_ascii_uppercase())
-                {
+                if part.len() == 1 && part.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
                     return Err(KeyParseError::InvalidModifier(part.to_string()));
                 }
                 // Multi-char or non-uppercase token — treat everything from here as the key.

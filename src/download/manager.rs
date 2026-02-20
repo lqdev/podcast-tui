@@ -42,7 +42,10 @@ pub enum SyncError {
 #[derive(Debug, Clone)]
 pub enum SyncProgressEvent {
     /// Pre-scan complete: total bytes to copy and total files to process
-    ScanComplete { total_bytes: u64, total_files: usize },
+    ScanComplete {
+        total_bytes: u64,
+        total_files: usize,
+    },
     /// A file was successfully copied to the device
     FileCopied { path: PathBuf, bytes: u64 },
     /// A file was deleted from the device
@@ -1240,7 +1243,15 @@ impl<S: Storage> DownloadManager<S> {
                 })
                 .map(|(_, (_, size))| size)
                 .sum();
-            let total_files = pc_files.len();
+            let total_files = pc_files
+                .iter()
+                .filter(|(rel, (_, src_size))| {
+                    device_files
+                        .get(*rel)
+                        .map(|(_, dev_size)| src_size != dev_size)
+                        .unwrap_or(true)
+                })
+                .count();
             let _ = tx.send(SyncProgressEvent::ScanComplete {
                 total_bytes,
                 total_files,
@@ -1367,9 +1378,7 @@ impl<S: Storage> DownloadManager<S> {
                                         message: msg.clone(),
                                     });
                                 }
-                                report
-                                    .errors
-                                    .push((relative_path.clone(), msg));
+                                report.errors.push((relative_path.clone(), msg));
                             }
                         }
                     } else {
@@ -1631,7 +1640,9 @@ mod tests {
         let podcast_dir = downloads_dir.join("Test Podcast");
         tokio::fs::create_dir_all(&podcast_dir).await.unwrap();
         tokio::fs::create_dir_all(&device_dir).await.unwrap();
-        tokio::fs::write(podcast_dir.join("ep1.mp3"), b"audio data").await.unwrap();
+        tokio::fs::write(podcast_dir.join("ep1.mp3"), b"audio data")
+            .await
+            .unwrap();
 
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
         let manager =
@@ -1651,11 +1662,15 @@ mod tests {
             events.push(event);
         }
         assert!(
-            events.iter().any(|e| matches!(e, SyncProgressEvent::ScanComplete { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, SyncProgressEvent::ScanComplete { .. })),
             "Expected ScanComplete event"
         );
         assert!(
-            events.iter().any(|e| matches!(e, SyncProgressEvent::Complete { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, SyncProgressEvent::Complete { .. })),
             "Expected Complete event"
         );
     }
@@ -2081,7 +2096,14 @@ mod tests {
         fs::write(&orphan_file, b"orphan").await.unwrap();
 
         let report = manager
-            .sync_to_device(device_path.clone(), Some(playlists_dir), true, false, false, None)
+            .sync_to_device(
+                device_path.clone(),
+                Some(playlists_dir),
+                true,
+                false,
+                false,
+                None,
+            )
             .await
             .unwrap();
 
@@ -2142,7 +2164,14 @@ mod tests {
         fs::write(&unmanaged_file, b"keep").await.unwrap();
 
         let report = manager
-            .sync_to_device(device_path.clone(), Some(playlists_dir), true, false, true, None)
+            .sync_to_device(
+                device_path.clone(),
+                Some(playlists_dir),
+                true,
+                false,
+                true,
+                None,
+            )
             .await
             .unwrap();
 

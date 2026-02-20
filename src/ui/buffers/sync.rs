@@ -176,7 +176,6 @@ pub struct SyncBuffer {
 
     /// Cursor index across the flat overview list (targets then history)
     selected_index: usize,
-
 }
 
 impl SyncBuffer {
@@ -256,15 +255,24 @@ impl SyncBuffer {
         match serde_json::to_string_pretty(value) {
             Ok(json) => {
                 if let Err(e) = std::fs::write(&tmp, &json) {
-                    eprintln!("podcast-tui: failed to write sync data to {}: {e}", tmp.display());
+                    eprintln!(
+                        "podcast-tui: failed to write sync data to {}: {e}",
+                        tmp.display()
+                    );
                     return;
                 }
                 if let Err(e) = std::fs::rename(&tmp, path) {
-                    eprintln!("podcast-tui: failed to persist sync data to {}: {e}", path.display());
+                    eprintln!(
+                        "podcast-tui: failed to persist sync data to {}: {e}",
+                        path.display()
+                    );
                 }
             }
             Err(e) => {
-                eprintln!("podcast-tui: failed to serialize sync data for {}: {e}", path.display());
+                eprintln!(
+                    "podcast-tui: failed to serialize sync data for {}: {e}",
+                    path.display()
+                );
             }
         }
     }
@@ -848,7 +856,8 @@ impl Buffer for SyncBuffer {
             "".to_string(),
             "Progress View (during active sync):".to_string(),
             "  (read-only) Byte-based progress bar + live counters + elapsed time".to_string(),
-            "              Automatically transitions back to Overview when sync completes".to_string(),
+            "              Automatically transitions back to Overview when sync completes"
+                .to_string(),
             "".to_string(),
             "  C-h / F1    Show this help".to_string(),
         ]
@@ -1440,49 +1449,57 @@ impl SyncBuffer {
         frame.render_widget(list, chunks[2]);
 
         // Hints
-        let hints = Paragraph::new(
-            "↑↓/j/k scroll  [/] cycle tabs  Enter/s confirm & sync  Esc cancel",
-        )
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Actions")
-                .border_style(self.border_style()),
-        )
-        .style(self.theme.text_style());
+        let hints =
+            Paragraph::new("↑↓/j/k scroll  [/] cycle tabs  Enter/s confirm & sync  Esc cancel")
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("Actions")
+                        .border_style(self.border_style()),
+                )
+                .style(self.theme.text_style());
         frame.render_widget(hints, chunks[3]);
     }
 
     // ── Progress view rendering ──────────────────────────────────────────────
 
     fn render_progress(&self, frame: &mut Frame, area: Rect) {
-        let (device_path, total_bytes, bytes_copied, current_file, copied, deleted, skipped, errors, start_time) =
-            if let SyncBufferMode::Progress {
-                ref device_path,
+        let (
+            device_path,
+            total_bytes,
+            bytes_copied,
+            current_file,
+            copied,
+            deleted,
+            skipped,
+            errors,
+            start_time,
+        ) = if let SyncBufferMode::Progress {
+            ref device_path,
+            total_bytes,
+            bytes_copied,
+            ref current_file,
+            copied_count,
+            deleted_count,
+            skipped_count,
+            error_count,
+            ref start_time,
+        } = self.mode
+        {
+            (
+                device_path,
                 total_bytes,
                 bytes_copied,
-                ref current_file,
+                current_file,
                 copied_count,
                 deleted_count,
                 skipped_count,
                 error_count,
-                ref start_time,
-            } = self.mode
-            {
-                (
-                    device_path,
-                    total_bytes,
-                    bytes_copied,
-                    current_file,
-                    copied_count,
-                    deleted_count,
-                    skipped_count,
-                    error_count,
-                    start_time,
-                )
-            } else {
-                return;
-            };
+                start_time,
+            )
+        } else {
+            return;
+        };
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -1496,7 +1513,7 @@ impl SyncBuffer {
 
         // Progress bar
         let pct = if total_bytes > 0 {
-            ((bytes_copied as f64 / total_bytes as f64) * 100.0) as u16
+            ((bytes_copied as f64 / total_bytes as f64) * 100.0).min(100.0) as u16
         } else {
             0
         };
@@ -1542,11 +1559,7 @@ impl SyncBuffer {
                 elapsed.as_secs() % 60
             )
         } else {
-            format!(
-                "{}m {}s",
-                elapsed.as_secs() / 60,
-                elapsed.as_secs() % 60
-            )
+            format!("{}m {}s", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
         };
         let counters = format!(
             "✅ Copied: {}    🗑️ Deleted: {}    ⏭ Skipped: {}    ❌ Errors: {}    Elapsed: {}",

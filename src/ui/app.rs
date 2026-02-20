@@ -1638,9 +1638,10 @@ impl UIApp {
                     };
                     self.show_message(summary);
                 } else {
-                    // Real sync completed — update history, leave progress mode
+                    // Real sync completed — update history, return to overview
                     if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
                         sync_buffer.add_sync_result(device_path.clone(), report.clone(), dry_run);
+                        sync_buffer.reset_to_overview();
                     }
 
                     let summary = if report.is_success() {
@@ -3214,7 +3215,8 @@ impl UIApp {
             if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
                 sync_buffer.enter_progress_mode(device_path.clone());
             }
-            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::download::SyncProgressEvent>();
+            let (tx, mut rx) =
+                tokio::sync::mpsc::unbounded_channel::<crate::download::SyncProgressEvent>();
             // Relay progress events to app_event_tx
             let relay_tx = app_event_tx.clone();
             tokio::spawn(async move {

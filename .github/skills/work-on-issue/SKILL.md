@@ -16,7 +16,7 @@ When you are assigned a GitHub issue to implement (feature, bug fix, refactoring
 - Check for dependencies (`Depends on #X`) — do not start if dependencies are unresolved
 
 ### 2. Check the project board
-- Open the [GitHub Projects board](https://github.com/users/lqdev/projects/1)
+- Use the `next-issue` skill to query the board and confirm this issue is next in the stack rank
 - Note the issue's Priority, Phase, and Effort fields for context
 - Confirm the issue is in `Todo` status (not blocked or already in progress)
 

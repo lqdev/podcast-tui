@@ -219,6 +219,28 @@ impl UIComponent for PlaylistDetailBuffer {
                     }
                 }
             }
+            UIAction::MarkPlayed => {
+                if let Some(episode) = self.selected_episode() {
+                    UIAction::TriggerMarkPlayed {
+                        podcast_id: episode.podcast_id.clone(),
+                        episode_id: episode.episode_id.clone(),
+                        episode_title: episode.episode_id.to_string(),
+                    }
+                } else {
+                    UIAction::ShowMessage("No episode selected".to_string())
+                }
+            }
+            UIAction::MarkUnplayed => {
+                if let Some(episode) = self.selected_episode() {
+                    UIAction::TriggerMarkUnplayed {
+                        podcast_id: episode.podcast_id.clone(),
+                        episode_id: episode.episode_id.clone(),
+                        episode_title: episode.episode_id.to_string(),
+                    }
+                } else {
+                    UIAction::ShowMessage("No episode selected".to_string())
+                }
+            }
             _ => UIAction::None,
         }
     }

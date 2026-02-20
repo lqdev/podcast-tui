@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added vim-style navigation keys `j`/`k` (down/up), `g` (top), `G` (bottom) as aliases for arrow keys, Home, and End in all list buffers. Also added `C-n`/`C-p` as global Emacs-style navigation aliases. Closes [#93](https://github.com/lqdev/podcast-tui/issues/93).
 
+- Implemented `m` (mark played) and `u` (mark unplayed) keybindings for episodes. Pressing `m` on a selected episode marks it as played (persists to storage), `u` marks it as unplayed. Works in the episode list, What's New, and playlist detail buffers. Visual status updates immediately; storage is written asynchronously. Closes [#94](https://github.com/lqdev/podcast-tui/issues/94).
+  - Keybindings: `m` → Mark episode as played, `u` → Mark episode as unplayed
+  - Help text updated with `m`/`u` in episode management sections
+  - Tests added: 6 unit tests (episode_list buffer), 2 keybinding unit tests, 3 integration tests (storage roundtrip)
+
 ### Fixed
 
 - Fixed help text to remove ghost keybindings that were listed but not bound (`m`/`u` mark played/unplayed in episode list, `C-n`/`C-p` navigation in What's New buffer, and inaccurate Emacs-style entries in the keybindings reference). Closes [#92](https://github.com/lqdev/podcast-tui/issues/92).

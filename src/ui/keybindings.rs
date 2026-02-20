@@ -179,6 +179,10 @@ impl KeyHandler {
         self.bind_key(KeyChord::shift(KeyCode::Char('A')), UIAction::ImportOpml);
         self.bind_key(KeyChord::shift(KeyCode::Char('E')), UIAction::ExportOpml);
 
+        // Episode status
+        self.bind_key(KeyChord::none(KeyCode::Char('m')), UIAction::MarkPlayed);
+        self.bind_key(KeyChord::none(KeyCode::Char('u')), UIAction::MarkUnplayed);
+
         // Search and filter
         self.bind_key(KeyChord::none(KeyCode::Char('/')), UIAction::Search);
         self.bind_key(KeyChord::none(KeyCode::F(6)), UIAction::ClearFilters);
@@ -310,5 +314,19 @@ mod tests {
         let mut handler = KeyHandler::new();
         let key = KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL);
         assert_eq!(handler.handle_key(key), UIAction::MoveUp);
+    }
+
+    #[test]
+    fn test_m_key_resolves_to_mark_played() {
+        let mut handler = KeyHandler::new();
+        let key = KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE);
+        assert_eq!(handler.handle_key(key), UIAction::MarkPlayed);
+    }
+
+    #[test]
+    fn test_u_key_resolves_to_mark_unplayed() {
+        let mut handler = KeyHandler::new();
+        let key = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::NONE);
+        assert_eq!(handler.handle_key(key), UIAction::MarkUnplayed);
     }
 }

@@ -350,6 +350,54 @@ impl UIComponent for EpisodeListBuffer {
                     UIAction::ShowMessage("No episode selected".to_string())
                 }
             }
+            UIAction::MarkPlayed => {
+                let result = self
+                    .selected_index
+                    .and_then(|i| self.filtered_indices.get(i))
+                    .copied()
+                    .map(|actual_idx| {
+                        let ep = &self.episodes[actual_idx];
+                        (actual_idx, ep.id.clone(), ep.title.clone(), ep.is_played())
+                    });
+                match result {
+                    Some((_, _, _, true)) => {
+                        UIAction::ShowMessage("Episode already marked as played".to_string())
+                    }
+                    Some((actual_idx, episode_id, episode_title, false)) => {
+                        self.episodes[actual_idx].mark_played();
+                        UIAction::TriggerMarkPlayed {
+                            podcast_id: self.podcast_id.clone(),
+                            episode_id,
+                            episode_title,
+                        }
+                    }
+                    None => UIAction::ShowMessage("No episode selected".to_string()),
+                }
+            }
+            UIAction::MarkUnplayed => {
+                let result = self
+                    .selected_index
+                    .and_then(|i| self.filtered_indices.get(i))
+                    .copied()
+                    .map(|actual_idx| {
+                        let ep = &self.episodes[actual_idx];
+                        (actual_idx, ep.id.clone(), ep.title.clone(), ep.is_played())
+                    });
+                match result {
+                    Some((_, _, _, false)) => {
+                        UIAction::ShowMessage("Episode is not marked as played".to_string())
+                    }
+                    Some((actual_idx, episode_id, episode_title, true)) => {
+                        self.episodes[actual_idx].mark_unplayed();
+                        UIAction::TriggerMarkUnplayed {
+                            podcast_id: self.podcast_id.clone(),
+                            episode_id,
+                            episode_title,
+                        }
+                    }
+                    None => UIAction::ShowMessage("No episode selected".to_string()),
+                }
+            }
             // --- Search & Filter actions ---
             UIAction::Search => {
                 // Bubble up to UIApp which will open the minibuffer prompt
@@ -962,5 +1010,112 @@ mod tests {
         let action = buffer.handle_action(UIAction::Search);
         // Search should bubble up to the app for minibuffer handling
         assert_eq!(action, UIAction::Search);
+    }
+
+    fn make_episode(title: &str) -> Episode {
+        Episode::new(
+            PodcastId::new(),
+            title.to_string(),
+            "url".to_string(),
+            chrono::Utc::now(),
+        )
+    }
+
+    #[test]
+    fn test_mark_played_on_unplayed_episode_returns_trigger() {
+        // Arrange
+        let podcast_id = PodcastId::new();
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), podcast_id.clone());
+        let episode = make_episode("Test Episode");
+        let episode_id = episode.id.clone();
+        buffer.set_episodes(vec![episode]);
+
+        // Act
+        let action = buffer.handle_action(UIAction::MarkPlayed);
+
+        // Assert: returns TriggerMarkPlayed with correct IDs
+        assert!(
+            matches!(action, UIAction::TriggerMarkPlayed { podcast_id: ref pid, episode_id: ref eid, .. }
+                if *pid == podcast_id && *eid == episode_id)
+        );
+        // Local state updated immediately
+        assert!(buffer.episodes[0].is_played());
+    }
+
+    #[test]
+    fn test_mark_played_on_already_played_episode_returns_message() {
+        // Arrange
+        let podcast_id = PodcastId::new();
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), podcast_id.clone());
+        let mut episode = make_episode("Test Episode");
+        episode.mark_played();
+        buffer.set_episodes(vec![episode]);
+
+        // Act
+        let action = buffer.handle_action(UIAction::MarkPlayed);
+
+        // Assert: no-op message, no error
+        assert!(matches!(action, UIAction::ShowMessage(_)));
+    }
+
+    #[test]
+    fn test_mark_unplayed_on_played_episode_returns_trigger() {
+        // Arrange
+        let podcast_id = PodcastId::new();
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), podcast_id.clone());
+        let mut episode = make_episode("Test Episode");
+        episode.mark_played();
+        let episode_id = episode.id.clone();
+        buffer.set_episodes(vec![episode]);
+
+        // Act
+        let action = buffer.handle_action(UIAction::MarkUnplayed);
+
+        // Assert: returns TriggerMarkUnplayed with correct IDs
+        assert!(
+            matches!(action, UIAction::TriggerMarkUnplayed { podcast_id: ref pid, episode_id: ref eid, .. }
+                if *pid == podcast_id && *eid == episode_id)
+        );
+        // Local state updated immediately
+        assert!(!buffer.episodes[0].is_played());
+    }
+
+    #[test]
+    fn test_mark_unplayed_on_unplayed_episode_returns_message() {
+        // Arrange
+        let podcast_id = PodcastId::new();
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), podcast_id.clone());
+        let episode = make_episode("Test Episode");
+        buffer.set_episodes(vec![episode]);
+
+        // Act
+        let action = buffer.handle_action(UIAction::MarkUnplayed);
+
+        // Assert: no-op message
+        assert!(matches!(action, UIAction::ShowMessage(_)));
+    }
+
+    #[test]
+    fn test_mark_played_with_no_selection_returns_message() {
+        // Arrange: empty buffer, no selection
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+
+        // Act
+        let action = buffer.handle_action(UIAction::MarkPlayed);
+
+        // Assert
+        assert!(matches!(action, UIAction::ShowMessage(_)));
+    }
+
+    #[test]
+    fn test_mark_unplayed_with_no_selection_returns_message() {
+        // Arrange: empty buffer, no selection
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+
+        // Act
+        let action = buffer.handle_action(UIAction::MarkUnplayed);
+
+        // Assert
+        assert!(matches!(action, UIAction::ShowMessage(_)));
     }
 }

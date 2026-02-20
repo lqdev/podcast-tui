@@ -1,6 +1,6 @@
 ---
 name: next-issue
-description: Query the GitHub project board to find the next stack-ranked issue to work on. Returns the top actionable Todo item by Priority then Phase, filtering out epics and closed issues.
+description: Query the GitHub project board to find the next stack-ranked issue to work on. Returns the top actionable Todo item by Priority then Phase, checking issue dependencies, filtering out epics, closed issues, and blocked items.
 ---
 
 # Skill: Find the Next Issue

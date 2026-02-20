@@ -258,7 +258,7 @@ impl HelpBuffer {
             "  D (Shift-D)   Download episode".to_string(),
             "  X             Delete downloaded episode file".to_string(),
             "  p             Add episode to playlist".to_string(),
-            "  / / F3        Search".to_string(),
+            "  /, F3         Search".to_string(),
             "  F6            Clear filters".to_string(),
             "".to_string(),
             "SYNC:".to_string(),
@@ -341,7 +341,7 @@ impl UIComponent for HelpBuffer {
                 UIAction::Render
             }
             UIAction::HideMinibuffer => {
-                // C-g closes help buffer
+                // Esc closes help buffer
                 UIAction::CloseBuffer(self.title.clone())
             }
             _ => UIAction::None,

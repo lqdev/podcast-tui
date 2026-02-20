@@ -44,7 +44,16 @@ For each PR merged or opened this session, note:
 
 ### 3. Gather what's next
 
-Use the `next-issue` skill (steps 1-4 only) to get the current top-5 stack rank. Include the full table.
+**Do NOT skip this step. Do NOT use cached or remembered data from earlier in the session.**
+
+Run the `next-issue` skill Steps 1–4 right now, producing a fresh query result. Paste the resulting ranked table directly into the checkpoint. If you skip the query and write from memory, the checkpoint will be wrong.
+
+```powershell
+# You MUST run this query — do not recall from memory
+gh api graphql -f query='{ user(login: "lqdev") { projectV2(number: 1) { items(first: 50) { nodes { fieldValues(first: 10) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2SingleSelectField { name } } } } } content { ... on Issue { number title state body } } } } } } }'
+```
+
+Follow `next-issue` Steps 2–4 to filter, check dependencies, and rank. The "What's next" section of the checkpoint must reflect the **live board state at time of writing**, not earlier in the session.
 
 ### 4. Collect key reminders
 
@@ -130,5 +139,5 @@ Tell the user:
 
 - ❌ Writing the checkpoint from memory without verifying Git/GitHub state
 - ❌ Omitting the "What's next" section because "they know"
-- ❌ Skipping the stack rank query because "it hasn't changed"
+- ❌ Skipping the stack rank query because "it hasn't changed" — **this caused a real bug**: checkpoint 002 had #101 listed as P2/next=#97, when the board had already been updated to P1 in a concurrent session. Always query.
 - ❌ Writing vague reminders like "remember to check things" — be specific

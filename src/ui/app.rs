@@ -4869,6 +4869,11 @@ mod tests {
             !app.minibuffer.is_input_mode(),
             "Minibuffer should NOT enter input mode for 'd' in sync buffer"
         );
+        // Verify show_message was actually called (not a silent no-op)
+        assert!(
+            app.minibuffer.is_visible(),
+            "Minibuffer should be visible (showing 'nothing to delete' message)"
+        );
     }
 
     #[tokio::test]

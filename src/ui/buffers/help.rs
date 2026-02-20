@@ -158,7 +158,7 @@ impl HelpBuffer {
             "  p                    Open directory picker (sync buffer only)".to_string(),
             "  r                    Refresh sync view (sync buffer only)".to_string(),
             "  Enter                Activate selected saved target (sync buffer only)".to_string(),
-            "Dry-Run Preview (after pressing d):".to_string(),
+            "Dry-Run Preview (after pressing D):".to_string(),
             "  [/]                  Cycle between tabs: To Copy, To Delete, Skipped, Errors"
                 .to_string(),
             "  ↑↓                   Scroll file list".to_string(),

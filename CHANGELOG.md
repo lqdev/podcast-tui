@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Standardize Context-Dependent Key Semantics — February 2026**
 - **`d` now consistently means "delete"** across all buffers; pressing `d` in the sync buffer no longer triggers a dry-run preview — it shows an informational message instead
-- **`D` (Shift+D) triggers dry-run preview** in the sync buffer (previously `d`); `D` already opened episode downloads in episode contexts, making this a clean contextual override with no global conflicts
+- **`D` (Shift-D) triggers dry-run preview** in the sync buffer (previously `d`); `D` already opened episode downloads in episode contexts, making this a clean contextual override with no global conflicts
 - Help text updated: `d → D (Shift-D)` in both the Device Sync and Keybinding Reference sections
 - Tests updated: renamed dry-run test to cover `DownloadEpisode` action; added test confirming `DeletePodcast` in sync buffer shows a "nothing to delete" message. Closes [#95](https://github.com/lqdev/podcast-tui/issues/95).
 

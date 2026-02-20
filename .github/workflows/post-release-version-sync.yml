@@ -66,15 +66,16 @@ jobs:
           $arm64Url = "$baseUrl/podcast-tui-$tag-windows-aarch64.zip|arm64"
           $x64Url   = "$baseUrl/podcast-tui-$tag-windows-x86_64.zip|x64"
 
-          # wingetcreate creates the full l/lqdev/PodcastTUI/<version>/ tree
-          # under --out, so point at the manifests root.
+          # wingetcreate creates manifests/l/lqdev/PodcastTUI/<version>/ under --out.
+          # Use '.' so files land at ./manifests/l/lqdev/PodcastTUI/<version>/
+          # (using '--out manifests' would produce manifests/manifests/... double nesting).
           # NOTE: This step requires lqdev.PodcastTUI to exist in the
           # microsoft/winget-pkgs repository. Submit the package first via
           # docs/WINGET_PUBLISHING.md before this workflow will succeed.
           .\wingetcreate.exe update lqdev.PodcastTUI `
             --version $version `
             --urls $arm64Url $x64Url `
-            --out manifests
+            --out .
 
           Write-Host "Generated manifests:"
           Get-ChildItem "manifests/l/lqdev/PodcastTUI/$version"

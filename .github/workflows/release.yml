@@ -226,7 +226,7 @@ jobs:
           prerelease: false
           generate_release_notes: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.WINGET_SUBMIT_TOKEN }}
 
   test-builds:
     name: Test release artifacts

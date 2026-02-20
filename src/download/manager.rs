@@ -38,6 +38,23 @@ pub enum SyncError {
     DeleteFailed(String),
 }
 
+/// Progress events emitted by `sync_to_device()` when a progress channel is provided.
+#[derive(Debug, Clone)]
+pub enum SyncProgressEvent {
+    /// Pre-scan complete: total bytes to copy and total files to process
+    ScanComplete { total_bytes: u64, total_files: usize },
+    /// A file was successfully copied to the device
+    FileCopied { path: PathBuf, bytes: u64 },
+    /// A file was deleted from the device
+    FileDeleted { path: PathBuf },
+    /// A file was skipped (already in sync)
+    FileSkipped { path: PathBuf },
+    /// An error occurred processing a file
+    Error { path: PathBuf, message: String },
+    /// Sync operation complete
+    Complete { report: SyncReport },
+}
+
 /// Report of sync operations performed
 #[derive(Debug, Clone)]
 pub struct SyncReport {
@@ -45,6 +62,8 @@ pub struct SyncReport {
     pub files_deleted: Vec<PathBuf>,
     pub files_skipped: Vec<PathBuf>,
     pub errors: Vec<(PathBuf, String)>,
+    /// File sizes (bytes) for files to be copied — populated during both real and dry-run syncs.
+    pub file_sizes: std::collections::HashMap<PathBuf, u64>,
 }
 
 impl SyncReport {
@@ -55,6 +74,7 @@ impl SyncReport {
             files_deleted: Vec::new(),
             files_skipped: Vec::new(),
             errors: Vec::new(),
+            file_sizes: std::collections::HashMap::new(),
         }
     }
 
@@ -1087,7 +1107,14 @@ impl<S: Storage> DownloadManager<S> {
     /// * `hard_sync` - If true, wipe managed device directories before copy
     ///
     /// # Returns
-    /// A `SyncReport` detailing all operations performed or that would be performed
+    /// A `SyncReport` detailing all operations performed or that would be performed.
+    ///
+    /// When `progress_tx` is `Some`, the function emits [`SyncProgressEvent`] events as it runs:
+    /// - `ScanComplete` after scanning source files (with total bytes and file count)
+    /// - `FileCopied`, `FileDeleted`, `FileSkipped`, or `Error` for each file operation
+    /// - `Complete` at the end with the full report
+    ///
+    /// When `progress_tx` is `None`, behavior is identical to before (backward compatible).
     pub async fn sync_to_device(
         &self,
         device_path: PathBuf,
@@ -1095,6 +1122,7 @@ impl<S: Storage> DownloadManager<S> {
         delete_orphans: bool,
         dry_run: bool,
         hard_sync: bool,
+        progress_tx: Option<tokio::sync::mpsc::UnboundedSender<SyncProgressEvent>>,
     ) -> Result<SyncReport, SyncError> {
         let mut report = SyncReport::new();
 
@@ -1200,6 +1228,30 @@ impl<S: Storage> DownloadManager<S> {
             .await?;
         }
 
+        // Emit ScanComplete: calculate total bytes for files that need copying
+        if let Some(ref tx) = progress_tx {
+            let total_bytes: u64 = pc_files
+                .iter()
+                .filter(|(rel, (_, src_size))| {
+                    device_files
+                        .get(*rel)
+                        .map(|(_, dev_size)| src_size != dev_size)
+                        .unwrap_or(true)
+                })
+                .map(|(_, (_, size))| size)
+                .sum();
+            let total_files = pc_files.len();
+            let _ = tx.send(SyncProgressEvent::ScanComplete {
+                total_bytes,
+                total_files,
+            });
+        }
+
+        // Populate file_sizes in report from pc_files (used by dry-run preview)
+        for (rel, (_, size)) in &pc_files {
+            report.file_sizes.insert(rel.clone(), *size);
+        }
+
         // Step 3: Determine what needs to be copied (new or changed files)
         for (relative_path, (source_path, source_size)) in &pc_files {
             if let Some((device_file_path, device_size)) = device_files.get(relative_path) {
@@ -1207,6 +1259,11 @@ impl<S: Storage> DownloadManager<S> {
                 if source_size == device_size {
                     // File is identical (by metadata), skip
                     report.files_skipped.push(relative_path.clone());
+                    if let Some(ref tx) = progress_tx {
+                        let _ = tx.send(SyncProgressEvent::FileSkipped {
+                            path: relative_path.clone(),
+                        });
+                    }
                 } else {
                     // File size differs, needs update
                     if !dry_run {
@@ -1214,10 +1271,25 @@ impl<S: Storage> DownloadManager<S> {
                             .copy_file_to_device(source_path, device_file_path)
                             .await
                         {
-                            Ok(_) => report.files_copied.push(relative_path.clone()),
-                            Err(e) => report
-                                .errors
-                                .push((relative_path.clone(), format!("Copy failed: {}", e))),
+                            Ok(_) => {
+                                report.files_copied.push(relative_path.clone());
+                                if let Some(ref tx) = progress_tx {
+                                    let _ = tx.send(SyncProgressEvent::FileCopied {
+                                        path: relative_path.clone(),
+                                        bytes: *source_size,
+                                    });
+                                }
+                            }
+                            Err(e) => {
+                                let msg = format!("Copy failed: {}", e);
+                                if let Some(ref tx) = progress_tx {
+                                    let _ = tx.send(SyncProgressEvent::Error {
+                                        path: relative_path.clone(),
+                                        message: msg.clone(),
+                                    });
+                                }
+                                report.errors.push((relative_path.clone(), msg));
+                            }
                         }
                     } else {
                         report.files_copied.push(relative_path.clone());
@@ -1231,10 +1303,14 @@ impl<S: Storage> DownloadManager<S> {
                 if let Some(parent) = target_path.parent() {
                     if !dry_run {
                         if let Err(e) = fs::create_dir_all(parent).await {
-                            report.errors.push((
-                                relative_path.clone(),
-                                format!("Failed to create directory: {}", e),
-                            ));
+                            let msg = format!("Failed to create directory: {}", e);
+                            if let Some(ref tx) = progress_tx {
+                                let _ = tx.send(SyncProgressEvent::Error {
+                                    path: relative_path.clone(),
+                                    message: msg.clone(),
+                                });
+                            }
+                            report.errors.push((relative_path.clone(), msg));
                             continue;
                         }
                     }
@@ -1242,10 +1318,25 @@ impl<S: Storage> DownloadManager<S> {
 
                 if !dry_run {
                     match self.copy_file_to_device(source_path, &target_path).await {
-                        Ok(_) => report.files_copied.push(relative_path.clone()),
-                        Err(e) => report
-                            .errors
-                            .push((relative_path.clone(), format!("Copy failed: {}", e))),
+                        Ok(_) => {
+                            report.files_copied.push(relative_path.clone());
+                            if let Some(ref tx) = progress_tx {
+                                let _ = tx.send(SyncProgressEvent::FileCopied {
+                                    path: relative_path.clone(),
+                                    bytes: *source_size,
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            let msg = format!("Copy failed: {}", e);
+                            if let Some(ref tx) = progress_tx {
+                                let _ = tx.send(SyncProgressEvent::Error {
+                                    path: relative_path.clone(),
+                                    message: msg.clone(),
+                                });
+                            }
+                            report.errors.push((relative_path.clone(), msg));
+                        }
                     }
                 } else {
                     report.files_copied.push(relative_path.clone());
@@ -1260,10 +1351,26 @@ impl<S: Storage> DownloadManager<S> {
                     // File exists on device but not on PC, delete it
                     if !dry_run {
                         match fs::remove_file(device_file_path).await {
-                            Ok(_) => report.files_deleted.push(relative_path.clone()),
-                            Err(e) => report
-                                .errors
-                                .push((relative_path.clone(), format!("Delete failed: {}", e))),
+                            Ok(_) => {
+                                report.files_deleted.push(relative_path.clone());
+                                if let Some(ref tx) = progress_tx {
+                                    let _ = tx.send(SyncProgressEvent::FileDeleted {
+                                        path: relative_path.clone(),
+                                    });
+                                }
+                            }
+                            Err(e) => {
+                                let msg = format!("Delete failed: {}", e);
+                                if let Some(ref tx) = progress_tx {
+                                    let _ = tx.send(SyncProgressEvent::Error {
+                                        path: relative_path.clone(),
+                                        message: msg.clone(),
+                                    });
+                                }
+                                report
+                                    .errors
+                                    .push((relative_path.clone(), msg));
+                            }
                         }
                     } else {
                         report.files_deleted.push(relative_path.clone());
@@ -1285,6 +1392,13 @@ impl<S: Storage> DownloadManager<S> {
                     }
                 }
             }
+        }
+
+        // Emit Complete event
+        if let Some(ref tx) = progress_tx {
+            let _ = tx.send(SyncProgressEvent::Complete {
+                report: report.clone(),
+            });
         }
 
         Ok(report)
@@ -1503,8 +1617,47 @@ mod tests {
         assert_eq!(report.files_deleted.len(), 0);
         assert_eq!(report.files_skipped.len(), 0);
         assert_eq!(report.errors.len(), 0);
+        assert!(report.file_sizes.is_empty());
         assert!(report.is_success());
         assert_eq!(report.total_operations(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_sync_progress_events_emitted() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let downloads_dir = temp_dir.path().join("downloads");
+        let device_dir = temp_dir.path().join("device");
+        let podcast_dir = downloads_dir.join("Test Podcast");
+        tokio::fs::create_dir_all(&podcast_dir).await.unwrap();
+        tokio::fs::create_dir_all(&device_dir).await.unwrap();
+        tokio::fs::write(podcast_dir.join("ep1.mp3"), b"audio data").await.unwrap();
+
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<SyncProgressEvent>();
+
+        // Act — dry-run with progress channel
+        manager
+            .sync_to_device(device_dir, None, false, true, false, Some(tx))
+            .await
+            .expect("Dry-run should succeed");
+
+        // Assert — at least ScanComplete and a FileCopied/Complete event received
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        assert!(
+            events.iter().any(|e| matches!(e, SyncProgressEvent::ScanComplete { .. })),
+            "Expected ScanComplete event"
+        );
+        assert!(
+            events.iter().any(|e| matches!(e, SyncProgressEvent::Complete { .. })),
+            "Expected Complete event"
+        );
     }
 
     #[tokio::test]
@@ -1517,7 +1670,7 @@ mod tests {
 
         let invalid_path = PathBuf::from("/nonexistent/path");
         let result = manager
-            .sync_to_device(invalid_path, None, true, false, false)
+            .sync_to_device(invalid_path, None, true, false, false, None)
             .await;
 
         assert!(result.is_err());
@@ -1551,7 +1704,7 @@ mod tests {
 
         // Run sync in dry-run mode
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, true, false)
+            .sync_to_device(device_path.clone(), None, false, true, false, None)
             .await
             .unwrap();
 
@@ -1594,7 +1747,7 @@ mod tests {
 
         // Run sync
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, false, false)
+            .sync_to_device(device_path.clone(), None, false, false, false, None)
             .await
             .unwrap();
 
@@ -1637,7 +1790,7 @@ mod tests {
 
         // Run sync
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, false, false)
+            .sync_to_device(device_path.clone(), None, false, false, false, None)
             .await
             .unwrap();
 
@@ -1674,7 +1827,7 @@ mod tests {
 
         // Run sync with delete_orphans=true
         let report = manager
-            .sync_to_device(device_path.clone(), None, true, false, false)
+            .sync_to_device(device_path.clone(), None, true, false, false, None)
             .await
             .unwrap();
 
@@ -1720,7 +1873,7 @@ mod tests {
 
         // Run sync with delete_orphans=true
         let report = manager
-            .sync_to_device(device_path.clone(), None, true, false, false)
+            .sync_to_device(device_path.clone(), None, true, false, false, None)
             .await
             .unwrap();
 
@@ -1761,7 +1914,7 @@ mod tests {
 
         // Run sync
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, false, false)
+            .sync_to_device(device_path.clone(), None, false, false, false, None)
             .await
             .unwrap();
 
@@ -1809,6 +1962,7 @@ mod tests {
                 false,
                 false,
                 false,
+                None,
             )
             .await
             .unwrap();
@@ -1849,6 +2003,7 @@ mod tests {
                 false,
                 false,
                 false,
+                None,
             )
             .await
             .unwrap();
@@ -1887,7 +2042,7 @@ mod tests {
         fs::create_dir_all(&device_path).await.unwrap();
 
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, false, false)
+            .sync_to_device(device_path.clone(), None, false, false, false, None)
             .await
             .unwrap();
 
@@ -1926,7 +2081,7 @@ mod tests {
         fs::write(&orphan_file, b"orphan").await.unwrap();
 
         let report = manager
-            .sync_to_device(device_path.clone(), Some(playlists_dir), true, false, false)
+            .sync_to_device(device_path.clone(), Some(playlists_dir), true, false, false, None)
             .await
             .unwrap();
 
@@ -1987,7 +2142,7 @@ mod tests {
         fs::write(&unmanaged_file, b"keep").await.unwrap();
 
         let report = manager
-            .sync_to_device(device_path.clone(), Some(playlists_dir), true, false, true)
+            .sync_to_device(device_path.clone(), Some(playlists_dir), true, false, true, None)
             .await
             .unwrap();
 
@@ -2044,7 +2199,7 @@ mod tests {
         fs::write(&stale_podcast_file, b"stale").await.unwrap();
 
         let report = manager
-            .sync_to_device(device_path.clone(), None, true, true, true)
+            .sync_to_device(device_path.clone(), None, true, true, true, None)
             .await
             .unwrap();
 

@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - Playlist Enhancements (post-v1.6.0)
 
+### Added
+
+**Sync Buffer Phase 3: Dry-Run Preview, Progress View, Config Options — February 2026**
+- **Dry-Run Preview Mode**: After pressing `d`, a tabbed preview shows exactly what would happen before committing
+  - **To Copy** tab: files to be copied with individual and total sizes
+  - **To Delete** tab: orphan files that would be removed from the device
+  - **Skipped** tab: files already identical on the device
+  - **Errors** tab: any errors encountered during the scan
+  - `[` / `]` key bindings to cycle between tabs
+  - Press `Enter` or `s` from the preview to confirm and start the real sync
+  - Press `Esc` to cancel and return to Overview
+  - Pressing `d` with an active saved target now triggers the dry-run immediately (no path prompt)
+- **Live Progress View**: Real syncs now display a progress view with:
+  - Byte-based progress bar showing `copied bytes / total bytes`
+  - Currently-copying filename updated in real time
+  - Running counters: Copied / Deleted / Skipped / Errors
+  - Elapsed time (m:ss or h:mm:ss)
+  - Auto-transitions back to Overview when the sync completes
+- **`SyncProgressEvent` enum**: `sync_to_device()` now accepts an optional `progress_tx` channel for progress streaming. All existing callers pass `None` and are unaffected.
+- **`file_sizes` in `SyncReport`**: File sizes are now stored in the report for display in the dry-run preview
+- **New config fields** (both `false` by default for backward compatibility):
+  - `sync_preview_before_sync`: if `true`, pressing `s` always shows the dry-run preview first
+  - `sync_filter_removable_only`: if `true`, directory picker only shows removable/external drives
+- **`AppEvent::DeviceSyncProgress`**: New app event for routing progress updates from the async sync task to the sync buffer
+- **`[`/`]` keybindings**: Added globally as `PreviousTab` / `NextTab` UIActions for use in preview mode
+- Tests added: 16 new unit tests (tab cycling, progress events, format_bytes, config backward compat)
+
 ### Fixed
 
 **Sync Buffer Foundation — February 2026**

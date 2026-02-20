@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - Playlist Enhancements (post-v1.6.0)
 
+### Fixed
+
+**Sync Buffer Foundation — February 2026**
+- **`PromptInput` action no longer silently dropped**: Any buffer that returns `UIAction::PromptInput(prompt)` from `handle_action()` now correctly opens the minibuffer input prompt (previously lost in catch-all `_ => {}`)
+- **`s` key now triggers sync in sync buffer**: `s` is bound globally to `UIAction::SyncToDevice`; the sync buffer intercepts it and prompts for a device path
+- **`d` key now triggers dry-run in sync buffer**: `d` (previously `DeletePodcast`) is intercepted when the sync buffer is active and opens a dry-run device path prompt
+- **`r` key now works in sync buffer**: `r` (previously `RefreshPodcast`) is intercepted when the sync buffer is active for a clean re-render
+- **F8 shortcut added**: Press `F8` from anywhere to switch to the sync buffer (consistent with F2=podcasts, F4=downloads, F7=playlists)
+  - Keybinding: `F8` → sync buffer
+  - Keybinding: `s` → sync to device (sync buffer only)
+  - Keybinding: `d` → dry-run preview (sync buffer only)
+  - Tests added: 5 unit tests
+
 ### Added
 
 **Playlist Support — February 2026**

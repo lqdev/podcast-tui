@@ -554,6 +554,15 @@ impl UIApp {
                 Ok(true)
             }
             UIAction::DeletePodcast => {
+                if self.buffer_manager.current_buffer_id().as_deref() == Some("sync") {
+                    let default_path = self.get_default_sync_path();
+                    self.minibuffer.set_content(MinibufferContent::Input {
+                        prompt: format!("Dry run sync to (default: {}): ", default_path),
+                        input: String::new(),
+                    });
+                    return Ok(true);
+                }
+
                 if self.buffer_manager.current_buffer_id().as_deref() == Some("playlist-list") {
                     if let Some(playlist_buffer) =
                         self.buffer_manager.get_playlist_list_buffer_mut()
@@ -603,6 +612,11 @@ impl UIApp {
                 Ok(true)
             }
             UIAction::RefreshPodcast => {
+                if self.buffer_manager.current_buffer_id().as_deref() == Some("sync") {
+                    // 'r' in sync buffer just re-renders the current state
+                    return Ok(true);
+                }
+
                 if let Some(current_id) = self.buffer_manager.current_buffer_id() {
                     if current_id.starts_with("playlist-") && current_id != "playlist-list" {
                         let result_action = if let Some(detail_buffer) = self
@@ -1206,6 +1220,13 @@ impl UIApp {
                             // Buffer bubbled up Search — open the minibuffer prompt
                             self.minibuffer.set_content(MinibufferContent::Input {
                                 prompt: "Search: ".to_string(),
+                                input: String::new(),
+                            });
+                        }
+                        UIAction::PromptInput(prompt) => {
+                            // Buffer wants to prompt the user for input
+                            self.minibuffer.set_content(MinibufferContent::Input {
+                                prompt,
                                 input: String::new(),
                             });
                         }

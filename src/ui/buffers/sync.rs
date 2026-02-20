@@ -118,8 +118,6 @@ pub struct SyncBuffer {
     /// Cursor index across the flat overview list (targets then history)
     selected_index: usize,
 
-    /// Scroll offset for the history section
-    scroll_offset: usize,
 }
 
 impl SyncBuffer {
@@ -138,7 +136,6 @@ impl SyncBuffer {
             sync_history: Vec::new(),
             last_sync: None,
             selected_index: 0,
-            scroll_offset: 0,
         }
     }
 }
@@ -191,10 +188,19 @@ impl SyncBuffer {
     }
 
     fn save_json<T: Serialize>(path: &PathBuf, value: &T) {
-        if let Ok(json) = serde_json::to_string_pretty(value) {
-            let tmp = path.with_extension("json.tmp");
-            if std::fs::write(&tmp, &json).is_ok() {
-                let _ = std::fs::rename(&tmp, path);
+        let tmp = path.with_extension("tmp");
+        match serde_json::to_string_pretty(value) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(&tmp, &json) {
+                    eprintln!("podcast-tui: failed to write sync data to {}: {e}", tmp.display());
+                    return;
+                }
+                if let Err(e) = std::fs::rename(&tmp, path) {
+                    eprintln!("podcast-tui: failed to persist sync data to {}: {e}", path.display());
+                }
+            }
+            Err(e) => {
+                eprintln!("podcast-tui: failed to serialize sync data for {}: {e}", path.display());
             }
         }
     }
@@ -289,17 +295,6 @@ impl SyncBuffer {
         let max = self.overview_item_count().saturating_sub(1);
         if self.selected_index < max {
             self.selected_index += 1;
-        }
-    }
-
-    fn adjust_scroll(&mut self, visible_height: usize) {
-        if visible_height == 0 {
-            return;
-        }
-        if self.selected_index < self.scroll_offset {
-            self.scroll_offset = self.selected_index;
-        } else if self.selected_index >= self.scroll_offset + visible_height {
-            self.scroll_offset = self.selected_index.saturating_sub(visible_height - 1);
         }
     }
 
@@ -476,7 +471,7 @@ impl SyncBuffer {
         }
     }
 
-    fn render_overview(&mut self, frame: &mut Frame, area: Rect) {
+    fn render_overview(&self, frame: &mut Frame, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -542,10 +537,7 @@ impl SyncBuffer {
         frame.render_widget(para, area);
     }
 
-    fn render_overview_list(&mut self, frame: &mut Frame, area: Rect) {
-        let visible_height = area.height.saturating_sub(2) as usize;
-        self.adjust_scroll(visible_height);
-
+    fn render_overview_list(&self, frame: &mut Frame, area: Rect) {
         let mut items: Vec<ListItem> = Vec::new();
 
         // Saved targets section
@@ -802,22 +794,36 @@ impl UIComponent for SyncBuffer {
                     UIAction::MoveUp => {
                         if *selected > 0 {
                             *selected -= 1;
+                            if *selected < *scroll {
+                                *scroll = *selected;
+                            }
                         }
                         UIAction::Render
                     }
                     UIAction::MoveDown => {
                         if *selected + 1 < entries.len() {
                             *selected += 1;
+                            let min_scroll = selected.saturating_sub(20);
+                            if *scroll < min_scroll {
+                                *scroll = min_scroll;
+                            }
                         }
                         UIAction::Render
                     }
                     UIAction::PageUp => {
                         *selected = selected.saturating_sub(10);
+                        if *selected < *scroll {
+                            *scroll = *selected;
+                        }
                         UIAction::Render
                     }
                     UIAction::PageDown => {
                         let max = entries.len().saturating_sub(1);
                         *selected = (*selected + 10).min(max);
+                        let min_scroll = selected.saturating_sub(20);
+                        if *scroll < min_scroll {
+                            *scroll = min_scroll;
+                        }
                         UIAction::Render
                     }
                     UIAction::MoveRight | UIAction::SelectItem => {
@@ -851,7 +857,7 @@ impl UIComponent for SyncBuffer {
                                     self.upsert_saved_target(path.clone());
                                     self.mode = SyncBufferMode::Overview;
                                     return UIAction::ShowMessage(format!(
-                                        "Sync target set to {}",
+                                        "Sync target set to {}  (use → to enter a subdirectory first, then Enter to select)",
                                         path.display()
                                     ));
                                 }

@@ -77,8 +77,9 @@ impl Default for SyncReport {
 
 /// Serializable summary of a sync operation for history persistence.
 ///
-/// `SyncReport` carries `Vec<PathBuf>` which does not implement `Serialize`,
-/// so this leaner struct is used when writing sync history to disk.
+/// `SyncReport` carries full `Vec<PathBuf>` lists, which would bloat history
+/// files, so this leaner struct is used to keep history files compact
+/// (storing counts instead of full path lists).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncHistorySummary {
     pub files_copied_count: usize,

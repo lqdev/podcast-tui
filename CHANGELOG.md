@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed help text to remove ghost keybindings that were listed but not bound (`m`/`u` mark played/unplayed in episode list, `C-n`/`C-p` navigation in What's New buffer, and inaccurate Emacs-style entries in the keybindings reference). Closes [#92](https://github.com/lqdev/podcast-tui/issues/92).
+
 ---
 
 ## [1.9.0] - 2026-02-20

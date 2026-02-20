@@ -4468,4 +4468,113 @@ mod tests {
         assert_eq!(app.buffer_manager.current_buffer_id(), Some(detail_id));
         assert!(app.minibuffer.is_visible());
     }
+
+    /// Helper: build a minimal UIApp with the sync buffer registered and active.
+    async fn make_app_with_sync_buffer() -> UIApp {
+        use crate::config::DownloadConfig;
+        use crate::storage::JsonStorage;
+        use tempfile::TempDir;
+
+        let config = Config::default();
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.keep();
+
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_path.clone()));
+        let download_manager = Arc::new(
+            DownloadManager::new(storage.clone(), temp_path, DownloadConfig::default()).unwrap(),
+        );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
+        let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager.clone(),
+            storage,
+            app_event_tx,
+        )
+        .unwrap();
+        app.initialize().await.unwrap();
+
+        // Register and activate the sync buffer (not created by initialize())
+        app.buffer_manager
+            .create_sync_buffer(download_manager.clone());
+        app.buffer_manager
+            .switch_to_buffer(&"sync".to_string())
+            .unwrap();
+
+        app
+    }
+
+    #[tokio::test]
+    async fn test_prompt_input_from_sync_buffer_opens_minibuffer() {
+        // Arrange
+        let mut app = make_app_with_sync_buffer().await;
+
+        // Act — SyncToDevice falls through to catch-all → sync buffer returns
+        // PromptInput → new PromptInput arm opens the minibuffer
+        let result = app.handle_action(UIAction::SyncToDevice).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(
+            app.minibuffer.is_input_mode(),
+            "Minibuffer should be in input mode after SyncToDevice"
+        );
+        assert!(
+            app.minibuffer
+                .current_prompt()
+                .map(|p| p.starts_with("Sync to device path"))
+                .unwrap_or(false),
+            "Prompt should start with 'Sync to device path'"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_podcast_in_sync_buffer_opens_dry_run_prompt() {
+        // Arrange — 'd' maps to DeletePodcast; sync buffer context guard intercepts it
+        let mut app = make_app_with_sync_buffer().await;
+
+        // Act
+        let result = app.handle_action(UIAction::DeletePodcast).await;
+
+        // Assert — should open dry-run prompt, not delete-podcast flow
+        assert!(result.is_ok());
+        assert!(
+            app.minibuffer.is_input_mode(),
+            "Minibuffer should be in input mode after 'd' in sync buffer"
+        );
+        assert!(
+            app.minibuffer
+                .current_prompt()
+                .map(|p| p.starts_with("Dry run sync to"))
+                .unwrap_or(false),
+            "Prompt should start with 'Dry run sync to'"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_refresh_podcast_in_sync_buffer_is_noop() {
+        // Arrange — 'r' maps to RefreshPodcast; sync buffer context guard short-circuits it
+        let mut app = make_app_with_sync_buffer().await;
+
+        // Act
+        let result = app.handle_action(UIAction::RefreshPodcast).await;
+
+        // Assert — should return cleanly without touching the podcast refresh flow
+        assert!(result.is_ok());
+        assert!(result.unwrap(), "Should return true (continue running)");
+        // Minibuffer should not have been opened for a prompt
+        assert!(
+            !app.minibuffer.is_input_mode(),
+            "Minibuffer should NOT enter input mode for 'r' in sync buffer"
+        );
+        // Buffer should still be sync
+        assert_eq!(
+            app.buffer_manager.current_buffer_id(),
+            Some("sync".to_string())
+        );
+    }
 }

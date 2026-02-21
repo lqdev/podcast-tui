@@ -83,7 +83,9 @@ CREATE TABLE playing_now (
 );
 ```
 
-> **Design Decision #1**: `playing_now` is ephemeral per the ListenBrainz spec — it is NOT stored in the `listens` table. Only `single` and `import` listen types create permanent history records.
+> **Note**: This schema uses DuckDB-specific syntax: `gen_random_uuid()` for UUID generation and `TIMESTAMPTZ` for timezone-aware timestamps. This is DuckDB SQL, not standard PostgreSQL or SQLite syntax.
+
+> **Design Decision #1**: `playing_now` is ephemeral per the ListenBrainz spec— it is NOT stored in the `listens` table. Only `single` and `import` listen types create permanent history records.
 
 > **Design Decision #2**: `PlayingNowStore` uses a hybrid in-memory + persisted pattern: `ConcurrentDictionary<string, PlayingNow>` for fast reads, with UPSERT to DuckDB on every update for restart durability.
 
@@ -93,7 +95,7 @@ CREATE TABLE playing_now (
 ```json
 {
   "media_player": "podcast-tui",
-  "podcast_feed_url": "https://...",
+  "podcast_url": "https://...",
   "episode_guid": "abc-123",
   "duration_ms": 3600000,
   "position_ms": 2700000,
@@ -102,9 +104,9 @@ CREATE TABLE playing_now (
 ```
 
 **Auth Design:**
-- `SCROBBLER_TOKEN` env var: empty/unset = auth disabled (trusted network mode)
-- Header format: `Authorization: Token <token>` (ListenBrainz convention, NOT `Bearer`)
-- When set: required on write endpoints, optional on read endpoints (configurable via `SCROBBLER_REQUIRE_AUTH_FOR_READS`)
+- Header format: `Authorization: Token <token>` (ListenBrainz uses `Token` prefix, not the standard `Bearer` prefix)
+- `SCROBBLER_TOKEN` env var: **required for Internet-facing deployments**. When unset, the server MUST only be used for local development or on an explicitly trusted, isolated network, and operators MUST bind the service to `localhost` only.
+- Default behavior: the token is required on **all write and read endpoints**. `SCROBBLER_REQUIRE_AUTH_FOR_READS=false` is an explicit opt-out that allows anonymous reads and MUST only be used when the service is bound to localhost or a trusted private network.
 
 **Deployment:**
 - Dockerfile with .NET 10 runtime base image
@@ -181,7 +183,7 @@ pub trait Scrobbler: Send + Sync {
 pub struct ScrobbleEvent {
     pub podcast_title: String,        // from Podcast.title
     pub episode_title: String,        // from Episode.title
-    pub feed_url: Option<String>,     // from Podcast.feed_url
+    pub feed_url: Option<String>,     // from Podcast.url
     pub episode_guid: Option<String>, // from Episode.guid
     pub duration_ms: Option<u64>,     // from Episode.duration (seconds → ms)
     pub position_ms: u64,             // from Episode.last_played_position (seconds → ms)
@@ -193,7 +195,7 @@ pub struct ScrobbleEvent {
 
 1. **Fire-and-forget dispatch**: via `tokio::spawn` (matching existing `trigger_async_download`, `trigger_async_refresh` patterns)
 2. **Persistent retry queue**: JSON array in `pending_scrobbles.json`, atomic write (`.tmp` then rename), FIFO eviction at 500 cap, 30-day TTL
-3. **Circuit breaker**: open after 5 consecutive failures, half-open after 60s, re-opens on half-open failure
+3. **Circuit breaker**: opens on the 5th consecutive failure (threshold = `CIRCUIT_BREAKER_FAILURE_THRESHOLD`, inclusive), half-open after 60s, re-opens on half-open failure
 4. **Background drain task**: `tokio::spawn`ed at startup, exponential backoff (30s → 300s max), respects circuit breaker
 5. **Short timeout**: 5s on all HTTP calls (configurable)
 
@@ -260,4 +262,4 @@ scrobbler.flush_pending().await;
 
 ---
 
-*Last Updated: February 2026 | Version: v1.6.0 | Maintainer: [@lqdev](https://github.com/lqdev)*
+*Last Updated: February 2026 | Version: v1.9.0 | Maintainer: [@lqdev](https://github.com/lqdev)*

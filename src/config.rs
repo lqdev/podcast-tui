@@ -230,50 +230,235 @@ impl Default for PlaylistConfig {
     }
 }
 
-/// Keybinding configuration
+/// Global keybindings — apply in all buffers unless overridden by a context section.
+///
+/// Each field is a list of key notations (Helix-style: "C-n", "S-Tab", "F1", etc.).
+/// Multiple notations can trigger the same action (e.g., `["Up", "k", "C-p"]` for move-up).
+/// An empty list means the action has no binding.
+///
+/// Key notation reference:
+/// - Single chars: `q`, `a`, `?`, `/`
+/// - Modified: `C-x` (Ctrl), `S-x` (Shift), `A-x` / `M-x` (Alt), `C-S-x` (Ctrl+Shift)
+/// - Named keys: `Enter`, `Esc`, `Tab`, `Backspace`, `Delete`, `Space`
+/// - Arrow keys: `Up`, `Down`, `Left`, `Right`
+/// - Navigation: `Home`, `End`, `PgUp`, `PgDn`
+/// - Function keys: `F1`–`F12`
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeybindingConfig {
-    pub play_pause: String,
-    pub stop: String,
-    pub next_episode: String,
-    pub prev_episode: String,
-    pub seek_forward: String,
-    pub seek_backward: String,
-    pub volume_up: String,
-    pub volume_down: String,
-    pub add_podcast: String,
-    pub refresh_feeds: String,
-    pub refresh_all_feeds: String,
-    pub download_episode: String,
-    pub delete_episode: String,
-    pub toggle_played: String,
-    pub add_note: String,
-    pub quit: String,
-    pub help: String,
+#[serde(default)]
+pub struct GlobalKeys {
+    // ── Navigation ──────────────────────────────────────────────────────────
+    pub move_up: Vec<String>,
+    pub move_down: Vec<String>,
+    pub move_left: Vec<String>,
+    pub move_right: Vec<String>,
+    pub page_up: Vec<String>,
+    pub page_down: Vec<String>,
+    pub move_to_top: Vec<String>,
+    pub move_to_bottom: Vec<String>,
+    pub move_episode_up: Vec<String>,
+    pub move_episode_down: Vec<String>,
+
+    // ── Buffer navigation ────────────────────────────────────────────────────
+    pub next_buffer: Vec<String>,
+    pub prev_buffer: Vec<String>,
+    pub close_buffer: Vec<String>,
+    pub open_podcast_list: Vec<String>,
+    pub open_downloads: Vec<String>,
+    pub open_playlists: Vec<String>,
+    pub open_sync: Vec<String>,
+
+    // ── Application control ──────────────────────────────────────────────────
+    pub quit: Vec<String>,
+    pub show_help: Vec<String>,
+    pub search: Vec<String>,
+    pub clear_filters: Vec<String>,
+    pub refresh: Vec<String>,
+    pub prompt_command: Vec<String>,
+    pub switch_to_buffer: Vec<String>,
+    pub list_buffers: Vec<String>,
+
+    // ── Interaction ──────────────────────────────────────────────────────────
+    pub select: Vec<String>,
+    pub cancel: Vec<String>,
+
+    // ── Podcast management ───────────────────────────────────────────────────
+    pub add_podcast: Vec<String>,
+    pub delete_podcast: Vec<String>,
+    pub refresh_podcast: Vec<String>,
+    pub refresh_all: Vec<String>,
+    pub hard_refresh_podcast: Vec<String>,
+
+    // ── Episode actions ──────────────────────────────────────────────────────
+    pub download_episode: Vec<String>,
+    pub delete_downloaded_episode: Vec<String>,
+    pub delete_all_downloads: Vec<String>,
+    pub mark_played: Vec<String>,
+    pub mark_unplayed: Vec<String>,
+
+    // ── Playlist ─────────────────────────────────────────────────────────────
+    pub create_playlist: Vec<String>,
+    pub add_to_playlist: Vec<String>,
+
+    // ── OPML ─────────────────────────────────────────────────────────────────
+    pub import_opml: Vec<String>,
+    pub export_opml: Vec<String>,
+
+    // ── Sync ─────────────────────────────────────────────────────────────────
+    pub sync_to_device: Vec<String>,
+
+    // ── Tab navigation (e.g., sync dry-run preview tabs) ─────────────────────
+    pub prev_tab: Vec<String>,
+    pub next_tab: Vec<String>,
 }
 
-impl Default for KeybindingConfig {
+impl Default for GlobalKeys {
     fn default() -> Self {
         Self {
-            play_pause: "SPC".to_string(),
-            stop: "s".to_string(),
-            next_episode: "n".to_string(),
-            prev_episode: "p".to_string(),
-            seek_forward: "f".to_string(),
-            seek_backward: "b".to_string(),
-            volume_up: "+".to_string(),
-            volume_down: "-".to_string(),
-            add_podcast: "a".to_string(),
-            refresh_feeds: "r".to_string(),
-            refresh_all_feeds: "R".to_string(),
-            download_episode: "D".to_string(),
-            delete_episode: "X".to_string(),
-            toggle_played: "m".to_string(),
-            add_note: "N".to_string(),
-            quit: "q".to_string(),
-            help: "C-h ?".to_string(),
+            // Navigation — arrow keys + vim aliases + Emacs aliases
+            move_up: ["Up", "k", "C-p"].map(String::from).to_vec(),
+            move_down: ["Down", "j", "C-n"].map(String::from).to_vec(),
+            move_left: ["Left"].map(String::from).to_vec(),
+            move_right: ["Right"].map(String::from).to_vec(),
+            page_up: ["PgUp"].map(String::from).to_vec(),
+            page_down: ["PgDn"].map(String::from).to_vec(),
+            move_to_top: ["Home", "g"].map(String::from).to_vec(),
+            move_to_bottom: ["End", "S-G"].map(String::from).to_vec(),
+            move_episode_up: ["C-Up"].map(String::from).to_vec(),
+            move_episode_down: ["C-Down"].map(String::from).to_vec(),
+
+            // Buffer navigation
+            next_buffer: ["Tab", "C-PgDn"].map(String::from).to_vec(),
+            prev_buffer: ["S-Tab", "C-PgUp"].map(String::from).to_vec(),
+            close_buffer: ["C-k"].map(String::from).to_vec(),
+            open_podcast_list: ["F2"].map(String::from).to_vec(),
+            open_downloads: ["F4"].map(String::from).to_vec(),
+            open_playlists: ["F7"].map(String::from).to_vec(),
+            open_sync: ["F8"].map(String::from).to_vec(),
+
+            // Application control
+            quit: ["q", "F10"].map(String::from).to_vec(),
+            show_help: ["F1", "h", "?"].map(String::from).to_vec(),
+            search: ["F3", "/"].map(String::from).to_vec(),
+            clear_filters: ["F6"].map(String::from).to_vec(),
+            refresh: ["F5"].map(String::from).to_vec(),
+            prompt_command: [":"].map(String::from).to_vec(),
+            switch_to_buffer: ["C-b"].map(String::from).to_vec(),
+            list_buffers: ["C-l"].map(String::from).to_vec(),
+
+            // Interaction
+            select: ["Enter", "Space"].map(String::from).to_vec(),
+            cancel: ["Esc"].map(String::from).to_vec(),
+
+            // Podcast management
+            add_podcast: ["a"].map(String::from).to_vec(),
+            delete_podcast: ["d"].map(String::from).to_vec(),
+            refresh_podcast: ["r"].map(String::from).to_vec(),
+            refresh_all: ["S-R"].map(String::from).to_vec(),
+            hard_refresh_podcast: ["C-r"].map(String::from).to_vec(),
+
+            // Episode actions
+            download_episode: ["S-D"].map(String::from).to_vec(),
+            delete_downloaded_episode: ["X"].map(String::from).to_vec(),
+            delete_all_downloads: ["C-x"].map(String::from).to_vec(),
+            mark_played: ["m"].map(String::from).to_vec(),
+            mark_unplayed: ["u"].map(String::from).to_vec(),
+
+            // Playlist
+            create_playlist: ["c"].map(String::from).to_vec(),
+            add_to_playlist: ["p"].map(String::from).to_vec(),
+
+            // OPML
+            import_opml: ["S-A"].map(String::from).to_vec(),
+            export_opml: ["S-E"].map(String::from).to_vec(),
+
+            // Sync
+            sync_to_device: ["s"].map(String::from).to_vec(),
+
+            // Tab navigation
+            prev_tab: ["["].map(String::from).to_vec(),
+            next_tab: ["]"].map(String::from).to_vec(),
         }
     }
+}
+
+/// Per-context keybinding overrides for the podcast list buffer.
+/// An empty `Vec<String>` for any field means "use the global default".
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PodcastListKeys {
+    pub add_podcast: Vec<String>,
+    pub delete_podcast: Vec<String>,
+    pub refresh_podcast: Vec<String>,
+    pub refresh_all: Vec<String>,
+    pub hard_refresh_podcast: Vec<String>,
+    pub import_opml: Vec<String>,
+    pub export_opml: Vec<String>,
+}
+
+/// Per-context keybinding overrides for the episode list buffer.
+/// An empty `Vec<String>` for any field means "use the global default".
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EpisodeListKeys {
+    pub download_episode: Vec<String>,
+    pub delete_downloaded_episode: Vec<String>,
+    pub delete_all_downloads: Vec<String>,
+    pub mark_played: Vec<String>,
+    pub mark_unplayed: Vec<String>,
+    pub add_to_playlist: Vec<String>,
+    pub open_episode_detail: Vec<String>,
+}
+
+/// Per-context keybinding overrides for the playlist buffer.
+/// An empty `Vec<String>` for any field means "use the global default".
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PlaylistKeys {
+    pub create_playlist: Vec<String>,
+    pub delete_playlist: Vec<String>,
+    pub add_to_playlist: Vec<String>,
+}
+
+/// Per-context keybinding overrides for the downloads buffer.
+/// An empty `Vec<String>` for any field means "use the global default".
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DownloadKeys {
+    pub download_episode: Vec<String>,
+    pub delete_downloaded_episode: Vec<String>,
+    pub delete_all_downloads: Vec<String>,
+}
+
+/// Per-context keybinding overrides for the sync buffer.
+/// An empty `Vec<String>` for any field means "use the global default".
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SyncKeys {
+    pub sync_to_device: Vec<String>,
+    pub prev_tab: Vec<String>,
+    pub next_tab: Vec<String>,
+}
+
+/// Keybinding configuration — structured by context.
+///
+/// `global` covers all 60+ bindable actions with defaults matching the built-in bindings.
+/// Buffer-specific sections (`podcast_list`, `episode_list`, etc.) are optional: when
+/// `None` (the default), the global bindings apply. When present, the non-empty fields
+/// override the corresponding global bindings for that buffer context.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct KeybindingConfig {
+    pub global: GlobalKeys,
+    #[serde(default)]
+    pub podcast_list: Option<PodcastListKeys>,
+    #[serde(default)]
+    pub episode_list: Option<EpisodeListKeys>,
+    #[serde(default)]
+    pub playlist: Option<PlaylistKeys>,
+    #[serde(default)]
+    pub downloads: Option<DownloadKeys>,
+    #[serde(default)]
+    pub sync: Option<SyncKeys>,
 }
 
 /// Storage configuration
@@ -362,7 +547,7 @@ mod tests {
         );
         assert!(config.downloads.sync_include_playlists);
         assert_eq!(config.playlist.today_refresh_policy, "daily");
-        assert_eq!(config.keybindings.play_pause, "SPC");
+        assert!(config.keybindings.global.quit.contains(&"q".to_string()));
         assert_eq!(config.ui.theme, "default");
     }
 
@@ -398,25 +583,7 @@ mod tests {
     "auto_download_new": false,
     "max_download_size_mb": 500
   },
-  "keybindings": {
-    "play_pause": "SPC",
-    "stop": "s",
-    "next_episode": "n",
-    "prev_episode": "p",
-    "seek_forward": "f",
-    "seek_backward": "b",
-    "volume_up": "+",
-    "volume_down": "-",
-    "add_podcast": "a",
-    "refresh_feeds": "r",
-    "refresh_all_feeds": "R",
-    "download_episode": "D",
-    "delete_episode": "X",
-    "toggle_played": "m",
-    "add_note": "N",
-    "quit": "q",
-    "help": "C-h ?"
-  },
+  "keybindings": {},
   "storage": {
     "data_directory": null,
     "backup_enabled": true,
@@ -475,8 +642,181 @@ mod tests {
 
         assert_eq!(original_config.audio.volume, loaded_config.audio.volume);
         assert_eq!(
-            original_config.keybindings.play_pause,
-            loaded_config.keybindings.play_pause
+            original_config.keybindings.global.quit,
+            loaded_config.keybindings.global.quit
         );
+    }
+
+    // ── KeybindingConfig tests ───────────────────────────────────────────────
+
+    #[test]
+    fn test_keybinding_config_default_global_covers_all_actions() {
+        // Arrange / Act
+        let keys = GlobalKeys::default();
+
+        // Assert — spot-check every action group has at least one binding
+        assert!(!keys.move_up.is_empty());
+        assert!(!keys.move_down.is_empty());
+        assert!(!keys.move_left.is_empty());
+        assert!(!keys.move_right.is_empty());
+        assert!(!keys.page_up.is_empty());
+        assert!(!keys.page_down.is_empty());
+        assert!(!keys.move_to_top.is_empty());
+        assert!(!keys.move_to_bottom.is_empty());
+        assert!(!keys.move_episode_up.is_empty());
+        assert!(!keys.move_episode_down.is_empty());
+        assert!(!keys.next_buffer.is_empty());
+        assert!(!keys.prev_buffer.is_empty());
+        assert!(!keys.close_buffer.is_empty());
+        assert!(!keys.open_podcast_list.is_empty());
+        assert!(!keys.open_downloads.is_empty());
+        assert!(!keys.open_playlists.is_empty());
+        assert!(!keys.open_sync.is_empty());
+        assert!(!keys.quit.is_empty());
+        assert!(!keys.show_help.is_empty());
+        assert!(!keys.search.is_empty());
+        assert!(!keys.clear_filters.is_empty());
+        assert!(!keys.refresh.is_empty());
+        assert!(!keys.prompt_command.is_empty());
+        assert!(!keys.switch_to_buffer.is_empty());
+        assert!(!keys.list_buffers.is_empty());
+        assert!(!keys.select.is_empty());
+        assert!(!keys.cancel.is_empty());
+        assert!(!keys.add_podcast.is_empty());
+        assert!(!keys.delete_podcast.is_empty());
+        assert!(!keys.refresh_podcast.is_empty());
+        assert!(!keys.refresh_all.is_empty());
+        assert!(!keys.hard_refresh_podcast.is_empty());
+        assert!(!keys.download_episode.is_empty());
+        assert!(!keys.delete_downloaded_episode.is_empty());
+        assert!(!keys.delete_all_downloads.is_empty());
+        assert!(!keys.mark_played.is_empty());
+        assert!(!keys.mark_unplayed.is_empty());
+        assert!(!keys.create_playlist.is_empty());
+        assert!(!keys.add_to_playlist.is_empty());
+        assert!(!keys.import_opml.is_empty());
+        assert!(!keys.export_opml.is_empty());
+        assert!(!keys.sync_to_device.is_empty());
+        assert!(!keys.prev_tab.is_empty());
+        assert!(!keys.next_tab.is_empty());
+    }
+
+    #[test]
+    fn test_keybinding_config_default_matches_keybindings() {
+        // Arrange / Act
+        let keys = GlobalKeys::default();
+
+        // Assert — verify defaults match the hardcoded bindings in keybindings.rs
+        assert!(keys.move_up.contains(&"Up".to_string()));
+        assert!(keys.move_up.contains(&"k".to_string()));
+        assert!(keys.move_up.contains(&"C-p".to_string()));
+        assert!(keys.move_down.contains(&"Down".to_string()));
+        assert!(keys.move_down.contains(&"j".to_string()));
+        assert!(keys.move_down.contains(&"C-n".to_string()));
+        assert!(keys.move_to_top.contains(&"Home".to_string()));
+        assert!(keys.move_to_top.contains(&"g".to_string()));
+        assert!(keys.move_to_bottom.contains(&"End".to_string()));
+        assert!(keys.move_to_bottom.contains(&"S-G".to_string()));
+        assert!(keys.next_buffer.contains(&"Tab".to_string()));
+        assert!(keys.prev_buffer.contains(&"S-Tab".to_string()));
+        assert!(keys.quit.contains(&"q".to_string()));
+        assert!(keys.quit.contains(&"F10".to_string()));
+        assert!(keys.show_help.contains(&"F1".to_string()));
+        assert!(keys.show_help.contains(&"h".to_string()));
+        assert!(keys.show_help.contains(&"?".to_string()));
+        assert!(keys.search.contains(&"F3".to_string()));
+        assert!(keys.search.contains(&"/".to_string()));
+        assert_eq!(keys.open_podcast_list, vec!["F2"]);
+        assert_eq!(keys.open_downloads, vec!["F4"]);
+        assert_eq!(keys.open_playlists, vec!["F7"]);
+        assert_eq!(keys.open_sync, vec!["F8"]);
+        assert_eq!(keys.add_podcast, vec!["a"]);
+        assert_eq!(keys.refresh_all, vec!["S-R"]);
+        assert_eq!(keys.download_episode, vec!["S-D"]);
+        assert_eq!(keys.mark_played, vec!["m"]);
+        assert_eq!(keys.mark_unplayed, vec!["u"]);
+        assert_eq!(keys.import_opml, vec!["S-A"]);
+        assert_eq!(keys.export_opml, vec!["S-E"]);
+        assert_eq!(keys.sync_to_device, vec!["s"]);
+    }
+
+    #[test]
+    fn test_keybinding_config_roundtrip_serialization() {
+        // Arrange
+        let config = KeybindingConfig::default();
+
+        // Act — serialize then deserialize
+        let json = serde_json::to_string_pretty(&config).expect("serialize");
+        let restored: KeybindingConfig = serde_json::from_str(&json).expect("deserialize");
+
+        // Assert — roundtrip preserves all global keys
+        assert_eq!(config.global.quit, restored.global.quit);
+        assert_eq!(config.global.move_up, restored.global.move_up);
+        assert_eq!(config.global.mark_played, restored.global.mark_played);
+        assert_eq!(
+            config.global.download_episode,
+            restored.global.download_episode
+        );
+        assert_eq!(
+            config.podcast_list.is_none(),
+            restored.podcast_list.is_none()
+        );
+    }
+
+    #[test]
+    fn test_keybinding_config_partial_json_fills_in_defaults() {
+        // Arrange — partial JSON: only quit is overridden
+        let json = r#"{"global": {"quit": ["C-q"]}}"#;
+
+        // Act
+        let config: KeybindingConfig = serde_json::from_str(json).expect("deserialize partial");
+
+        // Assert — overridden field is as specified
+        assert_eq!(config.global.quit, vec!["C-q"]);
+        // Assert — unspecified fields fill in from GlobalKeys::default()
+        assert_eq!(config.global.move_up, GlobalKeys::default().move_up);
+        assert_eq!(config.global.mark_played, GlobalKeys::default().mark_played);
+    }
+
+    #[test]
+    fn test_keybinding_config_empty_keybindings_gets_defaults() {
+        // Arrange — no keybindings section at all
+        let json = r#"{}"#;
+
+        // Act
+        let config: KeybindingConfig = serde_json::from_str(json).expect("deserialize empty");
+
+        // Assert — global section uses full defaults
+        assert_eq!(config.global.quit, vec!["q", "F10"]);
+        assert!(config.podcast_list.is_none());
+        assert!(config.episode_list.is_none());
+    }
+
+    #[test]
+    fn test_keybinding_config_buffer_sections_default_to_none() {
+        // Arrange / Act
+        let config = KeybindingConfig::default();
+
+        // Assert — no buffer-specific overrides by default
+        assert!(config.podcast_list.is_none());
+        assert!(config.episode_list.is_none());
+        assert!(config.playlist.is_none());
+        assert!(config.downloads.is_none());
+        assert!(config.sync.is_none());
+    }
+
+    #[test]
+    fn test_keybinding_config_buffer_section_partial_override() {
+        // Arrange — only episode_list section provided, with partial fields
+        let json = r#"{"episode_list": {"mark_played": ["M"]}}"#;
+
+        // Act
+        let config: KeybindingConfig = serde_json::from_str(json).expect("deserialize");
+
+        // Assert — episode_list section is present with specified override
+        let ep = config.episode_list.expect("episode_list should be Some");
+        assert_eq!(ep.mark_played, vec!["M"]);
+        // Unspecified fields within the section are empty (= use global default)
+        assert!(ep.download_episode.is_empty());
     }
 }

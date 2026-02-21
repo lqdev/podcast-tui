@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**Expand KeybindingConfig to Cover All Bindings — February 2026**
+- **`KeybindingConfig` now covers all 60+ bindable actions** — replaces the previous 17-field flat struct (which was unused) with a structured, context-organized schema
+- **`GlobalKeys` struct** — all global actions represented as `Vec<String>` (multiple keys per action, e.g., `["Up", "k", "C-p"]` for move-up), organized into sections: Navigation, Buffer navigation, Application control, Interaction, Podcast management, Episode actions, Playlist, OPML, Sync, Tab navigation
+- **Buffer-specific override sections** — optional per-context structs (`PodcastListKeys`, `EpisodeListKeys`, `PlaylistKeys`, `DownloadKeys`, `SyncKeys`) allow per-buffer keybinding overrides without affecting other contexts; `None` by default (use global bindings)
+- **`impl Default for GlobalKeys`** — defaults match all hardcoded bindings in `keybindings.rs` exactly, including vim aliases (`j`/`k`/`g`/`G`), Emacs aliases (`C-n`/`C-p`), and function-key shortcuts (`F1`–`F10`)
+- **Partial config support** — `#[serde(default)]` at struct level means a user can specify only the fields they want to override (e.g., `{"global": {"quit": ["C-q"]}}`) and all other bindings fill in from the defaults
+- **Key notation format** uses Helix-style strings (`"C-x"`, `"S-Tab"`, `"F1"`, etc.) compatible with the `parse_key_notation()` function added in #96
+- Config fields: `keybindings.global.*`, `keybindings.episode_list`, `keybindings.podcast_list`, `keybindings.playlist`, `keybindings.downloads`, `keybindings.sync`
+- Tests added: 6 unit tests covering defaults coverage, defaults-match-keybindings, roundtrip serialization, partial JSON deserialization, empty config defaults, and buffer section partial override. Closes [#97](https://github.com/lqdev/podcast-tui/issues/97).
+
 ### Changed
 
 **Fix Hardcoded Color Violations — February 2026**

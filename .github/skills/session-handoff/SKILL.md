@@ -50,11 +50,11 @@ Run the `next-issue` skill Steps 1–4 right now, producing a fresh query result
 
 ```powershell
 # You MUST run this query — do not recall from memory
-# gh project item-list returns items in their physical board order (= stack rank)
+# Sort the results by the "stack rank" field (ascending) — this is the canonical work order
 gh project item-list 1 --owner lqdev --format json --limit 100
 ```
 
-Follow `next-issue` Steps 2–4 to filter, check dependencies, and report. The "What's next" section of the checkpoint must reflect the **live board state at time of writing**, not earlier in the session. Items should be listed in **board order** (physical position on the Task List view), not re-sorted.
+Follow `next-issue` Steps 2–4 to filter, check dependencies, and report. The "What's next" section of the checkpoint must reflect the **live board state at time of writing**, not earlier in the session. Items should be listed in **Stack Rank order** (ascending by the Stack Rank number field), not re-sorted by other fields.
 
 **If the board order was changed this session** (e.g., reprioritization, `updateProjectV2ItemPosition` calls), note that in the checkpoint so the next session knows the physical order is intentional and current.
 

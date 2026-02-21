@@ -23,6 +23,7 @@ The **Task List** view ([views/1](https://github.com/users/lqdev/projects/1/view
 | Project number | `1` |
 | Project GraphQL node ID | `PVT_kwHOAKnYPM4BPqK6` |
 | Task List view ID | `PVTV_lAHOAKnYPM4BPqK6zgJZwCc` |
+| Stack Rank field ID | `PVTF_lAHOAKnYPM4BPqK6zg-Gc20` |
 | Priority field ID | `PVTSSF_lAHOAKnYPM4BPqK6zg-ATAw` |
 | Phase field ID | `PVTSSF_lAHOAKnYPM4BPqK6zg-ATA0` |
 | Effort field ID | `PVTSSF_lAHOAKnYPM4BPqK6zg-AT-c` |
@@ -63,7 +64,7 @@ The **Task List** view ([views/1](https://github.com/users/lqdev/projects/1/view
 gh project item-list 1 --owner lqdev --format json --limit 200
 ```
 
-This returns items in their current physical position (= current stack rank). Parse each item for: issue number, title, status, priority, phase, effort, and project item ID.
+This returns all items including their `"stack rank"` field (a number). **Sort items by Stack Rank ascending** to get the current canonical work order. Parse each item for: issue number, title, status, priority, phase, effort, stack rank, and project item ID.
 
 ### 2. Assess what needs reordering
 
@@ -88,14 +89,14 @@ Build the proposed order using these principles (in priority order):
 4. **Features before epics** — actionable feature issues above their parent epic/meta-epic items
 5. **Blocked items below ready items** at the same priority level
 
-Present a **before vs after** comparison showing what moved:
+Present a **before vs after** comparison showing what moved, using Stack Rank values:
 
 ```
 Proposed reorder (24 items):
 
- 1. #99   P1/Ph1/S  Keybinding Conflict Detection          (was: 8)  ⬆
- 2. #100  P1/Ph1/L  Keybinding Presets & Help Text          (was: 9)  ⬆
- 3. #103  P1/Ph2/M  Load User Themes from Filesystem        (unchanged)
+ Rank 10:  #99   P1/Ph1/S  Keybinding Conflict Detection          (was: 80)  ⬆
+ Rank 20:  #100  P1/Ph1/L  Keybinding Presets & Help Text          (was: 90)  ⬆
+ Rank 30:  #103  P1/Ph2/M  Load User Themes from Filesystem        (unchanged)
  ...
 ```
 
@@ -109,9 +110,23 @@ The user may:
 - **Modify** — "move #134 above #109" → adjust and re-confirm
 - **Cancel** — no changes
 
-### 5. Execute the repositioning
+### 5. Execute the reranking
 
-Use `updateProjectV2ItemPosition` to place each item in sequence:
+Update the **Stack Rank field** for each item to its new value. Use gaps of 10 between items (10, 20, 30…) to allow future insertions without renumbering.
+
+```powershell
+$projId = "PVT_kwHOAKnYPM4BPqK6"
+$fieldId = "PVTF_lAHOAKnYPM4BPqK6zg-Gc20"
+$rank = 10
+foreach ($item in $orderedItems) {
+    gh project item-edit --project-id $projId --id $item.Id --field-id $fieldId --number $rank 2>&1 | Out-Null
+    $rank += 10
+}
+```
+
+Each `item-edit` call is **independent** — no chaining required. Partial failures leave the board in a valid (if imperfect) state, unlike the old `afterId` chaining approach.
+
+After updating Stack Rank values, **also sync the physical board position** so the visual order matches:
 
 ```powershell
 # First item: move to top (no afterId)
@@ -134,14 +149,18 @@ mutation {
 }'
 ```
 
-Chain through all items: item 1 goes to top, item 2 goes after item 1, item 3 goes after item 2, etc.
-
-**Batch this in a PowerShell loop** — don't call the API manually for each item:
+**Batch both operations in a single loop:**
 
 ```powershell
 $projId = "PVT_kwHOAKnYPM4BPqK6"
+$fieldId = "PVTF_lAHOAKnYPM4BPqK6zg-Gc20"
 $prevId = $null
+$rank = 10
 foreach ($item in $orderedItems) {
+    # Set the Stack Rank field (source of truth)
+    gh project item-edit --project-id $projId --id $item.Id --field-id $fieldId --number $rank 2>&1 | Out-Null
+
+    # Sync the physical board position to match
     if ($prevId) {
         $afterClause = "afterId: `"$prevId`""
     } else {
@@ -150,6 +169,7 @@ foreach ($item in $orderedItems) {
     $mutation = "mutation { updateProjectV2ItemPosition(input: { projectId: `"$projId`", itemId: `"$($item.Id)`" $afterClause }) { items(first:1) { nodes { id } } } }"
     gh api graphql -f query="$mutation" 2>&1 | Out-Null
     $prevId = $item.Id
+    $rank += 10
 }
 ```
 
@@ -171,27 +191,32 @@ Re-query the board and display the final order:
 gh project item-list 1 --owner lqdev --format json --limit 200
 ```
 
-Confirm the top 10 items match the proposed order. If any items are mispositioned, flag and fix.
+Confirm the top 10 items have correct Stack Rank values and that the physical order matches. If any items are mispositioned, flag and fix.
 
 ## Modes
 
 ### Full rerank
 
-Reorder all non-Done items on the board. Use when priorities have shifted significantly or after a planning session. Follows all steps above.
+Reorder all non-Done items on the board. Use when priorities have shifted significantly or after a planning session. Follows all steps above. Reassigns Stack Rank values with fresh gaps of 10.
 
 ### Targeted insert
 
-Position one or a few specific items into the existing board order. Faster than a full rerank — only the new items move.
+Position one or a few specific items into the existing board order. Faster than a full rerank — only the new items get Stack Rank values.
 
-1. Query the board to find the correct position for the item based on its Priority/Phase/Effort
-2. Find the item that should come immediately before it
-3. Execute a single `updateProjectV2ItemPosition` call
-4. No user confirmation needed for single-item inserts (the triage-issue skill handles this)
+1. Query the board and sort by Stack Rank to find the correct position based on Priority/Phase/Effort
+2. Compute a Stack Rank value between the surrounding items (e.g., if inserting between rank 30 and 40, use 35)
+3. Set the Stack Rank field with `gh project item-edit`
+4. Optionally sync physical position with `updateProjectV2ItemPosition`
+5. No user confirmation needed for single-item inserts (the triage-issue skill handles this)
+
+**Gap exhaustion:** If there's no integer gap between two adjacent ranks (e.g., 30 and 31), renumber starting from the insertion point: shift all items below down by 10, then insert at the freed slot.
 
 ## Rules
 
 - **Never reorder without showing the proposed order first** (full rerank mode)
+- **Stack Rank field is the source of truth** — physical board position is kept in sync but is secondary
 - **Always use the project GraphQL node ID** (`PVT_kwHOAKnYPM4BPqK6`), not the project number, for `updateProjectV2ItemPosition` and `gh project item-edit --project-id`
+- **Use gaps of 10** when assigning Stack Rank values (10, 20, 30…) to allow easy insertion
 - **Features above epics** — actionable items should always appear above their parent epic/meta-epic
 - **Preserve intentional ordering** — if the user manually positioned something, don't override it unless asked
 - **Done items stay in place** — don't waste API calls repositioning completed items; they'll scroll off naturally
@@ -200,6 +225,7 @@ Position one or a few specific items into the existing board order. Faster than 
 
 - ❌ Re-sorting purely by Priority/Phase/Effort without considering strategic context (epic completion, user direction)
 - ❌ Executing a reorder without user confirmation
-- ❌ Forgetting `afterId` chaining — each item must reference the previous one, or items will scatter
+- ❌ Setting Stack Rank values without gaps (1, 2, 3 instead of 10, 20, 30) — makes future insertions require full renumbering
 - ❌ Using project number (`1`) instead of GraphQL node ID for position mutations
 - ❌ Using `--owner` with `gh project item-edit` (it doesn't support that flag)
+- ❌ Updating physical position without also updating Stack Rank field (causes source-of-truth drift)

@@ -12,21 +12,27 @@ description: Query the GitHub project board to find the next stack-ranked issue 
 
 ## Board view reference
 
-The **Task List** view ([views/1](https://github.com/users/lqdev/projects/1/views/1)) is the canonical stack rank. Items are **physically ordered** top-to-bottom by priority — the first actionable item in the list is the next to work on. Do **not** re-sort by field values; the physical order captures nuances (like "finish this epic before starting that one") that Priority/Phase/Effort sorting cannot.
+The **Task List** view ([views/1](https://github.com/users/lqdev/projects/1/views/1)) is the canonical stack rank. Each item has an explicit **Stack Rank** number field — lower number = higher priority. The view is sorted by Stack Rank ascending, so the first actionable item is the next to work on.
 
-`gh project item-list` returns items in this physical order.
+Stack Rank captures strategic nuances (like "finish this epic before starting that one") that Priority/Phase/Effort sorting alone cannot.
+
+### Project constants
+
+| Constant | Value |
+|----------|-------|
+| Project number | `1` |
+| Project GraphQL node ID | `PVT_kwHOAKnYPM4BPqK6` |
+| Stack Rank field ID | `PVTF_lAHOAKnYPM4BPqK6zg-Gc20` |
 
 ## Steps
 
-### 1. Fetch the project board (in view order)
-
-Use `gh project item-list` which returns items in their physical board position:
+### 1. Fetch the project board
 
 ```powershell
 gh project item-list 1 --owner lqdev --format json --limit 100
 ```
 
-This returns items in **stack rank order** — the physical order of the Task List view.
+Each item includes a `"stack rank"` field (number). **Sort items by Stack Rank ascending** — this is the canonical work order.
 
 For dependency checking, you also need issue bodies. Fetch those for the top candidates:
 
@@ -36,14 +42,14 @@ gh issue view <N> --json number,title,state,body --jq '{number,title,state,body}
 
 ### 2. Filter to actionable items
 
-Walk the list **in order** and exclude:
+Sort by Stack Rank ascending, then exclude:
 - `state: CLOSED` — already done
 - `Status: Done` or `Status: In Progress` — not next
 - Epics (titles starting with `[Epic]` or `[Meta-Epic]`) — not directly implementable
 
 Keep only: `Status: Todo` and `state: OPEN` and not an epic.
 
-**Preserve the list order** — do not re-sort.
+**Sort by Stack Rank** — the numeric field is the source of truth.
 
 ### 3. Check dependencies
 
@@ -55,12 +61,12 @@ Mark each item as either **READY** (all deps done) or **BLOCKED** (at least one 
 
 ### 4. Report the results
 
-Present a short table of the top ~10 actionable items **in board order** (not re-sorted):
+Present a short table of the top ~10 actionable items **sorted by Stack Rank**:
 
-| # | Issue | Priority | Phase | Effort | Status |
-|---|-------|----------|-------|--------|--------|
-| **N** | Title ← NEXT | P1 | Phase 1 | S | ✅ READY |
-| N | Title | P1 | Phase 2 | M | ⛔ blocked by #X |
+| Rank | Issue | Priority | Phase | Effort | Status |
+|------|-------|----------|-------|--------|--------|
+| **10** | Title ← NEXT | P1 | Phase 1 | S | ✅ READY |
+| 20 | Title | P1 | Phase 2 | M | ⛔ blocked by #X |
 | ... | ... | ... | ... | ... | ... |
 
 Call out the **first READY item** explicitly as "Next up: #N — Title".
@@ -80,6 +86,7 @@ After identifying the next issue, use the `work-on-issue` skill to implement it.
 
 ## Notes
 
-- **The board's physical order is the source of truth** — not Priority/Phase/Effort field values alone. The physical order on the Task List view (views/1) is maintained by stack rank operations and captures strategic decisions (e.g., "finish half-done epics first").
+- **The Stack Rank field is the source of truth** — not physical board position or Priority/Phase/Effort field values alone. Stack Rank is maintained by the `rerank-board` and `triage-issue` skills and captures strategic decisions (e.g., "finish half-done epics first").
+- Stack Ranks use gaps of 10 (10, 20, 30…) to allow easy insertion without renumbering
 - Epics are planning items — always work on their sub-issues, not the epic itself
-- If the physical order seems stale or wrong (e.g., a newly triaged issue is at the bottom but should be higher), flag it to the user before proceeding
+- If the Stack Rank ordering seems stale or wrong (e.g., a newly triaged issue has a high rank but should be lower), flag it to the user before proceeding

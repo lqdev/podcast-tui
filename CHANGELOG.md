@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `AudioError::Unsupported(String)` variant added to `src/audio/mod.rs`
   - Limitations: `pause()` / `resume()` are no-ops; `seek()` returns `AudioError::Unsupported`; `position()` / `duration()` return `None`
 
+- **RodioBackend — native cross-platform audio playback via rodio** — implements `PlaybackBackend` using rodio 0.21 for native audio output (WASAPI on Windows, ALSA on Linux, CoreAudio on macOS). Full playback control: play/pause/resume/stop, seek via `Sink::try_seek()`, volume control (clamped to 0.0–1.0), position tracking via `Sink::get_pos()` (updated every ~5 ms by the audio thread), duration from decoder headers. Supports MP3/AAC/OGG/FLAC/WAV via `Decoder::try_from(file)` with file byte_len for accurate seeking and duration. `stop()` uses `Sink::clear()` (synchronous) so callers see `is_stopped() == true` immediately. Closes [#134](https://github.com/lqdev/podcast-tui/issues/134). Part of [#132](https://github.com/lqdev/podcast-tui/issues/132).
+  - New `src/audio/rodio_backend.rs`: `RodioBackend` struct initialised via `OutputStreamBuilder::open_default_stream()`; `OutputStream` held for lifetime of backend (drop = silence)
+  - `play()` creates a fresh `Sink` per track; old sink dropped cleanly; `Decoder::try_from(File)` for byte_len/seeking/duration
+  - `seek()` via `Sink::try_seek()`, `position()` via `Sink::get_pos()`, `duration()` from decoder headers
+  - `is_playing()` / `is_paused()` / `is_stopped()` delegate to `Sink::empty()` and `Sink::is_paused()`
+  - Tests: 16 unit tests covering all acceptance criteria; device-aware skip guards for headless CI
+
 - **PodcastIndex API integration for discovery** — new `:discover <query>` and `:trending` minibuffer commands search the [PodcastIndex.org](https://podcastindex.org/) API and display results in a dedicated `*Discover: …*` buffer. Press Enter on any result to subscribe immediately. API credentials are configured via `discovery.podcastindex_api_key` and `discovery.podcastindex_api_secret` in `config.json` (free credentials at <https://api.podcastindex.org/>). Auth uses a timestamp-based SHA-1 hash (per PodcastIndex spec). Closes [#110](https://github.com/lqdev/podcast-tui/issues/110).
   - New `src/podcast/discovery.rs`: `PodcastIndexClient`, `PodcastSearchResult`, `DiscoveryError`; `search()` and `trending()` async methods
   - New `src/ui/buffers/discovery.rs`: `DiscoveryBuffer` implementing `Buffer` trait with arrow-key navigation, description preview, and subscribe-on-enter

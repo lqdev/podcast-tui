@@ -6,6 +6,8 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
 
+use crate::config::{GlobalKeys, KeybindingConfig};
+use crate::ui::key_parser::parse_key_notation;
 use crate::ui::UIAction;
 
 /// Represents a key combination
@@ -208,6 +210,129 @@ impl KeyHandler {
         UIAction::None
     }
 
+    /// Look up the action bound to a key chord, if any.
+    pub fn lookup(&self, chord: &KeyChord) -> Option<&UIAction> {
+        self.bindings.get(chord)
+    }
+
+    /// Build a `KeyHandler` from a `KeybindingConfig`.
+    ///
+    /// Starts with all default bindings, then applies any non-empty override lists from
+    /// `config`. An empty `Vec<String>` for any field means "keep the default binding".
+    /// Unrecognised key notation strings are silently skipped (the action retains its default).
+    pub fn from_config(config: &KeybindingConfig) -> Self {
+        let mut handler = Self::new();
+        handler.apply_global_overrides(&config.global);
+        handler
+    }
+
+    /// Parse a slice of notation strings into `KeyChord`s, silently dropping invalid entries.
+    fn parse_notations(notations: &[String]) -> Vec<KeyChord> {
+        notations
+            .iter()
+            .filter_map(|s| parse_key_notation(s).ok())
+            .collect()
+    }
+
+    /// Remove all existing bindings for `action` and replace with `chords`.
+    fn rebind_action(&mut self, action: UIAction, chords: Vec<KeyChord>) {
+        self.bindings.retain(|_, v| *v != action);
+        for chord in chords {
+            self.bindings.insert(chord, action.clone());
+        }
+    }
+
+    /// If `notations` is non-empty, replace all bindings for `action` with parsed chords.
+    /// An empty slice is a no-op (preserves the defaults set by `new()`).
+    fn override_binding(&mut self, notations: &[String], action: UIAction) {
+        if !notations.is_empty() {
+            let chords = Self::parse_notations(notations);
+            self.rebind_action(action, chords);
+        }
+    }
+
+    /// Apply non-empty override lists from `GlobalKeys` to the current bindings.
+    fn apply_global_overrides(&mut self, keys: &GlobalKeys) {
+        // Navigation
+        self.override_binding(&keys.move_up, UIAction::MoveUp);
+        self.override_binding(&keys.move_down, UIAction::MoveDown);
+        self.override_binding(&keys.move_left, UIAction::MoveLeft);
+        self.override_binding(&keys.move_right, UIAction::MoveRight);
+        self.override_binding(&keys.page_up, UIAction::PageUp);
+        self.override_binding(&keys.page_down, UIAction::PageDown);
+        self.override_binding(&keys.move_to_top, UIAction::MoveToTop);
+        self.override_binding(&keys.move_to_bottom, UIAction::MoveToBottom);
+        self.override_binding(&keys.move_episode_up, UIAction::MoveEpisodeUp);
+        self.override_binding(&keys.move_episode_down, UIAction::MoveEpisodeDown);
+
+        // Buffer navigation
+        self.override_binding(&keys.next_buffer, UIAction::NextBuffer);
+        self.override_binding(&keys.prev_buffer, UIAction::PreviousBuffer);
+        self.override_binding(&keys.close_buffer, UIAction::CloseCurrentBuffer);
+        self.override_binding(
+            &keys.open_podcast_list,
+            UIAction::SwitchBuffer("podcast-list".to_string()),
+        );
+        self.override_binding(
+            &keys.open_downloads,
+            UIAction::SwitchBuffer("downloads".to_string()),
+        );
+        self.override_binding(&keys.open_playlists, UIAction::OpenPlaylistList);
+        self.override_binding(&keys.open_sync, UIAction::SwitchBuffer("sync".to_string()));
+
+        // Application control
+        self.override_binding(&keys.quit, UIAction::Quit);
+        self.override_binding(&keys.show_help, UIAction::ShowHelp);
+        self.override_binding(&keys.search, UIAction::Search);
+        self.override_binding(&keys.clear_filters, UIAction::ClearFilters);
+        self.override_binding(&keys.refresh, UIAction::Refresh);
+        self.override_binding(&keys.prompt_command, UIAction::PromptCommand);
+        self.override_binding(
+            &keys.switch_to_buffer,
+            UIAction::ExecuteCommand("switch-to-buffer".to_string()),
+        );
+        self.override_binding(
+            &keys.list_buffers,
+            UIAction::ExecuteCommand("list-buffers".to_string()),
+        );
+
+        // Interaction
+        self.override_binding(&keys.select, UIAction::SelectItem);
+        self.override_binding(&keys.cancel, UIAction::HideMinibuffer);
+
+        // Podcast management
+        self.override_binding(&keys.add_podcast, UIAction::AddPodcast);
+        self.override_binding(&keys.delete_podcast, UIAction::DeletePodcast);
+        self.override_binding(&keys.refresh_podcast, UIAction::RefreshPodcast);
+        self.override_binding(&keys.refresh_all, UIAction::RefreshAll);
+        self.override_binding(&keys.hard_refresh_podcast, UIAction::HardRefreshPodcast);
+
+        // Episode actions
+        self.override_binding(&keys.download_episode, UIAction::DownloadEpisode);
+        self.override_binding(
+            &keys.delete_downloaded_episode,
+            UIAction::DeleteDownloadedEpisode,
+        );
+        self.override_binding(&keys.delete_all_downloads, UIAction::DeleteAllDownloads);
+        self.override_binding(&keys.mark_played, UIAction::MarkPlayed);
+        self.override_binding(&keys.mark_unplayed, UIAction::MarkUnplayed);
+
+        // Playlist
+        self.override_binding(&keys.create_playlist, UIAction::CreatePlaylist);
+        self.override_binding(&keys.add_to_playlist, UIAction::AddToPlaylist);
+
+        // OPML
+        self.override_binding(&keys.import_opml, UIAction::ImportOpml);
+        self.override_binding(&keys.export_opml, UIAction::ExportOpml);
+
+        // Sync
+        self.override_binding(&keys.sync_to_device, UIAction::SyncToDevice);
+
+        // Tab navigation
+        self.override_binding(&keys.prev_tab, UIAction::PreviousTab);
+        self.override_binding(&keys.next_tab, UIAction::NextTab);
+    }
+
     /// Clear any current key sequence (not needed for simple handler)
     pub fn clear_sequence(&mut self) {
         // No-op for simple handler
@@ -228,6 +353,7 @@ impl Default for KeyHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::KeybindingConfig;
 
     #[test]
     fn test_direct_key_binding() {
@@ -328,5 +454,116 @@ mod tests {
         let mut handler = KeyHandler::new();
         let key = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::NONE);
         assert_eq!(handler.handle_key(key), UIAction::MarkUnplayed);
+    }
+
+    // ── from_config tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_from_config_defaults_produce_same_bindings_as_new() {
+        // Arrange
+        let config = KeybindingConfig::default();
+
+        // Act
+        let from_conf = KeyHandler::from_config(&config);
+        let from_new = KeyHandler::new();
+
+        // Assert — spot-check that default config reproduces the same bindings
+        let cases: &[(KeyChord, UIAction)] = &[
+            (KeyChord::none(KeyCode::Char('q')), UIAction::Quit),
+            (KeyChord::none(KeyCode::F(10)), UIAction::Quit),
+            (KeyChord::none(KeyCode::F(1)), UIAction::ShowHelp),
+            (KeyChord::none(KeyCode::Up), UIAction::MoveUp),
+            (KeyChord::none(KeyCode::Char('j')), UIAction::MoveDown),
+            (KeyChord::ctrl(KeyCode::Char('n')), UIAction::MoveDown),
+            (KeyChord::shift(KeyCode::BackTab), UIAction::PreviousBuffer),
+        ];
+        for (chord, expected) in cases {
+            assert_eq!(
+                from_conf.lookup(chord),
+                from_new.lookup(chord),
+                "chord {:?} should match between from_config(default) and new()",
+                chord
+            );
+            assert_eq!(from_conf.lookup(chord), Some(expected));
+        }
+    }
+
+    #[test]
+    fn test_from_config_overrides_action_removes_old_bindings() {
+        // Arrange — remap quit to C-q only (replaces default q and F10)
+        let mut config = KeybindingConfig::default();
+        config.global.quit = vec!["C-q".to_string()];
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — new chord works
+        assert_eq!(
+            handler.lookup(&KeyChord::ctrl(KeyCode::Char('q'))),
+            Some(&UIAction::Quit)
+        );
+        // Old defaults are removed
+        assert_eq!(handler.lookup(&KeyChord::none(KeyCode::Char('q'))), None);
+        assert_eq!(handler.lookup(&KeyChord::none(KeyCode::F(10))), None);
+    }
+
+    #[test]
+    fn test_from_config_empty_vec_preserves_defaults() {
+        // Arrange — empty Vec means "keep the defaults"
+        let mut config = KeybindingConfig::default();
+        config.global.quit = vec![];
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — both default quit chords still work
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char('q'))),
+            Some(&UIAction::Quit)
+        );
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::F(10))),
+            Some(&UIAction::Quit)
+        );
+    }
+
+    #[test]
+    fn test_from_config_invalid_notation_skips_gracefully() {
+        // Arrange — mix of valid and invalid notations; must not panic
+        let mut config = KeybindingConfig::default();
+        config.global.quit = vec!["C-q".to_string(), "NOT-VALID-!!!".to_string()];
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — valid notation is bound; invalid one is silently skipped
+        assert_eq!(
+            handler.lookup(&KeyChord::ctrl(KeyCode::Char('q'))),
+            Some(&UIAction::Quit)
+        );
+    }
+
+    #[test]
+    fn test_from_config_multiple_chords_all_bound() {
+        // Arrange — configure three chords for quit
+        let mut config = KeybindingConfig::default();
+        config.global.quit = vec!["q".to_string(), "C-q".to_string(), "F10".to_string()];
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — all three resolve to Quit
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char('q'))),
+            Some(&UIAction::Quit)
+        );
+        assert_eq!(
+            handler.lookup(&KeyChord::ctrl(KeyCode::Char('q'))),
+            Some(&UIAction::Quit)
+        );
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::F(10))),
+            Some(&UIAction::Quit)
+        );
     }
 }

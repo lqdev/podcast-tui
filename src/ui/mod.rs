@@ -204,6 +204,20 @@ pub enum UIAction {
     /// Cycle to next tab (e.g. in dry-run preview)
     NextTab,
 
+    // Sort actions
+    /// Cycle to the next sort field (Date → Title → Duration → DownloadStatus → Date)
+    CycleSortField,
+    /// Toggle sort direction (Ascending ↔ Descending)
+    ToggleSortDirection,
+    /// Set sort field by name via minibuffer command (date, title, duration, downloaded)
+    SetSort {
+        field: String,
+    },
+    /// Set sort direction by name via minibuffer command (asc, desc)
+    SetSortDirection {
+        direction: String,
+    },
+
     // Search & filter actions
     /// Activate text search in the current buffer (opens minibuffer for input)
     Search,

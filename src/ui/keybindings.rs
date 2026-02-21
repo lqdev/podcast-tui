@@ -39,7 +39,7 @@ pub struct UnboundAction {
 pub struct ValidationResult {
     /// Chords that were silently reassigned from one action to another.
     pub conflicts: Vec<KeybindingConflict>,
-    /// Critical actions (Quit, ShowHelp, Cancel) that have no binding at all.
+    /// Critical actions (Quit, ShowHelp, HideMinibuffer) that have no binding at all.
     pub unbound_actions: Vec<UnboundAction>,
     /// Human-readable warning strings summarising both of the above.
     pub warnings: Vec<String>,
@@ -421,7 +421,7 @@ impl KeyHandler {
     /// - **Conflicts** are chords that were reassigned from one action to
     ///   another during configuration (last writer silently wins).
     /// - **Unbound actions** are critical actions — `Quit`, `ShowHelp`, and
-    ///   `Cancel` — that have no chord bound to them at all.
+    ///   `HideMinibuffer` — that have no chord bound to them at all.
     ///
     /// Non-critical conflicts produce `warnings`; a missing `Quit` binding is
     /// considered fatal and the caller should refuse to start the application.

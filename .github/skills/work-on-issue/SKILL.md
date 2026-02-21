@@ -114,6 +114,13 @@ PR requirements:
 - Screenshots or terminal output for UI changes
 - Note any testing done beyond automated tests
 
+> ⚠️ **After creating the PR — stop and wait for the Copilot review.**
+> `copilot-pull-request-reviewer` runs asynchronously after `gh pr create` and typically
+> takes several minutes. **Do not run `code-review-validation` until the bot has posted its
+> review.** Checking immediately will show zero comments even when feedback is incoming —
+> that is not a signal that the PR is clean. Pause the session and resume once the review
+> appears, or poll with `gh pr view <N> --json reviews` until the bot's entry is present.
+
 #### How to write the `## Manual Testing` section
 
 This section tells a human reviewer exactly how to verify the change beyond `cargo test`. **Every PR must include it** — either with real steps or an explicit N/A with reasoning.

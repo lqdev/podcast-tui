@@ -25,7 +25,15 @@ Required state:
 If any check fails, **stop** and report the blocker. Do not merge with conflicts or failing CI.
 
 ### 2. Confirm all review comments are resolved
-- Check PR review threads via `gh pr view <PR_NUMBER> --json reviewThreads` or the GitHub UI
+
+```bash
+gh pr view <PR_NUMBER> --json reviews
+```
+
+First verify that `copilot-pull-request-reviewer` is present in the reviews list. **If the bot has not yet posted its review, stop — do not merge.** The bot runs asynchronously and an absent review means it hasn't finished, not that the PR is clean.
+
+Then check inline threads:
+- Check PR review threads via the `get_review_comments` MCP tool or the GitHub UI
 - All `ACCEPT` items must be implemented and pushed
 - All `DEFER` items must have a corresponding GitHub issue
 - No unresolved blocking comments from human reviewers

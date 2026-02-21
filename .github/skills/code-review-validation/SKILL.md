@@ -7,6 +7,25 @@ description: Validate and action code review feedback from Copilot or other revi
 
 When Copilot or other reviewers provide feedback on a PR, you must carefully evaluate each suggestion. Don't accept blindly—validate against the codebase, project conventions, and implementation best practices.
 
+## Prerequisite: Confirm the Copilot review has been posted
+
+**Before starting**, fetch the live PR state:
+
+```bash
+gh pr view <PR_NUMBER> --json reviews
+```
+
+Check that `copilot-pull-request-reviewer` appears in the `reviews` list. If it is absent, **stop and wait** — the bot runs asynchronously after PR creation and may take several minutes.
+
+```bash
+# Also fetch all inline review threads
+gh api graphql -f query='{ repository(owner: "lqdev", name: "podcast-tui") { pullRequest(number: N) { reviewThreads(first: 50) { nodes { isResolved comments(first: 1) { nodes { body path line } } } } } } }'
+```
+
+Do **not** substitute an internal code reviewer for a missing Copilot review. The two are complementary but the Copilot review is the authoritative one that must be actioned on the PR threads.
+
+**Only proceed once the Copilot review is confirmed posted.**
+
 ## Review Validation Process
 
 ### 1. Understand the Suggestion

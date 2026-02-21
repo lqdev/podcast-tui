@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Load Keybindings from Config at Runtime — February 2026**
+- **Keybindings are now loaded from `config.json` at startup** — the `keybindings.global` section in your config overrides the default hardcoded bindings at launch
+- **`KeyHandler::from_config(config: &KeybindingConfig) -> Self`** — new constructor that starts from defaults and applies any non-empty override lists from config; replaces the previous `KeyHandler::new()` call in the UI startup path
+- **Empty field = keep default** — a `Vec<String>` field left as `[]` in config preserves the built-in default for that action; only non-empty fields are applied as overrides
+- **Graceful invalid notation handling** — unrecognised key notation strings in a non-empty override list are silently skipped; if at least one notation is valid its chord(s) replace the defaults, but if all notations are invalid the action keeps its defaults intact (the list is treated as a no-op)
+- **`KeyHandler::lookup(&chord) -> Option<&UIAction>`** — new read-only accessor for diagnostics and testing
+- Config format: edit `keybindings.global` in `~/.config/podcast-tui/config.json`; use Helix-style notation (`"C-q"`, `"S-Tab"`, `"F1"`) — see `GETTING_STARTED.md` for reference
+- Tests added: 5 unit tests covering default equivalence, override removes old bindings, empty vec preserves defaults, invalid notation skips gracefully, multiple chords all bound. Closes [#98](https://github.com/lqdev/podcast-tui/issues/98).
+
 **Expand KeybindingConfig to Cover All Bindings — February 2026**
 - **`KeybindingConfig` now covers all 60+ bindable actions** — replaces the previous 17-field flat struct (which was unused) with a structured, context-organized schema
 - **`GlobalKeys` struct** — all global actions represented as `Vec<String>` (multiple keys per action, e.g., `["Up", "k", "C-p"]` for move-up), organized into sections: Navigation, Buffer navigation, Application control, Interaction, Podcast management, Episode actions, Playlist, OPML, Sync, Tab navigation

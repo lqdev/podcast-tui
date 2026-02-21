@@ -130,7 +130,7 @@ impl UIApp {
         status_bar.set_theme(theme.clone());
 
         let minibuffer = Minibuffer::new();
-        let key_handler = KeyHandler::new();
+        let key_handler = KeyHandler::from_config(&config.keybindings);
         let event_handler =
             UIEventHandler::new(Duration::from_millis(ui_constants::UI_TICK_RATE_MS));
 
@@ -185,7 +185,7 @@ impl UIApp {
         status_bar.set_theme(theme.clone());
 
         let minibuffer = Minibuffer::new();
-        let key_handler = KeyHandler::new();
+        let key_handler = KeyHandler::from_config(&config.keybindings);
         let event_handler =
             UIEventHandler::new(Duration::from_millis(ui_constants::UI_TICK_RATE_MS));
 

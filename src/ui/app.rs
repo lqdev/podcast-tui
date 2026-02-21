@@ -2210,17 +2210,27 @@ impl UIApp {
             }
             "sort-asc" => {
                 if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
-                    current_buffer.handle_action(UIAction::SetSortDirection {
+                    let result = current_buffer.handle_action(UIAction::SetSortDirection {
                         direction: "asc".to_string(),
                     });
+                    match result {
+                        UIAction::ShowMessage(msg) => self.show_message(msg),
+                        UIAction::ShowError(msg) => self.show_error(msg),
+                        _ => {}
+                    }
                 }
                 Ok(true)
             }
             "sort-desc" => {
                 if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
-                    current_buffer.handle_action(UIAction::SetSortDirection {
+                    let result = current_buffer.handle_action(UIAction::SetSortDirection {
                         direction: "desc".to_string(),
                     });
+                    match result {
+                        UIAction::ShowMessage(msg) => self.show_message(msg),
+                        UIAction::ShowError(msg) => self.show_error(msg),
+                        _ => {}
+                    }
                 }
                 Ok(true)
             }

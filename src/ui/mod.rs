@@ -239,6 +239,32 @@ pub enum UIAction {
     // from RSS feeds (extract_duration is a stub). See Design Decision #13.
     // SetDurationFilter { duration: String },
 
+    // Tag actions (podcast-level)
+    /// Add a tag to the currently selected podcast (optimistic update)
+    AddTag {
+        tag: String,
+    },
+    /// Remove a tag from the currently selected podcast (optimistic update)
+    RemoveTag {
+        tag: String,
+    },
+    /// Filter the podcast list to only show podcasts with the given tag
+    FilterByTag {
+        tag: String,
+    },
+    /// Trigger async persist of add-tag after optimistic in-memory update
+    TriggerAddTag {
+        podcast_id: crate::storage::PodcastId,
+        podcast_title: String,
+        tag: String,
+    },
+    /// Trigger async persist of remove-tag after optimistic in-memory update
+    TriggerRemoveTag {
+        podcast_id: crate::storage::PodcastId,
+        podcast_title: String,
+        tag: String,
+    },
+
     // Episode status actions
     /// Mark selected episode as played
     MarkPlayed,

@@ -183,6 +183,11 @@ impl PodcastListBuffer {
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
     }
+
+    /// Get a read-only view of all podcasts (for tag collection etc.)
+    pub fn podcasts(&self) -> &[Podcast] {
+        &self.podcasts
+    }
 }
 
 impl Buffer for PodcastListBuffer {
@@ -313,6 +318,82 @@ impl UIComponent for PodcastListBuffer {
                 self.apply_filters();
                 UIAction::Render
             }
+            UIAction::AddTag { tag } => {
+                if let Some(selected_idx) = self
+                    .selected_index
+                    .and_then(|i| self.filtered_indices.get(i).copied())
+                {
+                    let podcast = &mut self.podcasts[selected_idx];
+                    let tag_normalized = tag.trim().to_lowercase();
+                    if tag_normalized.is_empty() {
+                        return UIAction::ShowError("Tag cannot be empty".to_string());
+                    }
+                    if podcast.has_tag(&tag_normalized) {
+                        return UIAction::ShowMessage(format!(
+                            "'{}' already has tag \"{}\"",
+                            podcast.title, tag_normalized
+                        ));
+                    }
+                    let podcast_id = podcast.id.clone();
+                    let podcast_title = podcast.title.clone();
+                    podcast.add_tag(&tag_normalized);
+                    UIAction::TriggerAddTag {
+                        podcast_id,
+                        podcast_title,
+                        tag: tag_normalized,
+                    }
+                } else {
+                    UIAction::ShowError("No podcast selected".to_string())
+                }
+            }
+            UIAction::RemoveTag { tag } => {
+                if let Some(selected_idx) = self
+                    .selected_index
+                    .and_then(|i| self.filtered_indices.get(i).copied())
+                {
+                    let podcast = &mut self.podcasts[selected_idx];
+                    let tag_normalized = tag.trim().to_lowercase();
+                    if tag_normalized.is_empty() {
+                        return UIAction::ShowError("Tag cannot be empty".to_string());
+                    }
+                    if !podcast.has_tag(&tag_normalized) {
+                        return UIAction::ShowMessage(format!(
+                            "'{}' does not have tag \"{}\"",
+                            podcast.title, tag_normalized
+                        ));
+                    }
+                    let podcast_id = podcast.id.clone();
+                    let podcast_title = podcast.title.clone();
+                    podcast.remove_tag(&tag_normalized);
+                    UIAction::TriggerRemoveTag {
+                        podcast_id,
+                        podcast_title,
+                        tag: tag_normalized,
+                    }
+                } else {
+                    UIAction::ShowError("No podcast selected".to_string())
+                }
+            }
+            UIAction::FilterByTag { tag } => {
+                let tag_normalized = tag.trim().to_lowercase();
+                if tag_normalized.is_empty() {
+                    // Empty tag clears the filter without showing a confusing message
+                    self.filter.tag_filter = None;
+                    self.apply_filters();
+                    UIAction::Render
+                } else {
+                    self.filter.tag_filter = Some(tag_normalized.clone());
+                    self.apply_filters();
+                    if self.visible_count() == 0 {
+                        UIAction::ShowMessage(format!(
+                            "No podcasts with tag \"{}\"",
+                            tag_normalized
+                        ))
+                    } else {
+                        UIAction::Render
+                    }
+                }
+            }
             _ => UIAction::None,
         }
     }
@@ -413,18 +494,31 @@ impl UIComponent for PodcastListBuffer {
                         .map(|(display_index, &actual_index)| {
                             let display_pos = self.scroll_offset + display_index;
                             let podcast = &self.podcasts[actual_index];
-                            let title = podcast.title.clone();
-                            let author = podcast.author.as_deref().unwrap_or("Unknown");
-                            let episode_count = ""; // TODO: Add episode count when available
+                            let is_selected = Some(display_pos) == self.selected_index;
 
-                            let content = format!("  {} - {}{}", title, author, episode_count);
-                            let style = if Some(display_pos) == self.selected_index {
+                            let mut spans: Vec<Span> = Vec::new();
+                            let base_style = if is_selected {
                                 self.theme.selected_style()
                             } else {
                                 self.theme.text_style()
                             };
 
-                            ListItem::new(Line::from(vec![Span::styled(content, style)]))
+                            let author = podcast.author.as_deref().unwrap_or("Unknown");
+                            let title_text = format!("  {} - {}", podcast.title, author);
+                            spans.push(Span::styled(title_text, base_style));
+
+                            // Render tags as [tag] badges
+                            for tag in &podcast.tags {
+                                let badge = format!(" [{}]", tag);
+                                let badge_style = if is_selected {
+                                    self.theme.selected_style()
+                                } else {
+                                    self.theme.primary_style()
+                                };
+                                spans.push(Span::styled(badge, badge_style));
+                            }
+
+                            ListItem::new(Line::from(spans))
                         })
                         .collect();
 
@@ -627,5 +721,139 @@ mod tests {
         assert_eq!(buffer.visible_count(), 0);
         assert_eq!(buffer.selected_index, None);
         assert!(buffer.selected_podcast().is_none());
+    }
+
+    #[test]
+    fn test_add_tag_to_selected_podcast_returns_trigger() {
+        // Arrange
+        let mut buffer = PodcastListBuffer::new();
+        let podcasts = vec![Podcast::new(
+            "Tech Talk".to_string(),
+            "http://example.com/1".to_string(),
+        )];
+        buffer.set_podcasts(podcasts);
+
+        // Act
+        let result = buffer.handle_action(UIAction::AddTag {
+            tag: "tech".to_string(),
+        });
+
+        // Assert: returns TriggerAddTag with normalized tag
+        assert!(matches!(
+            result,
+            UIAction::TriggerAddTag { ref tag, .. } if tag == "tech"
+        ));
+        // Optimistic in-memory update applied
+        assert!(buffer
+            .selected_podcast()
+            .expect("should have podcast")
+            .has_tag("tech"));
+    }
+
+    #[test]
+    fn test_add_duplicate_tag_returns_message() {
+        // Arrange
+        let mut buffer = PodcastListBuffer::new();
+        let mut podcast = Podcast::new("Tech Talk".to_string(), "http://example.com/1".to_string());
+        podcast.add_tag("tech");
+        buffer.set_podcasts(vec![podcast]);
+
+        // Act
+        let result = buffer.handle_action(UIAction::AddTag {
+            tag: "tech".to_string(),
+        });
+
+        // Assert: no duplicate tag, returns informational message
+        assert!(matches!(result, UIAction::ShowMessage(_)));
+        assert_eq!(
+            buffer
+                .selected_podcast()
+                .expect("should have podcast")
+                .tags
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_remove_tag_from_selected_podcast_returns_trigger() {
+        // Arrange
+        let mut buffer = PodcastListBuffer::new();
+        let mut podcast = Podcast::new("Tech Talk".to_string(), "http://example.com/1".to_string());
+        podcast.add_tag("tech");
+        buffer.set_podcasts(vec![podcast]);
+
+        // Act
+        let result = buffer.handle_action(UIAction::RemoveTag {
+            tag: "tech".to_string(),
+        });
+
+        // Assert: returns TriggerRemoveTag
+        assert!(matches!(
+            result,
+            UIAction::TriggerRemoveTag { ref tag, .. } if tag == "tech"
+        ));
+        // Optimistic in-memory update applied
+        assert!(!buffer
+            .selected_podcast()
+            .expect("should have podcast")
+            .has_tag("tech"));
+    }
+
+    #[test]
+    fn test_remove_nonexistent_tag_returns_message() {
+        // Arrange
+        let mut buffer = PodcastListBuffer::new();
+        buffer.set_podcasts(vec![Podcast::new(
+            "Tech Talk".to_string(),
+            "http://example.com/1".to_string(),
+        )]);
+
+        // Act
+        let result = buffer.handle_action(UIAction::RemoveTag {
+            tag: "comedy".to_string(),
+        });
+
+        // Assert
+        assert!(matches!(result, UIAction::ShowMessage(_)));
+    }
+
+    #[test]
+    fn test_filter_by_tag_narrows_list() {
+        // Arrange
+        let mut buffer = PodcastListBuffer::new();
+        let mut tech = Podcast::new("Tech Show".to_string(), "http://example.com/1".to_string());
+        tech.add_tag("tech");
+        let news = Podcast::new("News Show".to_string(), "http://example.com/2".to_string());
+        buffer.set_podcasts(vec![tech, news]);
+
+        // Act
+        buffer.handle_action(UIAction::FilterByTag {
+            tag: "tech".to_string(),
+        });
+
+        // Assert: only tagged podcast visible
+        assert_eq!(buffer.visible_count(), 1);
+        assert_eq!(
+            buffer
+                .selected_podcast()
+                .expect("should have podcast")
+                .title,
+            "Tech Show"
+        );
+    }
+
+    #[test]
+    fn test_add_tag_with_no_selection_returns_error() {
+        // Arrange: empty buffer
+        let mut buffer = PodcastListBuffer::new();
+
+        // Act
+        let result = buffer.handle_action(UIAction::AddTag {
+            tag: "tech".to_string(),
+        });
+
+        // Assert
+        assert!(matches!(result, UIAction::ShowError(_)));
     }
 }

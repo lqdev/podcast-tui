@@ -17,6 +17,10 @@ pub struct Podcast {
     pub explicit: bool,
     pub last_updated: DateTime<Utc>,
     pub episodes: Vec<EpisodeId>,
+    /// User-defined tags for organizing podcasts (e.g., "tech", "news").
+    /// Defaults to empty for backward compatibility with existing data files.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 impl Podcast {
@@ -34,7 +38,28 @@ impl Podcast {
             explicit: false,
             last_updated: Utc::now(),
             episodes: Vec::new(),
+            tags: Vec::new(),
         }
+    }
+
+    /// Add a tag to this podcast. Does nothing if the tag already exists.
+    pub fn add_tag(&mut self, tag: &str) {
+        let tag = tag.trim().to_lowercase();
+        if !tag.is_empty() && !self.tags.contains(&tag) {
+            self.tags.push(tag);
+        }
+    }
+
+    /// Remove a tag from this podcast. Does nothing if the tag is not present.
+    pub fn remove_tag(&mut self, tag: &str) {
+        let tag = tag.trim().to_lowercase();
+        self.tags.retain(|t| t != &tag);
+    }
+
+    /// Check whether this podcast has the given tag.
+    pub fn has_tag(&self, tag: &str) -> bool {
+        let tag = tag.trim().to_lowercase();
+        self.tags.contains(&tag)
     }
 
     /// Update the last updated timestamp
@@ -491,5 +516,126 @@ mod tests {
 
         // Assert: missing field defaults to false (backward compatible)
         assert!(!episode.favorited);
+    }
+
+    #[test]
+    fn test_podcast_tags_default_to_empty() {
+        // Arrange
+        let podcast = Podcast::new(
+            "Tagged Show".to_string(),
+            "https://example.com/feed.xml".to_string(),
+        );
+
+        // Assert
+        assert!(podcast.tags.is_empty());
+    }
+
+    #[test]
+    fn test_podcast_add_tag_normalizes_and_deduplicates() {
+        // Arrange
+        let mut podcast = Podcast::new(
+            "Tagged Show".to_string(),
+            "https://example.com/feed.xml".to_string(),
+        );
+
+        // Act
+        podcast.add_tag("Tech");
+        podcast.add_tag("tech"); // duplicate (case-insensitive)
+        podcast.add_tag("  NEWS  "); // whitespace + mixed case
+
+        // Assert
+        assert_eq!(podcast.tags, vec!["tech", "news"]);
+    }
+
+    #[test]
+    fn test_podcast_remove_tag_removes_correctly() {
+        // Arrange
+        let mut podcast = Podcast::new(
+            "Tagged Show".to_string(),
+            "https://example.com/feed.xml".to_string(),
+        );
+        podcast.add_tag("tech");
+        podcast.add_tag("news");
+
+        // Act
+        podcast.remove_tag("Tech"); // case-insensitive removal
+
+        // Assert
+        assert_eq!(podcast.tags, vec!["news"]);
+        assert!(!podcast.has_tag("tech"));
+    }
+
+    #[test]
+    fn test_podcast_remove_tag_nonexistent_is_noop() {
+        // Arrange
+        let mut podcast = Podcast::new(
+            "Tagged Show".to_string(),
+            "https://example.com/feed.xml".to_string(),
+        );
+        podcast.add_tag("tech");
+
+        // Act — removing a tag that isn't there
+        podcast.remove_tag("comedy");
+
+        // Assert — original tags unchanged
+        assert_eq!(podcast.tags, vec!["tech"]);
+    }
+
+    #[test]
+    fn test_podcast_has_tag_case_insensitive() {
+        // Arrange
+        let mut podcast = Podcast::new(
+            "Tagged Show".to_string(),
+            "https://example.com/feed.xml".to_string(),
+        );
+        podcast.add_tag("tech");
+
+        // Assert
+        assert!(podcast.has_tag("tech"));
+        assert!(podcast.has_tag("TECH"));
+        assert!(podcast.has_tag("Tech"));
+        assert!(!podcast.has_tag("news"));
+    }
+
+    #[test]
+    fn test_podcast_tags_serde_roundtrip() {
+        // Arrange
+        let mut podcast = Podcast::new(
+            "Tagged Show".to_string(),
+            "https://example.com/feed.xml".to_string(),
+        );
+        podcast.add_tag("tech");
+        podcast.add_tag("news");
+
+        // Act
+        let json = serde_json::to_string(&podcast).unwrap();
+        let restored: Podcast = serde_json::from_str(&json).unwrap();
+
+        // Assert
+        assert_eq!(restored.tags, vec!["tech", "news"]);
+    }
+
+    #[test]
+    fn test_podcast_tags_defaults_on_missing_field() {
+        // Arrange: JSON without the tags field (simulates old data files)
+        let json = r#"{
+            "id": "00000000-0000-0000-0000-000000000001",
+            "title": "Old Podcast",
+            "url": "https://example.com/feed.xml",
+            "description": null,
+            "author": null,
+            "image_url": null,
+            "language": null,
+            "categories": [],
+            "explicit": false,
+            "last_updated": "2024-01-01T00:00:00Z",
+            "episodes": []
+        }"#;
+
+        // Act
+        let podcast: Podcast = serde_json::from_str(json).unwrap();
+
+        // Assert: missing tags field defaults to empty vec (backward compatible)
+        assert!(podcast.tags.is_empty());
     }
 }

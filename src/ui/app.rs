@@ -1884,6 +1884,34 @@ impl UIApp {
                 self.trigger_background_refresh(BufferRefreshType::Downloads);
                 self.show_error(format!("Could not clean up downloads: {}", error));
             }
+            AppEvent::PodcastTagAdded {
+                podcast_id: _,
+                tag: _,
+            } => {
+                // Optimistic update already applied; nothing further needed
+            }
+            AppEvent::PodcastTagAddFailed {
+                podcast_id: _,
+                error,
+            } => {
+                // Revert optimistic update by refreshing from storage
+                self.trigger_background_refresh(BufferRefreshType::PodcastList);
+                self.show_error(format!("Could not add tag: {}", error));
+            }
+            AppEvent::PodcastTagRemoved {
+                podcast_id: _,
+                tag: _,
+            } => {
+                // Optimistic update already applied; nothing further needed
+            }
+            AppEvent::PodcastTagRemoveFailed {
+                podcast_id: _,
+                error,
+            } => {
+                // Revert optimistic update by refreshing from storage
+                self.trigger_background_refresh(BufferRefreshType::PodcastList);
+                self.show_error(format!("Could not remove tag: {}", error));
+            }
         }
         Ok(())
     }
@@ -2179,6 +2207,108 @@ impl UIApp {
                     self.show_error(
                         "Usage: filter-date <range> (today, 12h, 7d, 2w, 1m)".to_string(),
                     );
+                    Ok(true)
+                }
+            }
+            "tag" => {
+                if parts.len() > 1 {
+                    let tag = parts[1..].join(" ");
+                    if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                        let result = current_buffer.handle_action(UIAction::AddTag { tag });
+                        match result {
+                            UIAction::TriggerAddTag {
+                                podcast_id,
+                                podcast_title,
+                                tag,
+                            } => {
+                                self.show_message(format!(
+                                    "Tagged '{}' with \"{}\"",
+                                    podcast_title, tag
+                                ));
+                                self.trigger_async_add_tag(podcast_id, tag);
+                            }
+                            UIAction::ShowMessage(msg) => self.show_message(msg),
+                            UIAction::ShowError(msg) => self.show_error(msg),
+                            _ => {}
+                        }
+                    }
+                    Ok(true)
+                } else {
+                    self.show_error("Usage: tag <name>".to_string());
+                    Ok(true)
+                }
+            }
+            "untag" => {
+                if parts.len() > 1 {
+                    let tag = parts[1..].join(" ");
+                    if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                        let result = current_buffer.handle_action(UIAction::RemoveTag { tag });
+                        match result {
+                            UIAction::TriggerRemoveTag {
+                                podcast_id,
+                                podcast_title,
+                                tag,
+                            } => {
+                                self.show_message(format!(
+                                    "Removed tag \"{}\" from '{}'",
+                                    tag, podcast_title
+                                ));
+                                self.trigger_async_remove_tag(podcast_id, tag);
+                            }
+                            UIAction::ShowMessage(msg) => self.show_message(msg),
+                            UIAction::ShowError(msg) => self.show_error(msg),
+                            _ => {}
+                        }
+                    }
+                    Ok(true)
+                } else {
+                    self.show_error("Usage: untag <name>".to_string());
+                    Ok(true)
+                }
+            }
+            "tags" => {
+                // Collect all unique tags from in-memory podcast list
+                let tags: Vec<String> = if let Some(podcast_buffer) =
+                    self.buffer_manager.get_podcast_list_buffer_mut()
+                {
+                    let mut all_tags: Vec<String> = podcast_buffer
+                        .podcasts()
+                        .iter()
+                        .flat_map(|p| p.tags.iter().cloned())
+                        .collect();
+                    all_tags.sort_unstable();
+                    all_tags.dedup();
+                    all_tags
+                } else {
+                    Vec::new()
+                };
+
+                if tags.is_empty() {
+                    self.show_message(
+                        "No tags defined. Use :tag <name> to tag a podcast.".to_string(),
+                    );
+                } else {
+                    self.show_message(format!("Tags: {}", tags.join(", ")));
+                }
+                Ok(true)
+            }
+            "filter-tag" => {
+                if parts.len() > 1 {
+                    let tag = parts[1..].join(" ");
+                    if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                        let result = current_buffer
+                            .handle_action(UIAction::FilterByTag { tag: tag.clone() });
+                        match result {
+                            UIAction::ShowMessage(msg) => self.show_message(msg),
+                            UIAction::ShowError(msg) => self.show_error(msg),
+                            _ => {}
+                        }
+                    } else {
+                        self.show_error("No buffer available for filtering".to_string());
+                    }
+                    Ok(true)
+                } else {
+                    self.show_error("Usage: filter-tag <tag>".to_string());
                     Ok(true)
                 }
             }
@@ -3078,6 +3208,78 @@ impl UIApp {
                     let _ = app_event_tx.send(AppEvent::EpisodeFavoriteToggleFailed {
                         podcast_id: podcast_id_clone,
                         episode_id: episode_id_clone,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    /// Trigger async persist of adding a tag to a podcast
+    fn trigger_async_add_tag(&mut self, podcast_id: crate::storage::PodcastId, tag: String) {
+        let storage = self._storage.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let podcast_id_clone = podcast_id.clone();
+        let tag_clone = tag.clone();
+
+        tokio::spawn(async move {
+            match storage.load_podcast(&podcast_id).await {
+                Ok(mut podcast) => {
+                    podcast.add_tag(&tag);
+                    match storage.save_podcast(&podcast).await {
+                        Ok(()) => {
+                            let _ = app_event_tx.send(AppEvent::PodcastTagAdded {
+                                podcast_id: podcast_id_clone,
+                                tag: tag_clone,
+                            });
+                        }
+                        Err(e) => {
+                            let _ = app_event_tx.send(AppEvent::PodcastTagAddFailed {
+                                podcast_id: podcast_id_clone,
+                                error: e.to_string(),
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::PodcastTagAddFailed {
+                        podcast_id: podcast_id_clone,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    /// Trigger async persist of removing a tag from a podcast
+    fn trigger_async_remove_tag(&mut self, podcast_id: crate::storage::PodcastId, tag: String) {
+        let storage = self._storage.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let podcast_id_clone = podcast_id.clone();
+        let tag_clone = tag.clone();
+
+        tokio::spawn(async move {
+            match storage.load_podcast(&podcast_id).await {
+                Ok(mut podcast) => {
+                    podcast.remove_tag(&tag);
+                    match storage.save_podcast(&podcast).await {
+                        Ok(()) => {
+                            let _ = app_event_tx.send(AppEvent::PodcastTagRemoved {
+                                podcast_id: podcast_id_clone,
+                                tag: tag_clone,
+                            });
+                        }
+                        Err(e) => {
+                            let _ = app_event_tx.send(AppEvent::PodcastTagRemoveFailed {
+                                podcast_id: podcast_id_clone,
+                                error: e.to_string(),
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::PodcastTagRemoveFailed {
+                        podcast_id: podcast_id_clone,
                         error: e.to_string(),
                     });
                 }

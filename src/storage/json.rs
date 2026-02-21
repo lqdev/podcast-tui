@@ -640,6 +640,7 @@ mod tests {
             explicit: false,
             last_updated: chrono::Utc::now(),
             episodes: Vec::new(),
+            tags: Vec::new(),
         };
 
         // Save podcast

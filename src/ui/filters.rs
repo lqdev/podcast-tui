@@ -334,21 +334,27 @@ impl std::fmt::Display for DurationFilter {
     }
 }
 
-/// Filter for the podcast list (text search only).
+/// Filter for the podcast list (text search and tag filter).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PodcastFilter {
     /// Text search query (matches title, author, description — case-insensitive)
     pub text_query: Option<String>,
+    /// Tag filter — when set, only podcasts with this tag are shown.
+    pub tag_filter: Option<String>,
 }
 
 impl PodcastFilter {
     /// Check if the filter is active.
     pub fn is_active(&self) -> bool {
-        self.text_query.is_some()
+        self.text_query.is_some() || self.tag_filter.is_some()
     }
 
     /// Check if a podcast matches this filter.
     pub fn matches(&self, podcast: &Podcast) -> bool {
+        self.matches_text(podcast) && self.matches_tag(podcast)
+    }
+
+    fn matches_text(&self, podcast: &Podcast) -> bool {
         let query = match &self.text_query {
             Some(q) if !q.is_empty() => q.to_lowercase(),
             _ => return true,
@@ -367,17 +373,27 @@ impl PodcastFilter {
         title_match || author_match || desc_match
     }
 
+    fn matches_tag(&self, podcast: &Podcast) -> bool {
+        match &self.tag_filter {
+            Some(tag) => podcast.has_tag(tag),
+            None => true,
+        }
+    }
+
     /// Build a human-readable description of the active filter.
     pub fn description(&self) -> String {
-        match &self.text_query {
-            Some(q) => format!("search: \"{}\"", q),
-            None => String::new(),
+        match (&self.text_query, &self.tag_filter) {
+            (Some(q), Some(t)) => format!("search: \"{}\" tag: \"{}\"", q, t),
+            (Some(q), None) => format!("search: \"{}\"", q),
+            (None, Some(t)) => format!("tag: \"{}\"", t),
+            (None, None) => String::new(),
         }
     }
 
     /// Clear the filter.
     pub fn clear(&mut self) {
         self.text_query = None;
+        self.tag_filter = None;
     }
 }
 
@@ -764,6 +780,7 @@ mod tests {
     fn test_podcast_filter_title_match() {
         let filter = PodcastFilter {
             text_query: Some("rust".to_string()),
+            tag_filter: None,
         };
         let podcast = Podcast::new(
             "Rustacean Station".to_string(),
@@ -776,6 +793,7 @@ mod tests {
     fn test_podcast_filter_author_match() {
         let filter = PodcastFilter {
             text_query: Some("chris".to_string()),
+            tag_filter: None,
         };
         let mut podcast =
             Podcast::new("Some Podcast".to_string(), "http://example.com".to_string());
@@ -787,6 +805,7 @@ mod tests {
     fn test_podcast_filter_no_match() {
         let filter = PodcastFilter {
             text_query: Some("xyzzy".to_string()),
+            tag_filter: None,
         };
         let podcast = Podcast::new(
             "Normal Podcast".to_string(),
@@ -799,6 +818,7 @@ mod tests {
     fn test_podcast_filter_description() {
         let filter = PodcastFilter {
             text_query: Some("rust".to_string()),
+            tag_filter: None,
         };
         assert_eq!(filter.description(), "search: \"rust\"");
     }
@@ -807,9 +827,75 @@ mod tests {
     fn test_podcast_filter_clear() {
         let mut filter = PodcastFilter {
             text_query: Some("rust".to_string()),
+            tag_filter: Some("tech".to_string()),
         };
         filter.clear();
         assert!(!filter.is_active());
+    }
+
+    #[test]
+    fn test_podcast_filter_tag_matches_tagged_podcast() {
+        // Arrange
+        let filter = PodcastFilter {
+            text_query: None,
+            tag_filter: Some("tech".to_string()),
+        };
+        let mut podcast = Podcast::new("Tech Show".to_string(), "http://example.com".to_string());
+        podcast.add_tag("tech");
+
+        // Assert
+        assert!(filter.matches(&podcast));
+    }
+
+    #[test]
+    fn test_podcast_filter_tag_excludes_untagged_podcast() {
+        // Arrange
+        let filter = PodcastFilter {
+            text_query: None,
+            tag_filter: Some("tech".to_string()),
+        };
+        let podcast = Podcast::new("News Show".to_string(), "http://example.com".to_string());
+
+        // Assert — podcast has no tags, filter should exclude it
+        assert!(!filter.matches(&podcast));
+    }
+
+    #[test]
+    fn test_podcast_filter_tag_description_shows_tag() {
+        // Arrange
+        let filter = PodcastFilter {
+            text_query: None,
+            tag_filter: Some("news".to_string()),
+        };
+
+        // Assert
+        assert_eq!(filter.description(), "tag: \"news\"");
+        assert!(filter.is_active());
+    }
+
+    #[test]
+    fn test_podcast_filter_combined_text_and_tag() {
+        // Arrange
+        let filter = PodcastFilter {
+            text_query: Some("rust".to_string()),
+            tag_filter: Some("tech".to_string()),
+        };
+        let mut matching = Podcast::new(
+            "Rustacean Station".to_string(),
+            "http://example.com".to_string(),
+        );
+        matching.add_tag("tech");
+
+        let mut wrong_tag = Podcast::new(
+            "Rustacean Station".to_string(),
+            "http://example.com".to_string(),
+        );
+        wrong_tag.add_tag("news");
+
+        // Assert: both text AND tag must match
+        assert!(filter.matches(&matching));
+        assert!(!filter.matches(&wrong_tag));
+        assert_eq!(filter.description(), "search: \"rust\" tag: \"tech\"");
     }
 
     // --- EpisodeStatusFilter matching tests ---

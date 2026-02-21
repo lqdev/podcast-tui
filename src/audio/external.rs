@@ -27,7 +27,7 @@ pub struct ExternalPlayerBackend {
     child: Option<Child>,
     /// Path of the file currently (or last) played.
     current_path: Option<PathBuf>,
-    /// Stored volume (0.0–2.0); cannot be applied to the external process.
+    /// Stored volume (0.0–1.0); cannot be applied to the external process.
     volume: f32,
 }
 
@@ -111,16 +111,17 @@ impl PlaybackBackend for ExternalPlayerBackend {
     /// No-op — external player is either playing or stopped; cannot resume.
     fn resume(&mut self) {}
 
-    /// Kill the running child process and clear the handle.
+    /// Kill the running child process, reap it (best-effort), and clear the handle.
     ///
     /// Note: `Child::kill()` sends SIGKILL (Unix) / TerminateProcess (Windows).
-    /// The killed process may become a zombie until the OS reaps it, which happens
-    /// at latest when this application exits.
+    /// We then call `wait()` best-effort so the process is reaped and does not
+    /// remain as a zombie on Unix.
     fn stop(&mut self) {
-        if let Some(ref mut child) = self.child {
+        if let Some(mut child) = self.child.take() {
             let _ = child.kill();
+            // Best-effort reap to avoid zombie processes on Unix.
+            let _ = child.wait();
         }
-        self.child = None;
         self.current_path = None;
     }
 
@@ -132,8 +133,10 @@ impl PlaybackBackend for ExternalPlayerBackend {
     }
 
     /// Store the volume value; it cannot be applied to the running external process.
+    ///
+    /// Volume is clamped to [0.0, 1.0] consistent with `constants::audio::DEFAULT_VOLUME`.
     fn set_volume(&mut self, volume: f32) {
-        self.volume = volume.clamp(0.0, 2.0);
+        self.volume = volume.clamp(0.0, 1.0);
     }
 
     /// Always `None` — cannot query external process position.
@@ -170,21 +173,36 @@ impl PlaybackBackend for ExternalPlayerBackend {
 
 impl Drop for ExternalPlayerBackend {
     fn drop(&mut self) {
-        // Kill any running child process when the backend is dropped to avoid
-        // leaving orphaned player processes running after the TUI exits.
-        if let Some(ref mut child) = self.child {
+        // Kill any running child process when the backend is dropped, then reap
+        // it best-effort to avoid zombie processes on Unix.
+        if let Some(mut child) = self.child.take() {
             let _ = child.kill();
+            let _ = child.wait();
         }
     }
 }
 
 // ---------- Pure helpers ----------------------------------------------------
 
+/// Extract the lowercase player basename from an executable path or name,
+/// stripping path separators and platform extensions (e.g. `.exe` on Windows).
+///
+/// Examples:
+/// - `"mpv"` → `"mpv"`
+/// - `"/usr/bin/mpv"` → `"mpv"`
+/// - `r"C:\Program Files\mpv\mpv.exe"` → `"mpv"`
+/// - `"ffplay.exe"` → `"ffplay"`
+fn player_basename(cmd: &str) -> String {
+    Path::new(cmd)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_else(|| cmd.to_lowercase())
+}
+
 /// Returns the version-check flag for `cmd`.
 /// ffplay/ffmpeg/ffprobe use single-dash (`-version`); all others use `--version`.
 fn version_flag(cmd: &str) -> &'static str {
-    let basename = cmd.split(['/', '\\']).next_back().unwrap_or(cmd);
-    match basename {
+    match player_basename(cmd).as_str() {
         "ffplay" | "ffmpeg" | "ffprobe" => "-version",
         _ => "--version",
     }
@@ -193,13 +211,11 @@ fn version_flag(cmd: &str) -> &'static str {
 /// Build the argument list for spawning `player_command` with `path`.
 ///
 /// Returns only the *arguments* (not the executable name itself).
+/// Uses `player_basename()` so that full paths and `.exe` suffixes on Windows
+/// are handled correctly (e.g. `C:\bin\mpv.exe` → uses mpv headless flags).
 pub(crate) fn build_player_args(player_command: &str, path: &Path) -> Vec<String> {
     let path_str = path.to_string_lossy().to_string();
-    let basename = player_command
-        .split(['/', '\\'])
-        .next_back()
-        .unwrap_or(player_command);
-    match basename {
+    match player_basename(player_command).as_str() {
         "mpv" => vec!["--no-video".into(), "--really-quiet".into(), path_str],
         "vlc" => vec![
             "--intf".into(),
@@ -319,9 +335,9 @@ mod tests {
         // Act — below min
         backend.set_volume(-1.0);
         assert!((backend.volume - 0.0).abs() < f32::EPSILON);
-        // Act — above max
+        // Act — above max (clamped to 1.0 per constants::audio range)
         backend.set_volume(5.0);
-        assert!((backend.volume - 2.0).abs() < f32::EPSILON);
+        assert!((backend.volume - 1.0).abs() < f32::EPSILON);
     }
 
     // ── Stop on idle ────────────────────────────────────────────────────────
@@ -352,16 +368,14 @@ mod tests {
 
     #[test]
     fn test_external_backend_detect_stores_found_player_command() {
-        // Arrange — if echo is available (all platforms have it in PATH), detect it
-        // On Windows, "cmd" is always available.
-        #[cfg(windows)]
-        let candidates = &["cmd"][..];
-        #[cfg(not(windows))]
-        let candidates = &["sh"][..];
+        // Use the current test binary as a guaranteed-present executable.
+        // Any real binary in PATH works; current_exe() is hermetic across environments.
+        let current = std::env::current_exe().expect("could not resolve current_exe");
+        let current_str = current.to_string_lossy().to_string();
 
         // Act
-        let result = ExternalPlayerBackend::detect_from_candidates(candidates);
-        // Assert — sh/cmd should always be found
+        let result = ExternalPlayerBackend::detect_from_candidates(&[current_str.as_str()]);
+        // Assert — the test binary is always present, so detection must succeed.
         assert!(result.is_ok());
     }
 
@@ -426,6 +440,34 @@ mod tests {
         assert_eq!(args, vec!["--no-video", "--really-quiet", "/tmp/ep.mp3"]);
     }
 
+    #[test]
+    fn test_external_backend_exe_suffix_stripped_for_args() {
+        // Arrange — Windows-style path with .exe extension
+        let path = Path::new("C:\\podcasts\\ep.mp3");
+        // Act — mpv.exe should match mpv args
+        let args = build_player_args("mpv.exe", path);
+        // Assert
+        assert_eq!(
+            args,
+            vec!["--no-video", "--really-quiet", "C:\\podcasts\\ep.mp3"]
+        );
+    }
+
+    #[test]
+    fn test_external_backend_exe_suffix_stripped_for_vlc() {
+        let path = Path::new("episode.mp3");
+        let args = build_player_args("vlc.exe", path);
+        assert_eq!(args, vec!["--intf", "dummy", "--no-video", "episode.mp3"]);
+    }
+
+    #[test]
+    fn test_external_backend_full_windows_path_mpv_exe() {
+        // Full Windows path — mpv.exe at arbitrary location
+        let path = Path::new("episode.mp3");
+        let args = build_player_args(r"C:\Program Files\mpv\mpv.exe", path);
+        assert_eq!(args, vec!["--no-video", "--really-quiet", "episode.mp3"]);
+    }
+
     // ── Stop kills process (Unix only) ────────────────────────────────────────
 
     /// Verify that `stop()` kills a running child process and clears the handle.
@@ -467,5 +509,18 @@ mod tests {
         assert_eq!(version_flag("mpv"), "--version");
         assert_eq!(version_flag("vlc"), "--version");
         assert_eq!(version_flag("mplayer"), "--version");
+    }
+
+    #[test]
+    fn test_version_flag_exe_suffix_stripped() {
+        // Windows executables with .exe suffix must still match correctly.
+        assert_eq!(version_flag("ffplay.exe"), "-version");
+        assert_eq!(version_flag("mpv.exe"), "--version");
+    }
+
+    #[test]
+    fn test_version_flag_full_windows_path() {
+        assert_eq!(version_flag(r"C:\bin\ffplay.exe"), "-version");
+        assert_eq!(version_flag(r"C:\bin\mpv.exe"), "--version");
     }
 }

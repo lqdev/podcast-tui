@@ -433,6 +433,18 @@ pub enum AppEvent {
         podcast_id: crate::storage::PodcastId,
         error: String,
     },
+
+    /// Smart playlist evaluated — episodes computed from filter rules
+    SmartPlaylistEvaluated {
+        detail_buffer_id: String,
+        episodes: Vec<crate::playlist::PlaylistEpisode>,
+    },
+
+    /// Smart playlist evaluation failed
+    SmartPlaylistEvaluationFailed {
+        playlist_name: String,
+        error: String,
+    },
 }
 
 /// Types of buffer refresh operations

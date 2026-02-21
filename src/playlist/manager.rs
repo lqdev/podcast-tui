@@ -2,6 +2,7 @@ use crate::download::DownloadManager;
 use crate::playlist::{
     file_manager::{PlaylistFileError, PlaylistFileManager},
     AutoPlaylistKind, Playlist, PlaylistEpisode, PlaylistId, PlaylistType, RefreshPolicy,
+    SmartPlaylistRule,
 };
 use crate::storage::{EpisodeId, JsonStorage, PodcastId, Storage};
 use chrono::Utc;
@@ -82,6 +83,49 @@ impl PlaylistManager {
             episodes: Vec::new(),
             created: now,
             last_updated: now,
+            smart_rules: None,
+        };
+
+        self.storage
+            .save_playlist(&playlist)
+            .await
+            .map_err(|e| PlaylistError::Storage(e.to_string()))?;
+
+        Ok(playlist)
+    }
+
+    /// Create a smart playlist with the given filter rules.
+    ///
+    /// Smart playlists store an empty `episodes` list on disk; episode content is
+    /// evaluated dynamically from [`SmartPlaylistRule`] on every open.
+    pub async fn create_smart_playlist(
+        &self,
+        name: &str,
+        description: Option<String>,
+        rule: SmartPlaylistRule,
+    ) -> Result<Playlist, PlaylistError> {
+        let trimmed_name = name.trim();
+        if trimmed_name.is_empty() {
+            return Err(PlaylistError::InvalidPlaylistName);
+        }
+        if trimmed_name.eq_ignore_ascii_case("today") {
+            return Err(PlaylistError::AlreadyExists(trimmed_name.to_string()));
+        }
+
+        if self.get_playlist_by_name(trimmed_name).await.is_ok() {
+            return Err(PlaylistError::AlreadyExists(trimmed_name.to_string()));
+        }
+
+        let now = Utc::now();
+        let playlist = Playlist {
+            id: PlaylistId::new(),
+            name: trimmed_name.to_string(),
+            description,
+            playlist_type: PlaylistType::User,
+            episodes: Vec::new(),
+            created: now,
+            last_updated: now,
+            smart_rules: Some(rule),
         };
 
         self.storage
@@ -460,6 +504,7 @@ impl PlaylistManager {
             episodes: Vec::new(),
             created: now,
             last_updated: now,
+            smart_rules: None,
         };
         self.storage
             .save_playlist(&today)

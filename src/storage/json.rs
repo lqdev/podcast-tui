@@ -701,6 +701,7 @@ mod tests {
             }],
             created: chrono::Utc::now(),
             last_updated: chrono::Utc::now(),
+            smart_rules: None,
         }
     }
 

@@ -104,6 +104,7 @@ impl TodayGenerator {
             episodes: Vec::new(),
             created: now,
             last_updated: now,
+            smart_rules: None,
         };
         self.storage
             .save_playlist(&playlist)
@@ -421,6 +422,7 @@ mod tests {
             episodes: Vec::new(),
             created: Utc::now(),
             last_updated: Utc::now(),
+            smart_rules: None,
         };
         assert!(TodayGenerator::should_refresh(
             &playlist,
@@ -442,6 +444,7 @@ mod tests {
             episodes: Vec::new(),
             created: Utc::now(),
             last_updated: Utc::now(),
+            smart_rules: None,
         };
         assert!(TodayGenerator::should_refresh(
             &playlist,

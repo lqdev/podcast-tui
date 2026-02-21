@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Smart playlists (dynamic filter rules)** — new `:smart-playlist <name> [--filter <spec>...] [--sort <field>] [--limit <n>]` minibuffer command creates playlists that auto-populate based on filter criteria evaluated dynamically each time the playlist is opened. Filter specs: `downloaded`, `favorited`, `played`, `unplayed`, `tag:<name>`, `podcast:<id>`, `newer-than:<days>`; multiple `--filter` flags are AND-ed. Sort options: `date-desc` (default), `date-asc`, `title-asc`, `title-desc`. Smart playlists are marked with a `⚡` prefix in the playlist list and detail buffer. Reorder and remove-episode actions are blocked with a descriptive message for smart playlists. Closes [#109](https://github.com/lqdev/podcast-tui/issues/109).
+  - New types: `SmartFilter`, `SmartSort`, `SmartSortField`, `SmartSortDirection`, `SmartPlaylistRule` in `src/playlist/models.rs`
+  - `Playlist::is_smart()` convenience predicate; `smart_rules` field is `#[serde(default)]` for backward compatibility
+  - `PlaylistManager::create_smart_playlist()` in `src/playlist/manager.rs`
+  - Tests added: 10 unit tests covering filter evaluation, sort, limit, AND logic, and serde round-trip
+
 - **Bundled community themes** — five popular community colour schemes are now shipped with the binary, available immediately via `:theme <name>` with no file setup required: `catppuccin-mocha`, `dracula`, `nord`, `gruvbox-dark`, `tokyo-night`. Each theme uses the official palette from its upstream project. Community themes are also valid `extends` parents in user `.toml` theme files (e.g. `extends = "catppuccin-mocha"`). Theme files live in `assets/themes/` and are embedded at compile time via `include_str!`. Closes [#105](https://github.com/lqdev/podcast-tui/issues/105).
   - Tests added: `parse_theme_str` unit tests, palette spot-checks for all 5 themes, `get_bundled()` coverage, `list_names()` coverage, extends-from-community-theme round-trip.
 

@@ -163,6 +163,34 @@ pub fn load_theme_file(path: &Path) -> Result<Theme, ThemeError> {
     Ok(Theme::new(file.metadata.name, colors))
 }
 
+/// Resolve a theme from a `.toml` file, looking up the parent in `registry`.
+///
+/// This is the public API for theme inheritance resolution. When the file's
+/// `[metadata]` section specifies `extends`, the named bundled theme is fetched
+/// from `registry` via [`ThemeRegistry::get_bundled`] and its
+/// [`ColorScheme`] is used as the base. Only bundled themes are valid parents —
+/// user-defined themes cannot serve as parents (single-level, no circular deps).
+///
+/// If `extends` is absent, the default dark theme is used as the base.
+///
+/// Returns a [`Theme`] ready for use by the UI.
+pub fn resolve_theme(path: &Path, registry: &ThemeRegistry) -> Result<Theme, ThemeError> {
+    let content = std::fs::read_to_string(path)?;
+    let file: ThemeFile = toml::from_str(&content)?;
+
+    let base_colors = match &file.metadata.extends {
+        Some(base_name) => registry
+            .get_bundled(base_name)
+            .ok_or_else(|| ThemeError::UnknownBaseTheme(base_name.clone()))?
+            .color_scheme()
+            .clone(),
+        None => Theme::default_dark().colors,
+    };
+
+    let colors = apply_colors(base_colors, &file.colors)?;
+    Ok(Theme::from_color_scheme(file.metadata.name, colors))
+}
+
 /// Apply the `overrides` on top of `base`, returning the merged [`ColorScheme`].
 ///
 /// Fields in `overrides` that are `None` leave the corresponding field in
@@ -360,6 +388,22 @@ impl ThemeRegistry {
     /// Look up a theme by name (case-insensitive).
     pub fn get(&self, name: &str) -> Option<&Theme> {
         self.themes.get(&name.to_lowercase())
+    }
+
+    /// Look up a theme by name, restricting to bundled themes only (case-insensitive).
+    ///
+    /// Only the five built-in keys (`dark`, `default`, `light`, `high-contrast`,
+    /// `solarized`) are returned. User-defined themes are never returned, making
+    /// this the right method to use when resolving `extends` in a theme file
+    /// (single-level, bundled-parent-only inheritance).
+    pub fn get_bundled(&self, name: &str) -> Option<&Theme> {
+        const BUNDLED: &[&str] = &["dark", "default", "light", "high-contrast", "solarized"];
+        let lower = name.to_lowercase();
+        if BUNDLED.contains(&lower.as_str()) {
+            self.themes.get(&lower)
+        } else {
+            None
+        }
     }
 
     /// Return all registered theme names, sorted alphabetically.
@@ -917,5 +961,200 @@ primary = "#ff79c6"
         // Act / Assert: retrievable by lowercase key
         assert!(registry.get("mytheme").is_some());
         assert!(registry.get("MyTheme").is_some()); // case-insensitive get also works
+    }
+
+    // ── get_bundled tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_registry_get_bundled_returns_all_bundled_themes() {
+        // Arrange
+        let registry = ThemeRegistry::new();
+
+        // Act / Assert: all five built-in keys are accessible
+        assert!(registry.get_bundled("dark").is_some());
+        assert!(registry.get_bundled("default").is_some());
+        assert!(registry.get_bundled("light").is_some());
+        assert!(registry.get_bundled("high-contrast").is_some());
+        assert!(registry.get_bundled("solarized").is_some());
+    }
+
+    #[test]
+    fn test_registry_get_bundled_is_case_insensitive() {
+        // Arrange
+        let registry = ThemeRegistry::new();
+
+        // Act / Assert
+        assert!(registry.get_bundled("Dark").is_some());
+        assert!(registry.get_bundled("LIGHT").is_some());
+        assert!(registry.get_bundled("High-Contrast").is_some());
+    }
+
+    #[test]
+    fn test_registry_get_bundled_rejects_user_themes() {
+        // Arrange: add a user theme to the registry
+        let dir = TempDir::new().unwrap();
+        let themes_dir = dir.path().join("themes");
+        std::fs::create_dir(&themes_dir).unwrap();
+        std::fs::write(
+            themes_dir.join("custom.toml"),
+            "[metadata]\nname = \"Custom\"\n",
+        )
+        .unwrap();
+
+        let mut registry = ThemeRegistry::new();
+        registry.load_user_themes(dir.path());
+
+        // Act: user theme is accessible via get() but NOT via get_bundled()
+        assert!(
+            registry.get("custom").is_some(),
+            "should be accessible via get()"
+        );
+        assert!(
+            registry.get_bundled("custom").is_none(),
+            "user theme must not be accessible via get_bundled()"
+        );
+    }
+
+    #[test]
+    fn test_registry_get_bundled_returns_none_for_unknown() {
+        // Arrange
+        let registry = ThemeRegistry::new();
+
+        // Act / Assert
+        assert!(registry.get_bundled("nonexistent").is_none());
+    }
+
+    // ── resolve_theme tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_theme_extends_dark_overrides_single_color() {
+        // Arrange
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("custom.toml");
+        std::fs::write(
+            &path,
+            r##"
+[metadata]
+name = "Purple Dark"
+extends = "dark"
+
+[colors]
+primary = "#bd93f9"
+"##,
+        )
+        .unwrap();
+
+        let registry = ThemeRegistry::new();
+
+        // Act
+        let theme = resolve_theme(&path, &registry).unwrap();
+        let dark = Theme::default_dark();
+
+        // Assert: overridden field changed
+        assert_eq!(theme.color_scheme().primary, Color::Rgb(189, 147, 249));
+        // Assert: non-overridden fields inherit from dark
+        assert_eq!(
+            theme.color_scheme().background,
+            dark.color_scheme().background
+        );
+        assert_eq!(theme.color_scheme().error, dark.color_scheme().error);
+        assert_eq!(theme.name, "Purple Dark");
+    }
+
+    #[test]
+    fn test_resolve_theme_no_extends_uses_dark_default() {
+        // Arrange: no extends field — should fall back to dark base
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("minimal.toml");
+        std::fs::write(&path, "[metadata]\nname = \"Minimal\"\n").unwrap();
+
+        let registry = ThemeRegistry::new();
+        let dark = Theme::default_dark();
+
+        // Act
+        let theme = resolve_theme(&path, &registry).unwrap();
+
+        // Assert: all colors match dark defaults
+        assert_eq!(
+            theme.color_scheme().background,
+            dark.color_scheme().background
+        );
+        assert_eq!(theme.color_scheme().primary, dark.color_scheme().primary);
+    }
+
+    #[test]
+    fn test_resolve_theme_unknown_parent_returns_clear_error() {
+        // Arrange
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("bad_extends.toml");
+        std::fs::write(
+            &path,
+            "[metadata]\nname = \"Bad\"\nextends = \"nonexistent-theme\"\n",
+        )
+        .unwrap();
+
+        let registry = ThemeRegistry::new();
+
+        // Act
+        let result = resolve_theme(&path, &registry);
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("nonexistent-theme"),
+            "error should mention the unknown parent: {err}"
+        );
+    }
+
+    #[test]
+    fn test_resolve_theme_all_bundled_parents_succeed() {
+        // Arrange / Act / Assert: all four canonical bundled names are valid parents
+        let dir = TempDir::new().unwrap();
+        let registry = ThemeRegistry::new();
+
+        for base in &["dark", "light", "high-contrast", "solarized"] {
+            let path = dir.path().join(format!("{base}_child.toml"));
+            std::fs::write(
+                &path,
+                format!("[metadata]\nname = \"child\"\nextends = \"{base}\"\n"),
+            )
+            .unwrap();
+            let result = resolve_theme(&path, &registry);
+            assert!(
+                result.is_ok(),
+                "extends = '{base}' should be a valid bundled parent: {:?}",
+                result.err()
+            );
+        }
+    }
+
+    #[test]
+    fn test_resolve_theme_user_theme_cannot_be_parent() {
+        // Arrange: register a user theme then try to extend it
+        let dir = TempDir::new().unwrap();
+        let themes_dir = dir.path().join("themes");
+        std::fs::create_dir(&themes_dir).unwrap();
+        std::fs::write(
+            themes_dir.join("usertheme.toml"),
+            "[metadata]\nname = \"usertheme\"\n",
+        )
+        .unwrap();
+
+        let mut registry = ThemeRegistry::new();
+        registry.load_user_themes(dir.path());
+
+        let child_path = dir.path().join("child.toml");
+        std::fs::write(
+            &child_path,
+            "[metadata]\nname = \"child\"\nextends = \"usertheme\"\n",
+        )
+        .unwrap();
+
+        // Act: trying to extend a user theme should produce an error
+        let result = resolve_theme(&child_path, &registry);
+
+        // Assert
+        assert!(result.is_err(), "user themes must not be valid parents");
     }
 }

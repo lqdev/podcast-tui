@@ -203,6 +203,16 @@ impl Theme {
         Self::new("Solarized".to_string(), colors)
     }
 
+    /// Return a reference to the theme's color scheme.
+    pub fn color_scheme(&self) -> &ColorScheme {
+        &self.colors
+    }
+
+    /// Create a `Theme` from an explicit name and [`ColorScheme`].
+    pub fn from_color_scheme(name: String, colors: ColorScheme) -> Self {
+        Self { name, colors }
+    }
+
     /// Create a theme from a name
     pub fn from_name(name: &str) -> Result<Self, UIError> {
         match name.to_lowercase().as_str() {
@@ -356,6 +366,31 @@ impl Default for Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_color_scheme_returns_colors() {
+        // Arrange
+        let theme = Theme::default_dark();
+
+        // Act
+        let scheme = theme.color_scheme();
+
+        // Assert: the returned reference matches the known dark background color
+        assert_eq!(scheme.background, Color::Rgb(16, 20, 24));
+    }
+
+    #[test]
+    fn test_from_color_scheme_creates_named_theme() {
+        // Arrange
+        let colors = Theme::default_dark().colors;
+
+        // Act
+        let theme = Theme::from_color_scheme("My Theme".to_string(), colors.clone());
+
+        // Assert
+        assert_eq!(theme.name, "My Theme");
+        assert_eq!(theme.color_scheme().background, colors.background);
+    }
 
     #[test]
     fn test_default_theme_creation() {

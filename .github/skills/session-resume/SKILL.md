@@ -43,13 +43,21 @@ If there are **discrepancies** (e.g., a PR the checkpoint says is merged but isn
 
 ### 3. Confirm the stack rank is current
 
-Use the `next-issue` skill (steps 1-4) to re-query the project board. Compare against the checkpoint's "What's next" table.
+The **Task List** view ([views/1](https://github.com/users/lqdev/projects/1/views/1)) is physically ordered by stack rank. Use `gh project item-list` (which returns items in view order) to check the current state:
 
-**If the top item changed** (someone else closed it, priorities shifted), tell the user:
+```powershell
+gh project item-list 1 --owner lqdev --format json --limit 100
+```
+
+Use the `next-issue` skill (steps 1-4) to filter and check dependencies. Compare the top actionable item against the checkpoint's "What's next" table.
+
+**If the top item changed** (someone else closed it, priorities shifted, board was reordered), tell the user:
 > "Checkpoint said #97 was next, but it's now closed. Current top of stack is #98."
 
 **If it matches**, confirm briefly:
 > "Stack rank confirmed — #97 is still next."
+
+**Important:** The physical board order is the source of truth — not a re-sort by Priority/Phase/Effort. If the board order looks wrong (e.g., a newly triaged item is at the bottom), flag it to the user.
 
 ### 4. Surface key reminders
 

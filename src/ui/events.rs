@@ -445,6 +445,20 @@ pub enum AppEvent {
         playlist_name: String,
         error: String,
     },
+
+    /// Discovery results loaded (search or trending)
+    DiscoveryResultsLoaded {
+        buffer_id: String,
+        results: Vec<crate::podcast::PodcastSearchResult>,
+        /// Title shown in the buffer (e.g., "Search: rust" or "Trending")
+        title: String,
+    },
+
+    /// Discovery request failed
+    DiscoveryLoadFailed {
+        buffer_id: String,
+        error: String,
+    },
 }
 
 /// Types of buffer refresh operations

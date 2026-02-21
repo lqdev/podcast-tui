@@ -1301,6 +1301,11 @@ impl UIApp {
                 }
                 Ok(true)
             }
+            UIAction::SubscribeFromDiscovery { feed_url } => {
+                self.show_message(format!("Subscribing to {}…", feed_url));
+                self.trigger_async_add_podcast(feed_url);
+                Ok(true)
+            }
             // Buffer-specific actions
             action => {
                 if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
@@ -2017,6 +2022,28 @@ impl UIApp {
                     playlist_name, error
                 ));
             }
+            AppEvent::DiscoveryResultsLoaded {
+                buffer_id,
+                results,
+                title: _,
+            } => {
+                if let Some(buf) = self
+                    .buffer_manager
+                    .get_discovery_buffer_mut_by_id(&buffer_id)
+                {
+                    buf.set_results(results);
+                }
+                self.update_status_bar();
+            }
+            AppEvent::DiscoveryLoadFailed { buffer_id, error } => {
+                if let Some(buf) = self
+                    .buffer_manager
+                    .get_discovery_buffer_mut_by_id(&buffer_id)
+                {
+                    buf.set_error(error.clone());
+                }
+                self.show_error(format!("Discovery failed: {}", error));
+            }
         }
         Ok(())
     }
@@ -2236,6 +2263,36 @@ impl UIApp {
                     Ok(rule) => self.trigger_async_create_smart_playlist(name, rule),
                     Err(msg) => self.show_error(msg),
                 }
+                Ok(true)
+            }
+            "discover" | "search-podcasts" => {
+                if parts.len() < 2 {
+                    self.show_error("Usage: :discover <search term>".to_string());
+                    return Ok(true);
+                }
+                let query = parts[1..].join(" ");
+                let buffer_id = format!("discovery-{}", query.replace(' ', "-").to_lowercase());
+                let display_title = format!("Search: {}", query);
+                // Reuse existing buffer if query is the same, otherwise create fresh
+                if self.buffer_manager.get_buffer(&buffer_id).is_none() {
+                    self.buffer_manager
+                        .create_discovery_buffer(buffer_id.clone(), display_title.clone());
+                }
+                let _ = self.buffer_manager.switch_to_buffer(&buffer_id);
+                self.trigger_async_discover(query, buffer_id);
+                self.update_status_bar();
+                Ok(true)
+            }
+            "trending" => {
+                let buffer_id = "discovery-trending".to_string();
+                let display_title = "Trending".to_string();
+                if self.buffer_manager.get_buffer(&buffer_id).is_none() {
+                    self.buffer_manager
+                        .create_discovery_buffer(buffer_id.clone(), display_title.clone());
+                }
+                let _ = self.buffer_manager.switch_to_buffer(&buffer_id);
+                self.trigger_async_trending(buffer_id);
+                self.update_status_bar();
                 Ok(true)
             }
             "playlist-delete" => {
@@ -2683,6 +2740,10 @@ impl UIApp {
             "playlist-refresh".to_string(),
             "playlist-sync".to_string(),
             "smart-playlist".to_string(),
+            // Discovery commands
+            "discover".to_string(),
+            "search-podcasts".to_string(),
+            "trending".to_string(),
             // Cleanup commands
             "clean-older-than".to_string(),
             "cleanup".to_string(),
@@ -3591,6 +3652,77 @@ impl UIApp {
                 detail_buffer_id,
                 episodes,
             });
+        });
+    }
+
+    /// Trigger an async PodcastIndex search and load results into the discovery buffer.
+    fn trigger_async_discover(&mut self, query: String, buffer_id: String) {
+        let app_event_tx = self.app_event_tx.clone();
+        let api_key = self.config.discovery.podcastindex_api_key.clone();
+        let api_secret = self.config.discovery.podcastindex_api_secret.clone();
+        let display_title = format!("Search: {}", query);
+
+        tokio::spawn(async move {
+            let client = match crate::podcast::PodcastIndexClient::new(api_key, api_secret) {
+                Ok(c) => c,
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::DiscoveryLoadFailed {
+                        buffer_id,
+                        error: e.to_string(),
+                    });
+                    return;
+                }
+            };
+            match client.search(&query).await {
+                Ok(results) => {
+                    let _ = app_event_tx.send(AppEvent::DiscoveryResultsLoaded {
+                        buffer_id,
+                        results,
+                        title: display_title,
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::DiscoveryLoadFailed {
+                        buffer_id,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    /// Trigger an async PodcastIndex trending fetch and load results into the discovery buffer.
+    fn trigger_async_trending(&mut self, buffer_id: String) {
+        let app_event_tx = self.app_event_tx.clone();
+        let api_key = self.config.discovery.podcastindex_api_key.clone();
+        let api_secret = self.config.discovery.podcastindex_api_secret.clone();
+
+        tokio::spawn(async move {
+            let client = match crate::podcast::PodcastIndexClient::new(api_key, api_secret) {
+                Ok(c) => c,
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::DiscoveryLoadFailed {
+                        buffer_id,
+                        error: e.to_string(),
+                    });
+                    return;
+                }
+            };
+            match client.trending().await {
+                Ok(results) => {
+                    let _ = app_event_tx.send(AppEvent::DiscoveryResultsLoaded {
+                        buffer_id,
+                        results,
+                        title: "Trending".to_string(),
+                    });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::DiscoveryLoadFailed {
+                        buffer_id,
+                        error: e.to_string(),
+                    });
+                }
+            }
         });
     }
 

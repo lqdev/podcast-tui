@@ -168,6 +168,23 @@ pub mod audio {
     pub const CROSSFADE_DURATION_MS: u64 = 1000;
 }
 
+/// Podcast discovery (PodcastIndex API) constants
+pub mod discovery {
+    use super::*;
+
+    /// Base URL for the PodcastIndex API
+    pub const PODCASTINDEX_API_BASE_URL: &str = "https://api.podcastindex.org/api/1.0";
+
+    /// Default number of trending podcasts to fetch
+    pub const DEFAULT_TRENDING_COUNT: u32 = 20;
+
+    /// HTTP request timeout for discovery API calls
+    pub const DISCOVERY_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+
+    /// Maximum number of search results to display
+    pub const MAX_SEARCH_RESULTS: usize = 50;
+}
+
 /// OPML import/export constants
 pub mod opml {
     use super::*;

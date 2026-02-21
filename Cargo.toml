@@ -60,6 +60,9 @@ dirs = "5.0"
 url = "2.0"
 shellexpand = "3.1"
 
+# Cryptographic hashing (for PodcastIndex API auth)
+sha1 = "0.10"
+
 # ID3 metadata and image processing
 id3 = "1.9"
 image = "0.24"

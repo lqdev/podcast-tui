@@ -1054,6 +1054,12 @@ impl UIApp {
                 );
                 Ok(true)
             }
+            UIAction::CycleSortField | UIAction::ToggleSortDirection => {
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    current_buffer.handle_action(action);
+                }
+                Ok(true)
+            }
             UIAction::TriggerRefreshDownloads => {
                 self.show_message("Refreshing downloads...".to_string());
                 self.trigger_async_refresh_downloads();
@@ -2183,6 +2189,41 @@ impl UIApp {
                 self.show_message("Filters cleared".to_string());
                 Ok(true)
             }
+            "sort" => {
+                if parts.len() > 1 {
+                    let field = parts[1].to_string();
+                    if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                        let result = current_buffer.handle_action(UIAction::SetSort { field });
+                        match result {
+                            UIAction::ShowMessage(msg) => self.show_message(msg),
+                            UIAction::ShowError(msg) => self.show_error(msg),
+                            _ => {}
+                        }
+                    }
+                    Ok(true)
+                } else {
+                    self.show_error(
+                        "Usage: sort <field> (date, title, duration, downloaded)".to_string(),
+                    );
+                    Ok(true)
+                }
+            }
+            "sort-asc" => {
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    current_buffer.handle_action(UIAction::SetSortDirection {
+                        direction: "asc".to_string(),
+                    });
+                }
+                Ok(true)
+            }
+            "sort-desc" => {
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    current_buffer.handle_action(UIAction::SetSortDirection {
+                        direction: "desc".to_string(),
+                    });
+                }
+                Ok(true)
+            }
             _ => {
                 self.show_error(format!("Unknown command: {}", parts[0]));
                 Ok(true)
@@ -2382,6 +2423,14 @@ impl UIApp {
             "filter-date 1m".to_string(),
             "clear-filters".to_string(),
             "widen".to_string(),
+            // Sort commands
+            "sort".to_string(),
+            "sort date".to_string(),
+            "sort title".to_string(),
+            "sort duration".to_string(),
+            "sort downloaded".to_string(),
+            "sort-asc".to_string(),
+            "sort-desc".to_string(),
         ]
     }
 

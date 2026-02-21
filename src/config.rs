@@ -299,6 +299,8 @@ pub struct GlobalKeys {
     pub mark_played: Vec<String>,
     pub mark_unplayed: Vec<String>,
     pub toggle_favorite: Vec<String>,
+    pub cycle_sort_field: Vec<String>,
+    pub toggle_sort_direction: Vec<String>,
 
     // ── Playlist ─────────────────────────────────────────────────────────────
     pub create_playlist: Vec<String>,
@@ -370,6 +372,8 @@ impl Default for GlobalKeys {
             mark_played: ["m"].map(String::from).to_vec(),
             mark_unplayed: ["u"].map(String::from).to_vec(),
             toggle_favorite: ["*"].map(String::from).to_vec(),
+            cycle_sort_field: ["o"].map(String::from).to_vec(),
+            toggle_sort_direction: ["S-O"].map(String::from).to_vec(),
 
             // Playlist
             create_playlist: ["c"].map(String::from).to_vec(),

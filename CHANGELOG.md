@@ -83,6 +83,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **`#[serde(default)]` on `Episode.favorited`** — existing episode JSON files without the field deserialize with `favorited: false` (fully backward compatible)
   - Tests added: 10 unit tests (4 model tests, 6 filter tests)
 
+**Episode Sort Options — February 2026**: Sort episodes by date, title, duration, or download status with ascending/descending toggle. Closes [#108](https://github.com/lqdev/podcast-tui/issues/108).
+  - **`o`** — cycle sort field: Date → Title → Duration → Status → Date (wraps)
+  - **`O` (Shift-O)** — toggle sort direction: ascending (↑) ↔ descending (↓)
+  - **Sort indicator in buffer title** — always visible, e.g. `Episodes: My Podcast [↓ Date]` or `Episodes: My Podcast [played | ↑ Title]` when a filter is also active
+  - **`:sort <field>`** minibuffer command — set sort field by name: `date`, `title`, `duration`, `downloaded`
+  - **`:sort-asc`** / **`:sort-desc`** — set sort direction via command
+  - **Default sort preserved** — Date Descending (newest first) matches legacy behaviour; no change to existing episode order on upgrade
+  - **Config-overridable keybindings** — `keybindings.global.cycle_sort_field` and `keybindings.global.toggle_sort_direction` in `config.json`
+  - Tests added: 11 unit tests covering all 4 sort fields (asc + desc), field cycle, direction toggle, unknown field error, sort indicator strings, and sort-persists-through-filter-change
+
 ### Fixed
 
 - Fixed help text to remove ghost keybindings that were listed but not bound (`m`/`u` mark played/unplayed in episode list, `C-n`/`C-p` navigation in What's New buffer, and inaccurate Emacs-style entries in the keybindings reference). Closes [#92](https://github.com/lqdev/podcast-tui/issues/92).

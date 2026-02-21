@@ -3,6 +3,73 @@
 // This buffer shows episodes from a podcast and allows playback,
 // download, and queue management operations.
 
+/// Sort field for the episode list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EpisodeSortField {
+    Date,
+    Title,
+    Duration,
+    DownloadStatus,
+}
+
+/// Sort direction for the episode list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortDirection {
+    Ascending,
+    Descending,
+}
+
+/// Combined sort state (field + direction).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EpisodeSort {
+    pub field: EpisodeSortField,
+    pub direction: SortDirection,
+}
+
+impl Default for EpisodeSort {
+    fn default() -> Self {
+        // Default: newest episodes first (matches legacy behaviour)
+        Self {
+            field: EpisodeSortField::Date,
+            direction: SortDirection::Descending,
+        }
+    }
+}
+
+impl EpisodeSort {
+    /// Human-readable indicator shown in the buffer title, e.g. "↓ Date".
+    pub fn indicator(&self) -> &'static str {
+        match (self.field, self.direction) {
+            (EpisodeSortField::Date, SortDirection::Ascending) => "↑ Date",
+            (EpisodeSortField::Date, SortDirection::Descending) => "↓ Date",
+            (EpisodeSortField::Title, SortDirection::Ascending) => "↑ Title",
+            (EpisodeSortField::Title, SortDirection::Descending) => "↓ Title",
+            (EpisodeSortField::Duration, SortDirection::Ascending) => "↑ Duration",
+            (EpisodeSortField::Duration, SortDirection::Descending) => "↓ Duration",
+            (EpisodeSortField::DownloadStatus, SortDirection::Ascending) => "↑ Status",
+            (EpisodeSortField::DownloadStatus, SortDirection::Descending) => "↓ Status",
+        }
+    }
+
+    /// Cycle to the next sort field.
+    pub fn cycle_field(&mut self) {
+        self.field = match self.field {
+            EpisodeSortField::Date => EpisodeSortField::Title,
+            EpisodeSortField::Title => EpisodeSortField::Duration,
+            EpisodeSortField::Duration => EpisodeSortField::DownloadStatus,
+            EpisodeSortField::DownloadStatus => EpisodeSortField::Date,
+        };
+    }
+
+    /// Toggle sort direction.
+    pub fn toggle_direction(&mut self) {
+        self.direction = match self.direction {
+            SortDirection::Ascending => SortDirection::Descending,
+            SortDirection::Descending => SortDirection::Ascending,
+        };
+    }
+}
+
 use ratatui::{
     layout::Rect,
     widgets::{Block, Borders, List, ListItem},
@@ -39,6 +106,21 @@ pub struct EpisodeListBuffer {
     /// Indices into `episodes` that match the current filter.
     /// When no filter is active, contains all indices 0..episodes.len().
     filtered_indices: Vec<usize>,
+    /// Current sort order applied to `episodes`.
+    sort: EpisodeSort,
+}
+
+/// Map `EpisodeStatus` to a numeric sort key for the DownloadStatus sort field.
+///
+/// Lower key = "more ready to listen" (Downloaded first).
+fn status_sort_key(status: &crate::podcast::EpisodeStatus) -> u8 {
+    match status {
+        crate::podcast::EpisodeStatus::Downloaded => 0,
+        crate::podcast::EpisodeStatus::Downloading => 1,
+        crate::podcast::EpisodeStatus::New => 2,
+        crate::podcast::EpisodeStatus::DownloadFailed => 3,
+        crate::podcast::EpisodeStatus::Played => 4,
+    }
 }
 
 impl EpisodeListBuffer {
@@ -57,6 +139,7 @@ impl EpisodeListBuffer {
             download_manager: None,
             filter: EpisodeFilter::default(),
             filtered_indices: Vec::new(),
+            sort: EpisodeSort::default(),
         }
     }
 
@@ -84,11 +167,9 @@ impl EpisodeListBuffer {
                     // Load episodes from storage
                     if let Some(ref sm) = self.subscription_manager {
                         match sm.storage.load_episodes(&self.podcast_id).await {
-                            Ok(mut episodes) => {
-                                // Sort episodes by published date in descending order (newest first)
-                                episodes.sort_by(|a, b| b.published.cmp(&a.published));
-
+                            Ok(episodes) => {
                                 self.episodes = episodes;
+                                self.apply_sort();
                                 if !self.episodes.is_empty() && self.selected_index.is_none() {
                                     self.selected_index = Some(0);
                                 }
@@ -110,16 +191,41 @@ impl EpisodeListBuffer {
 
     /// Set episodes for this buffer.
     ///
-    /// If a filter is active, it is re-applied so `filtered_indices` stays consistent.
+    /// Applies the current sort order, then re-applies the filter so
+    /// `filtered_indices` stays consistent.
     pub fn set_episodes(&mut self, episodes: Vec<Episode>) {
-        // Sort episodes by published date in descending order (newest first)
-        let mut sorted_episodes = episodes;
-        sorted_episodes.sort_by(|a, b| b.published.cmp(&a.published));
-
-        self.episodes = sorted_episodes;
-
+        self.episodes = episodes;
+        self.apply_sort();
         // Re-apply filters (this also resets cursor/scroll appropriately)
         self.apply_filters();
+    }
+
+    /// Sort `self.episodes` in place according to `self.sort`.
+    fn apply_sort(&mut self) {
+        match self.sort.field {
+            EpisodeSortField::Date => {
+                self.episodes.sort_by(|a, b| a.published.cmp(&b.published));
+            }
+            EpisodeSortField::Title => {
+                self.episodes
+                    .sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+            }
+            EpisodeSortField::Duration => {
+                // Episodes without a duration sort last (treat None as u32::MAX)
+                self.episodes.sort_by(|a, b| {
+                    a.duration
+                        .unwrap_or(u32::MAX)
+                        .cmp(&b.duration.unwrap_or(u32::MAX))
+                });
+            }
+            EpisodeSortField::DownloadStatus => {
+                self.episodes
+                    .sort_by(|a, b| status_sort_key(&a.status).cmp(&status_sort_key(&b.status)));
+            }
+        }
+        if self.sort.direction == SortDirection::Descending {
+            self.episodes.reverse();
+        }
     }
 
     /// Recompute `filtered_indices` based on the current filter state.
@@ -258,6 +364,8 @@ impl Buffer for EpisodeListBuffer {
             "  m         Mark as played".to_string(),
             "  u         Mark as unplayed".to_string(),
             "  *         Toggle favorite (★)".to_string(),
+            "  o         Cycle sort field (Date → Title → Duration → Status)".to_string(),
+            "  O         Toggle sort direction (↑ ↓)".to_string(),
             "  /         Search episodes".to_string(),
             "  F6        Clear all filters".to_string(),
             "  C-h       Show help".to_string(),
@@ -475,6 +583,59 @@ impl UIComponent for EpisodeListBuffer {
                     ))
                 }
             }
+            // --- Sort actions ---
+            UIAction::CycleSortField => {
+                self.sort.cycle_field();
+                self.apply_sort();
+                self.apply_filters();
+                UIAction::Render
+            }
+            UIAction::ToggleSortDirection => {
+                self.sort.toggle_direction();
+                self.apply_sort();
+                self.apply_filters();
+                UIAction::Render
+            }
+            UIAction::SetSort { field } => {
+                let new_field = match field.to_lowercase().as_str() {
+                    "date" => Some(EpisodeSortField::Date),
+                    "title" => Some(EpisodeSortField::Title),
+                    "duration" => Some(EpisodeSortField::Duration),
+                    "downloaded" | "status" | "download" => Some(EpisodeSortField::DownloadStatus),
+                    _ => None,
+                };
+                match new_field {
+                    Some(f) => {
+                        self.sort.field = f;
+                        self.apply_sort();
+                        self.apply_filters();
+                        UIAction::Render
+                    }
+                    None => UIAction::ShowError(format!(
+                        "Unknown sort field: '{}'. Use: date, title, duration, downloaded",
+                        field
+                    )),
+                }
+            }
+            UIAction::SetSortDirection { direction } => {
+                let new_dir = match direction.to_lowercase().as_str() {
+                    "asc" | "ascending" => Some(SortDirection::Ascending),
+                    "desc" | "descending" => Some(SortDirection::Descending),
+                    _ => None,
+                };
+                match new_dir {
+                    Some(d) => {
+                        self.sort.direction = d;
+                        self.apply_sort();
+                        self.apply_filters();
+                        UIAction::Render
+                    }
+                    None => UIAction::ShowError(format!(
+                        "Unknown sort direction: '{}'. Use: asc, desc",
+                        direction
+                    )),
+                }
+            }
             _ => UIAction::None,
         }
     }
@@ -553,15 +714,17 @@ impl UIComponent for EpisodeListBuffer {
             self.theme.border_style()
         };
 
-        // Build title with filter indicator
+        // Build title with filter and sort indicator
+        let sort_label = self.sort.indicator();
         let title = if self.filter.is_active() {
             format!(
-                "Episodes: {} [{}]",
+                "Episodes: {} [{} | {}]",
                 self.podcast_name,
-                self.filter.description()
+                self.filter.description(),
+                sort_label
             )
         } else {
-            format!("Episodes: {}", self.podcast_name)
+            format!("Episodes: {} [{}]", self.podcast_name, sort_label)
         };
 
         let list = List::new(items)
@@ -1151,5 +1314,287 @@ mod tests {
 
         // Assert
         assert!(matches!(action, UIAction::ShowMessage(_)));
+    }
+
+    // ── Sort tests ────────────────────────────────────────────────────────────
+
+    fn make_episodes_for_sort() -> Vec<Episode> {
+        let now = chrono::Utc::now();
+        let mut ep_old = Episode::new(
+            PodcastId::new(),
+            "Alpha Episode".to_string(),
+            "url1".to_string(),
+            now - chrono::Duration::hours(48),
+        );
+        ep_old.duration = Some(3600); // 1 hour
+        ep_old.status = crate::podcast::EpisodeStatus::Downloaded;
+
+        let mut ep_mid = Episode::new(
+            PodcastId::new(),
+            "Beta Episode".to_string(),
+            "url2".to_string(),
+            now - chrono::Duration::hours(24),
+        );
+        ep_mid.duration = Some(600); // 10 minutes
+        ep_mid.status = crate::podcast::EpisodeStatus::Played;
+
+        let mut ep_new = Episode::new(
+            PodcastId::new(),
+            "Zeta Episode".to_string(),
+            "url3".to_string(),
+            now,
+        );
+        ep_new.duration = Some(1800); // 30 minutes
+        ep_new.status = crate::podcast::EpisodeStatus::New;
+
+        vec![ep_old, ep_mid, ep_new]
+    }
+
+    #[test]
+    fn test_sort_by_date_descending_newest_first() {
+        // Arrange
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        buffer.set_episodes(make_episodes_for_sort());
+
+        // Default sort is Date Descending
+        // Act — navigate from index 0 to 2
+        let titles: Vec<&str> = buffer
+            .filtered_indices
+            .iter()
+            .map(|&i| buffer.episodes[i].title.as_str())
+            .collect();
+
+        // Assert: Zeta (newest), Beta (24h ago), Alpha (48h ago)
+        assert_eq!(
+            titles,
+            vec!["Zeta Episode", "Beta Episode", "Alpha Episode"]
+        );
+    }
+
+    #[test]
+    fn test_sort_by_date_ascending_oldest_first() {
+        // Arrange
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        buffer.set_episodes(make_episodes_for_sort());
+
+        // Act
+        buffer.handle_action(UIAction::ToggleSortDirection);
+        let titles: Vec<&str> = buffer
+            .filtered_indices
+            .iter()
+            .map(|&i| buffer.episodes[i].title.as_str())
+            .collect();
+
+        // Assert: Alpha (oldest), Beta, Zeta (newest)
+        assert_eq!(
+            titles,
+            vec!["Alpha Episode", "Beta Episode", "Zeta Episode"]
+        );
+    }
+
+    #[test]
+    fn test_sort_by_title_ascending_alphabetical() {
+        // Arrange
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        buffer.set_episodes(make_episodes_for_sort());
+
+        // Act: cycle to Title sort, ensure ascending
+        buffer.handle_action(UIAction::SetSort {
+            field: "title".to_string(),
+        });
+        buffer.handle_action(UIAction::SetSortDirection {
+            direction: "asc".to_string(),
+        });
+        let titles: Vec<&str> = buffer
+            .filtered_indices
+            .iter()
+            .map(|&i| buffer.episodes[i].title.as_str())
+            .collect();
+
+        // Assert: A < B < Z
+        assert_eq!(
+            titles,
+            vec!["Alpha Episode", "Beta Episode", "Zeta Episode"]
+        );
+    }
+
+    #[test]
+    fn test_sort_by_title_descending_reverse_alphabetical() {
+        // Arrange
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        buffer.set_episodes(make_episodes_for_sort());
+
+        // Act
+        buffer.handle_action(UIAction::SetSort {
+            field: "title".to_string(),
+        });
+        buffer.handle_action(UIAction::SetSortDirection {
+            direction: "desc".to_string(),
+        });
+        let titles: Vec<&str> = buffer
+            .filtered_indices
+            .iter()
+            .map(|&i| buffer.episodes[i].title.as_str())
+            .collect();
+
+        // Assert: Z > B > A
+        assert_eq!(
+            titles,
+            vec!["Zeta Episode", "Beta Episode", "Alpha Episode"]
+        );
+    }
+
+    #[test]
+    fn test_sort_by_duration_ascending_shortest_first() {
+        // Arrange
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        buffer.set_episodes(make_episodes_for_sort());
+
+        // Act: Beta=600s, Zeta=1800s, Alpha=3600s
+        buffer.handle_action(UIAction::SetSort {
+            field: "duration".to_string(),
+        });
+        buffer.handle_action(UIAction::SetSortDirection {
+            direction: "asc".to_string(),
+        });
+        let titles: Vec<&str> = buffer
+            .filtered_indices
+            .iter()
+            .map(|&i| buffer.episodes[i].title.as_str())
+            .collect();
+
+        // Assert: Beta(10min) < Zeta(30min) < Alpha(1h)
+        assert_eq!(
+            titles,
+            vec!["Beta Episode", "Zeta Episode", "Alpha Episode"]
+        );
+    }
+
+    #[test]
+    fn test_sort_by_download_status_ascending_downloaded_first() {
+        // Arrange
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        buffer.set_episodes(make_episodes_for_sort());
+        // Alpha=Downloaded(key=0), Zeta=New(key=2), Beta=Played(key=4)
+
+        // Act: Ascending = lower key first = Downloaded(0) at top
+        buffer.handle_action(UIAction::SetSort {
+            field: "downloaded".to_string(),
+        });
+        buffer.handle_action(UIAction::SetSortDirection {
+            direction: "asc".to_string(),
+        });
+        let titles: Vec<&str> = buffer
+            .filtered_indices
+            .iter()
+            .map(|&i| buffer.episodes[i].title.as_str())
+            .collect();
+
+        // Assert: Alpha(Downloaded) > Zeta(New) > Beta(Played)
+        assert_eq!(
+            titles,
+            vec!["Alpha Episode", "Zeta Episode", "Beta Episode"]
+        );
+    }
+
+    #[test]
+    fn test_cycle_sort_field_advances_through_all_fields() {
+        // Arrange
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+
+        // Default = Date
+        assert_eq!(buffer.sort.field, EpisodeSortField::Date);
+
+        // Act & Assert: cycle through all fields
+        buffer.handle_action(UIAction::CycleSortField);
+        assert_eq!(buffer.sort.field, EpisodeSortField::Title);
+
+        buffer.handle_action(UIAction::CycleSortField);
+        assert_eq!(buffer.sort.field, EpisodeSortField::Duration);
+
+        buffer.handle_action(UIAction::CycleSortField);
+        assert_eq!(buffer.sort.field, EpisodeSortField::DownloadStatus);
+
+        // Wraps back to Date
+        buffer.handle_action(UIAction::CycleSortField);
+        assert_eq!(buffer.sort.field, EpisodeSortField::Date);
+    }
+
+    #[test]
+    fn test_toggle_sort_direction_toggles_between_asc_and_desc() {
+        // Arrange
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+
+        // Default = Descending
+        assert_eq!(buffer.sort.direction, SortDirection::Descending);
+
+        // Act
+        buffer.handle_action(UIAction::ToggleSortDirection);
+        assert_eq!(buffer.sort.direction, SortDirection::Ascending);
+
+        buffer.handle_action(UIAction::ToggleSortDirection);
+        assert_eq!(buffer.sort.direction, SortDirection::Descending);
+    }
+
+    #[test]
+    fn test_set_sort_unknown_field_returns_error() {
+        // Arrange
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+
+        // Act
+        let action = buffer.handle_action(UIAction::SetSort {
+            field: "nonsense".to_string(),
+        });
+
+        // Assert
+        assert!(matches!(action, UIAction::ShowError(_)));
+        // Sort field unchanged
+        assert_eq!(buffer.sort.field, EpisodeSortField::Date);
+    }
+
+    #[test]
+    fn test_sort_indicator_shows_field_and_direction() {
+        // Arrange
+        let sort = EpisodeSort {
+            field: EpisodeSortField::Title,
+            direction: SortDirection::Ascending,
+        };
+        assert_eq!(sort.indicator(), "↑ Title");
+
+        let sort2 = EpisodeSort {
+            field: EpisodeSortField::Date,
+            direction: SortDirection::Descending,
+        };
+        assert_eq!(sort2.indicator(), "↓ Date");
+    }
+
+    #[test]
+    fn test_sort_persists_through_filter_change() {
+        // Arrange: set title sort, then apply a filter — sort should remain
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+        buffer.set_episodes(make_episodes_for_sort());
+
+        buffer.handle_action(UIAction::SetSort {
+            field: "title".to_string(),
+        });
+        buffer.handle_action(UIAction::SetSortDirection {
+            direction: "asc".to_string(),
+        });
+
+        // Apply search filter
+        buffer.handle_action(UIAction::ApplySearch {
+            query: "episode".to_string(),
+        });
+
+        // All 3 match "episode"; should still be in title-asc order
+        let titles: Vec<&str> = buffer
+            .filtered_indices
+            .iter()
+            .map(|&i| buffer.episodes[i].title.as_str())
+            .collect();
+        assert_eq!(
+            titles,
+            vec!["Alpha Episode", "Beta Episode", "Zeta Episode"]
+        );
     }
 }

@@ -190,6 +190,12 @@ impl KeyHandler {
             KeyChord::shift(KeyCode::Char('*')),
             UIAction::ToggleFavorite,
         );
+        // 'o' cycles sort field; 'O' (Shift+O) toggles sort direction
+        self.bind_key(KeyChord::none(KeyCode::Char('o')), UIAction::CycleSortField);
+        self.bind_key(
+            KeyChord::shift(KeyCode::Char('O')),
+            UIAction::ToggleSortDirection,
+        );
 
         // Search and filter
         self.bind_key(KeyChord::none(KeyCode::Char('/')), UIAction::Search);
@@ -332,6 +338,8 @@ impl KeyHandler {
         self.override_binding(&keys.mark_played, UIAction::MarkPlayed);
         self.override_binding(&keys.mark_unplayed, UIAction::MarkUnplayed);
         self.override_binding(&keys.toggle_favorite, UIAction::ToggleFavorite);
+        self.override_binding(&keys.cycle_sort_field, UIAction::CycleSortField);
+        self.override_binding(&keys.toggle_sort_direction, UIAction::ToggleSortDirection);
 
         // Playlist
         self.override_binding(&keys.create_playlist, UIAction::CreatePlaylist);

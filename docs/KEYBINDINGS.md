@@ -24,7 +24,7 @@ If `preset` is omitted or unrecognised, `default` is used.
 
 ## Auto-Generated Help
 
-Press `F1`, `?`, or run `:help` to open `*Help: Keybindings*`. This buffer reflects whichever preset is active — changes to your config are shown automatically.
+Press `F1`, `?`, or run `:help` to open `*Help: Keybindings*`. This buffer reflects whichever preset is active for the current session. If you change `config.json` (including the `preset`), restart Podcast TUI to update the keybindings shown here.
 
 ## Default Preset
 
@@ -39,16 +39,16 @@ Press `F1`, `?`, or run `:help` to open `*Help: Keybindings*`. This buffer refle
 | `PgUp` | Page up |
 | `PgDn` | Page down |
 | `Home`, `g` | Jump to top |
-| `End`, `Shift+G` | Jump to bottom |
-| `Ctrl+Up` | Move episode up (playlist) |
-| `Ctrl+Down` | Move episode down (playlist) |
+| `End`, `S-G` | Jump to bottom |
+| `C-Up` | Move episode up (playlist) |
+| `C-Down` | Move episode down (playlist) |
 
 ### Buffer Management
 
 | Key(s) | Action |
 |--------|--------|
-| `Tab`, `Ctrl+PgDn` | Next buffer |
-| `Shift+Tab`, `BackTab`, `Ctrl+PgUp` | Previous buffer |
+| `Tab`, `C-PgDn` | Next buffer |
+| `S-Tab`, `BackTab`, `S-BackTab`, `C-PgUp` | Previous buffer |
 | `Ctrl+k` | Close buffer |
 | `Ctrl+b` | Switch to buffer |
 | `Ctrl+l` | List buffers |
@@ -61,11 +61,11 @@ Press `F1`, `?`, or run `:help` to open `*Help: Keybindings*`. This buffer refle
 
 | Key(s) | Action |
 |--------|--------|
-| `F1`, `h`, `?`, `Shift+?` | Show help |
+| `F1`, `h`, `?`, `S-?` | Show help |
 | `F5` | Refresh |
 | `F6` | Clear filters |
 | `F3`, `/` | Search |
-| `:`, `Shift+:` | Command prompt |
+| `:`, `S-:` | Command prompt |
 | `Enter`, `Space` | Select |
 | `Esc` | Cancel |
 | `q`, `F10` | Quit |
@@ -77,18 +77,18 @@ Press `F1`, `?`, or run `:help` to open `*Help: Keybindings*`. This buffer refle
 | `a` | Add podcast |
 | `d` | Delete podcast |
 | `r` | Refresh podcast |
-| `Shift+R` | Refresh all podcasts |
-| `Ctrl+r` | Hard refresh podcast |
-| `Shift+D` | Download episode |
-| `X`, `Shift+X` | Delete downloaded episode |
-| `Ctrl+x` | Delete all downloads |
+| `S-R` | Refresh all podcasts |
+| `C-r` | Hard refresh podcast |
+| `S-D` | Download episode |
+| `X`, `S-X` | Delete downloaded episode |
+| `C-x` | Delete all downloads |
 | `m` | Mark played |
 | `u` | Mark unplayed |
-| `*` | Toggle favorite |
+| `*`, `S-*` | Toggle favorite |
 | `c` | Create playlist |
 | `p` | Add to playlist |
-| `Shift+A` | Import OPML |
-| `Shift+E` | Export OPML |
+| `S-A` | Import OPML |
+| `S-E` | Export OPML |
 | `s` | Sync to device |
 | `[` | Previous tab |
 | `]` | Next tab |
@@ -103,7 +103,7 @@ All default bindings apply except:
 | `j` | Move down | Removes `C-n` alias |
 | `k` | Move up | Removes `C-p` alias |
 | `l` | Move right | (new binding) |
-| `F1`, `?`, `Shift+?` | Show help | `h` removed from show_help |
+| `F1`, `?`, `S-?` | Show help | `h` removed from show_help |
 
 ## Emacs Preset
 
@@ -196,4 +196,4 @@ Keybindings are designed to work reliably across terminals:
 Some terminals intercept certain key combinations. If a binding is unresponsive, use the alternate or remap via `config.json`.
 
 ---
-*Last Updated: June 2025 | Version: v1.9.0 | Maintainer: [@lqdev](https://github.com/lqdev)*
+*Last Updated: February 2026 | Version: v1.9.0 | Maintainer: [@lqdev](https://github.com/lqdev)*

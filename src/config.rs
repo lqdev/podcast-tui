@@ -431,7 +431,7 @@ impl GlobalKeys {
             delete_all_downloads: ["C-x"].map(String::from).to_vec(),
             mark_played: ["m"].map(String::from).to_vec(),
             mark_unplayed: ["u"].map(String::from).to_vec(),
-            toggle_favorite: ["*"].map(String::from).to_vec(),
+            toggle_favorite: ["*", "S-*"].map(String::from).to_vec(),
             cycle_sort_field: ["o"].map(String::from).to_vec(),
             toggle_sort_direction: ["S-O"].map(String::from).to_vec(),
 
@@ -882,7 +882,7 @@ mod tests {
         assert_eq!(keys.delete_all_downloads, vec!["C-x"]);
         assert_eq!(keys.mark_played, vec!["m"]);
         assert_eq!(keys.mark_unplayed, vec!["u"]);
-        assert_eq!(keys.toggle_favorite, vec!["*"]);
+        assert_eq!(keys.toggle_favorite, vec!["*", "S-*"]);
         assert_eq!(keys.create_playlist, vec!["c"]);
         assert_eq!(keys.add_to_playlist, vec!["p"]);
         assert_eq!(keys.import_opml, vec!["S-A"]);

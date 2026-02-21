@@ -1888,8 +1888,7 @@ impl UIApp {
                 podcast_id: _,
                 tag: _,
             } => {
-                // Optimistic update already applied; trigger podcast list refresh to persist state
-                self.trigger_background_refresh(BufferRefreshType::PodcastList);
+                // Optimistic update already applied; nothing further needed
             }
             AppEvent::PodcastTagAddFailed {
                 podcast_id: _,
@@ -1903,8 +1902,7 @@ impl UIApp {
                 podcast_id: _,
                 tag: _,
             } => {
-                // Optimistic update already applied; trigger podcast list refresh
-                self.trigger_background_refresh(BufferRefreshType::PodcastList);
+                // Optimistic update already applied; nothing further needed
             }
             AppEvent::PodcastTagRemoveFailed {
                 podcast_id: _,
@@ -2306,7 +2304,7 @@ impl UIApp {
                             _ => {}
                         }
                     } else {
-                        self.show_message(format!("Filtering by tag \"{}\"", tag));
+                        self.show_error("No buffer available for filtering".to_string());
                     }
                     Ok(true)
                 } else {

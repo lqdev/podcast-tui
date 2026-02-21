@@ -377,15 +377,21 @@ impl UIComponent for PodcastListBuffer {
             UIAction::FilterByTag { tag } => {
                 let tag_normalized = tag.trim().to_lowercase();
                 if tag_normalized.is_empty() {
+                    // Empty tag clears the filter without showing a confusing message
                     self.filter.tag_filter = None;
+                    self.apply_filters();
+                    UIAction::Render
                 } else {
                     self.filter.tag_filter = Some(tag_normalized.clone());
-                }
-                self.apply_filters();
-                if self.visible_count() == 0 {
-                    UIAction::ShowMessage(format!("No podcasts with tag \"{}\"", tag_normalized))
-                } else {
-                    UIAction::Render
+                    self.apply_filters();
+                    if self.visible_count() == 0 {
+                        UIAction::ShowMessage(format!(
+                            "No podcasts with tag \"{}\"",
+                            tag_normalized
+                        ))
+                    } else {
+                        UIAction::Render
+                    }
                 }
             }
             _ => UIAction::None,

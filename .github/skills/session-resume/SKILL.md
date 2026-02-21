@@ -57,7 +57,7 @@ Use the `next-issue` skill (steps 1-4) to filter and check dependencies. Compare
 **If it matches**, confirm briefly:
 > "Stack rank confirmed — #97 is still next."
 
-**Important:** The physical board order is the source of truth — not a re-sort by Priority/Phase/Effort. If the board order looks wrong (e.g., a newly triaged item is at the bottom), flag it to the user.
+**Important:** The Stack Rank field is the source of truth — not physical board position or a re-sort by Priority/Phase/Effort. If the Stack Rank ordering looks wrong (e.g., a newly triaged item has no rank or is ranked too low), flag it to the user.
 
 ### 4. Surface key reminders
 

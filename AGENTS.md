@@ -432,6 +432,7 @@ All work is tracked on the [GitHub Projects board](https://github.com/users/lqde
 
 | Field | Values | Meaning |
 |-------|--------|---------|
+| **Stack Rank** | Number (10, 20, 30…) | Canonical work order. Lower = higher priority. Gaps of 10 for easy insertion. |
 | **Priority** | P0, P1, P2, P3 | P0 = blocker, P1 = high, P2 = medium, P3 = low |
 | **Phase** | Phase 1, Phase 2, Phase 3, Backlog | Implementation phase or backlog |
 | **Effort** | XS, S, M, L, XL | XS = trivial, S = half-day, M = full day, L = 2–3 days, XL = 3+ days |

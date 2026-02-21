@@ -319,7 +319,67 @@ pub struct GlobalKeys {
 }
 
 impl Default for GlobalKeys {
+    /// Returns an empty `GlobalKeys` — all vecs are empty, meaning "no explicit override;
+    /// use the active preset's defaults". This is the correct serde default so that a
+    /// user config only needs to specify the bindings they want to change.
     fn default() -> Self {
+        Self {
+            move_up: vec![],
+            move_down: vec![],
+            move_left: vec![],
+            move_right: vec![],
+            page_up: vec![],
+            page_down: vec![],
+            move_to_top: vec![],
+            move_to_bottom: vec![],
+            move_episode_up: vec![],
+            move_episode_down: vec![],
+            next_buffer: vec![],
+            prev_buffer: vec![],
+            close_buffer: vec![],
+            open_podcast_list: vec![],
+            open_downloads: vec![],
+            open_playlists: vec![],
+            open_sync: vec![],
+            quit: vec![],
+            show_help: vec![],
+            search: vec![],
+            clear_filters: vec![],
+            refresh: vec![],
+            prompt_command: vec![],
+            switch_to_buffer: vec![],
+            list_buffers: vec![],
+            select: vec![],
+            cancel: vec![],
+            add_podcast: vec![],
+            delete_podcast: vec![],
+            refresh_podcast: vec![],
+            refresh_all: vec![],
+            hard_refresh_podcast: vec![],
+            download_episode: vec![],
+            delete_downloaded_episode: vec![],
+            delete_all_downloads: vec![],
+            mark_played: vec![],
+            mark_unplayed: vec![],
+            toggle_favorite: vec![],
+            cycle_sort_field: vec![],
+            toggle_sort_direction: vec![],
+            create_playlist: vec![],
+            add_to_playlist: vec![],
+            import_opml: vec![],
+            export_opml: vec![],
+            sync_to_device: vec![],
+            prev_tab: vec![],
+            next_tab: vec![],
+        }
+    }
+}
+
+impl GlobalKeys {
+    /// Returns the built-in default preset: arrow keys + Vim aliases (`hjkl`) +
+    /// Emacs aliases (`C-n`/`C-p`). This matches the hard-coded bindings set up
+    /// by `KeyHandler::new()`.
+    pub fn default_preset() -> Self {
         Self {
             // Navigation — arrow keys + vim aliases + Emacs aliases
             move_up: ["Up", "k", "C-p"].map(String::from).to_vec(),
@@ -391,6 +451,31 @@ impl Default for GlobalKeys {
             next_tab: ["]"].map(String::from).to_vec(),
         }
     }
+
+    /// Returns the Vim preset: `hjkl` navigation, no Emacs `C-n`/`C-p` aliases.
+    /// `h` is used for `move_left`, so it is removed from `show_help`.
+    /// All other bindings are identical to the default preset.
+    pub fn vim_preset() -> Self {
+        Self {
+            move_up: ["Up", "k"].map(String::from).to_vec(),
+            move_down: ["Down", "j"].map(String::from).to_vec(),
+            move_left: ["Left", "h"].map(String::from).to_vec(),
+            move_right: ["Right", "l"].map(String::from).to_vec(),
+            // Remove 'h' from show_help since it is used for move_left in vim
+            show_help: ["F1", "?", "S-?"].map(String::from).to_vec(),
+            ..Self::default_preset()
+        }
+    }
+
+    /// Returns the Emacs preset: `C-n`/`C-p` navigation, no Vim `j`/`k` aliases.
+    /// All other bindings are identical to the default preset.
+    pub fn emacs_preset() -> Self {
+        Self {
+            move_up: ["Up", "C-p"].map(String::from).to_vec(),
+            move_down: ["Down", "C-n"].map(String::from).to_vec(),
+            ..Self::default_preset()
+        }
+    }
 }
 
 /// Per-context keybinding overrides for the podcast list buffer.
@@ -457,9 +542,25 @@ pub struct SyncKeys {
 /// Buffer-specific sections (`podcast_list`, `episode_list`, etc.) are optional: when
 /// `None` (the default), the global bindings apply. When present, the non-empty fields
 /// override the corresponding global bindings for that buffer context.
+///
+/// # Preset selection
+///
+/// Set `preset` to `"vim"` or `"emacs"` to choose a navigation style. The `global` section
+/// then contains only your *overrides* on top of the preset — leave a field empty (or absent)
+/// to inherit the preset's default for that action.
+///
+/// | Preset | Navigation |
+/// |--------|-----------|
+/// | `"default"` | Arrow keys + `hjkl` (Vim) + `C-n`/`C-p` (Emacs) |
+/// | `"vim"` | `hjkl` + arrow keys; no `C-n`/`C-p` |
+/// | `"emacs"` | `C-n`/`C-p` + arrow keys; no `j`/`k` |
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct KeybindingConfig {
+    /// Base keybinding preset: `"default"` (the empty string also means default), `"vim"`,
+    /// or `"emacs"`. Unrecognised values fall back to `"default"`.
+    #[serde(default)]
+    pub preset: String,
     pub global: GlobalKeys,
     #[serde(default)]
     pub podcast_list: Option<PodcastListKeys>,
@@ -559,7 +660,8 @@ mod tests {
         );
         assert!(config.downloads.sync_include_playlists);
         assert_eq!(config.playlist.today_refresh_policy, "daily");
-        assert!(config.keybindings.global.quit.contains(&"q".to_string()));
+        // global.quit is empty by default (no explicit override — the preset provides defaults)
+        assert!(config.keybindings.global.quit.is_empty());
         assert_eq!(config.ui.theme, "default");
     }
 
@@ -663,8 +765,8 @@ mod tests {
 
     #[test]
     fn test_keybinding_config_default_global_covers_all_actions() {
-        // Arrange / Act
-        let keys = GlobalKeys::default();
+        // Arrange / Act — use default_preset() which has all the bindings
+        let keys = GlobalKeys::default_preset();
 
         // Assert — spot-check every action group has at least one binding
         assert!(!keys.move_up.is_empty());
@@ -712,12 +814,17 @@ mod tests {
         assert!(!keys.sync_to_device.is_empty());
         assert!(!keys.prev_tab.is_empty());
         assert!(!keys.next_tab.is_empty());
+
+        // GlobalKeys::default() returns empty vecs (no explicit override = use preset)
+        let empty = GlobalKeys::default();
+        assert!(empty.move_up.is_empty());
+        assert!(empty.quit.is_empty());
     }
 
     #[test]
     fn test_keybinding_config_default_matches_keybindings() {
-        // Arrange / Act
-        let keys = GlobalKeys::default();
+        // Arrange / Act — default_preset() returns the full default binding set
+        let keys = GlobalKeys::default_preset();
 
         // Assert — verify defaults match the hardcoded bindings in keybindings.rs
         assert!(keys.move_up.contains(&"Up".to_string()));
@@ -818,9 +925,9 @@ mod tests {
 
         // Assert — overridden field is as specified
         assert_eq!(config.global.quit, vec!["C-q"]);
-        // Assert — unspecified fields fill in from GlobalKeys::default()
-        assert_eq!(config.global.move_up, GlobalKeys::default().move_up);
-        assert_eq!(config.global.mark_played, GlobalKeys::default().mark_played);
+        // Assert — unspecified fields are empty vecs (meaning "use preset default")
+        assert!(config.global.move_up.is_empty());
+        assert!(config.global.mark_played.is_empty());
     }
 
     #[test]
@@ -831,8 +938,8 @@ mod tests {
         // Act
         let config: KeybindingConfig = serde_json::from_str(json).expect("deserialize empty");
 
-        // Assert — global section uses full defaults
-        assert_eq!(config.global.quit, vec!["q", "F10"]);
+        // Assert — global section has empty vecs (override-only semantics)
+        assert!(config.global.quit.is_empty());
         assert!(config.podcast_list.is_none());
         assert!(config.episode_list.is_none());
     }

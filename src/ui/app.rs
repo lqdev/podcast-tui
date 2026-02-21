@@ -227,7 +227,7 @@ impl UIApp {
 
         // Create buffers with progress updates
         status_tx.send(crate::InitStatus::CreatingBuffers).ok();
-        buffer_manager.create_help_buffer();
+        buffer_manager.create_help_buffer(key_handler.generate_help_text());
         buffer_manager.create_podcast_list_buffer(subscription_manager.clone());
         buffer_manager.create_downloads_buffer(download_manager.clone(), storage.clone());
         buffer_manager.create_sync_buffer(download_manager.clone(), storage.data_dir.clone());
@@ -399,7 +399,8 @@ impl UIApp {
         }
 
         // Create initial buffers
-        self.buffer_manager.create_help_buffer();
+        self.buffer_manager
+            .create_help_buffer(self.key_handler.generate_help_text());
         self.buffer_manager
             .create_podcast_list_buffer(self.subscription_manager.clone());
         self.buffer_manager.create_downloads_buffer(
@@ -480,10 +481,15 @@ impl UIApp {
             }
             UIAction::ShowHelp => {
                 // Try to find existing help buffer by name, or create a new one
-                let mut help_id = self.buffer_manager.find_buffer_id_by_name("*Help*");
+                let mut help_id = self
+                    .buffer_manager
+                    .find_buffer_id_by_name("*Help: Keybindings*");
                 if help_id.is_none() {
-                    self.buffer_manager.create_help_buffer();
-                    help_id = self.buffer_manager.find_buffer_id_by_name("*Help*");
+                    let entries = self.key_handler.generate_help_text();
+                    self.buffer_manager.create_help_buffer(entries);
+                    help_id = self
+                        .buffer_manager
+                        .find_buffer_id_by_name("*Help: Keybindings*");
                 }
                 if let Some(id) = help_id {
                     let _ = self.buffer_manager.switch_to_buffer(&id);
@@ -1965,7 +1971,19 @@ impl UIApp {
                 Ok(false)
             }
             "help" | "h" => {
-                let _ = self.buffer_manager.switch_to_buffer(&"*help*".to_string());
+                let mut help_id = self
+                    .buffer_manager
+                    .find_buffer_id_by_name("*Help: Keybindings*");
+                if help_id.is_none() {
+                    let entries = self.key_handler.generate_help_text();
+                    self.buffer_manager.create_help_buffer(entries);
+                    help_id = self
+                        .buffer_manager
+                        .find_buffer_id_by_name("*Help: Keybindings*");
+                }
+                if let Some(id) = help_id {
+                    let _ = self.buffer_manager.switch_to_buffer(&id);
+                }
                 self.update_status_bar();
                 Ok(true)
             }
@@ -2475,7 +2493,7 @@ impl UIApp {
         // Handle common aliases
         let normalized_name = match buffer_name.as_str() {
             "podcasts" | "podcast" | "main" => "podcast-list".to_string(),
-            "help" => "*Help*".to_string(),
+            "help" => "*Help: Keybindings*".to_string(),
             "download" | "dl" => "downloads".to_string(),
             "new" | "whats-new" | "latest" => "whats-new".to_string(),
             "sync" | "device-sync" => "sync".to_string(),
@@ -4689,7 +4707,10 @@ mod tests {
         assert!(result.unwrap());
 
         // Should have switched to help buffer
-        assert_eq!(app.buffer_manager.current_buffer_name().unwrap(), "*Help*");
+        assert_eq!(
+            app.buffer_manager.current_buffer_name().unwrap(),
+            "*Help: Keybindings*"
+        );
     }
 
     #[tokio::test]
@@ -4729,7 +4750,10 @@ mod tests {
         // Open help buffer
         let result = app.handle_action(UIAction::ShowHelp).await;
         assert!(result.is_ok());
-        assert_eq!(app.buffer_manager.current_buffer_name().unwrap(), "*Help*");
+        assert_eq!(
+            app.buffer_manager.current_buffer_name().unwrap(),
+            "*Help: Keybindings*"
+        );
 
         // Close the help buffer
         let help_id = app.buffer_manager.current_buffer_id().unwrap();
@@ -4740,7 +4764,7 @@ mod tests {
             .buffer_manager
             .buffer_names()
             .iter()
-            .any(|(_, name)| name == "*Help*");
+            .any(|(_, name)| name == "*Help: Keybindings*");
         assert!(!has_help, "Help buffer should be removed");
 
         // Reopen help buffer via ShowHelp action
@@ -4749,7 +4773,10 @@ mod tests {
         assert!(result.unwrap());
 
         // Should have recreated and switched to help buffer
-        assert_eq!(app.buffer_manager.current_buffer_name().unwrap(), "*Help*");
+        assert_eq!(
+            app.buffer_manager.current_buffer_name().unwrap(),
+            "*Help: Keybindings*"
+        );
     }
 
     #[tokio::test]

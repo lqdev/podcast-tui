@@ -81,6 +81,10 @@ pub struct Episode {
     pub notes: Option<String>, // User-added notes
     pub chapters: Vec<Chapter>,
     pub transcript: Option<String>,
+    /// Whether this episode has been starred/favorited by the user.
+    /// Defaults to false for backward compatibility with existing data files.
+    #[serde(default)]
+    pub favorited: bool,
 }
 
 impl Episode {
@@ -115,7 +119,18 @@ impl Episode {
             notes: None,
             chapters: Vec::new(),
             transcript: None,
+            favorited: false,
         }
+    }
+
+    /// Check if the episode is marked as a favorite.
+    pub fn is_favorited(&self) -> bool {
+        self.favorited
+    }
+
+    /// Toggle the favorite/starred state of this episode.
+    pub fn toggle_favorite(&mut self) {
+        self.favorited = !self.favorited;
     }
 
     /// Check if the episode is downloaded
@@ -382,5 +397,99 @@ mod tests {
 
         let chapter = Chapter::new(3661, "Long Chapter".to_string());
         assert_eq!(chapter.formatted_start_time(), "1:01:01");
+    }
+
+    #[test]
+    fn test_episode_favorited_defaults_to_false() {
+        // Arrange
+        let episode = Episode::new(
+            PodcastId::new(),
+            "Test".to_string(),
+            "https://example.com/test.mp3".to_string(),
+            Utc::now(),
+        );
+
+        // Assert
+        assert!(!episode.favorited);
+        assert!(!episode.is_favorited());
+    }
+
+    #[test]
+    fn test_episode_toggle_favorite_on_off() {
+        // Arrange
+        let mut episode = Episode::new(
+            PodcastId::new(),
+            "Test".to_string(),
+            "https://example.com/test.mp3".to_string(),
+            Utc::now(),
+        );
+        assert!(!episode.is_favorited());
+
+        // Act: toggle on
+        episode.toggle_favorite();
+        // Assert
+        assert!(episode.is_favorited());
+        assert!(episode.favorited);
+
+        // Act: toggle off
+        episode.toggle_favorite();
+        // Assert
+        assert!(!episode.is_favorited());
+        assert!(!episode.favorited);
+    }
+
+    #[test]
+    fn test_episode_favorited_serde_roundtrip() {
+        // Arrange: episode with favorited = true
+        let mut episode = Episode::new(
+            PodcastId::new(),
+            "Starred Episode".to_string(),
+            "https://example.com/ep.mp3".to_string(),
+            Utc::now(),
+        );
+        episode.favorited = true;
+
+        // Act: serialize and deserialize
+        let json = serde_json::to_string(&episode).unwrap();
+        let restored: Episode = serde_json::from_str(&json).unwrap();
+
+        // Assert
+        assert!(restored.favorited);
+    }
+
+    #[test]
+    fn test_episode_favorited_defaults_on_missing_field() {
+        // Arrange: JSON without the favorited field (simulates old data files)
+        let json = r#"{
+            "id": "00000000-0000-0000-0000-000000000001",
+            "podcast_id": "00000000-0000-0000-0000-000000000002",
+            "title": "Old Episode",
+            "description": null,
+            "audio_url": "https://example.com/old.mp3",
+            "published": "2024-01-01T00:00:00Z",
+            "duration": null,
+            "file_size": null,
+            "mime_type": null,
+            "guid": null,
+            "link": null,
+            "image_url": null,
+            "explicit": false,
+            "season": null,
+            "episode_number": null,
+            "episode_type": null,
+            "status": "New",
+            "local_path": null,
+            "last_played_position": null,
+            "play_count": 0,
+            "notes": null,
+            "chapters": [],
+            "transcript": null
+        }"#;
+
+        // Act
+        let episode: Episode = serde_json::from_str(json).unwrap();
+
+        // Assert: missing field defaults to false (backward compatible)
+        assert!(!episode.favorited);
     }
 }

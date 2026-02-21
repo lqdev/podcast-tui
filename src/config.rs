@@ -298,6 +298,7 @@ pub struct GlobalKeys {
     pub delete_all_downloads: Vec<String>,
     pub mark_played: Vec<String>,
     pub mark_unplayed: Vec<String>,
+    pub toggle_favorite: Vec<String>,
 
     // ── Playlist ─────────────────────────────────────────────────────────────
     pub create_playlist: Vec<String>,
@@ -368,6 +369,7 @@ impl Default for GlobalKeys {
             delete_all_downloads: ["C-x"].map(String::from).to_vec(),
             mark_played: ["m"].map(String::from).to_vec(),
             mark_unplayed: ["u"].map(String::from).to_vec(),
+            toggle_favorite: ["*"].map(String::from).to_vec(),
 
             // Playlist
             create_playlist: ["c"].map(String::from).to_vec(),
@@ -698,6 +700,7 @@ mod tests {
         assert!(!keys.delete_all_downloads.is_empty());
         assert!(!keys.mark_played.is_empty());
         assert!(!keys.mark_unplayed.is_empty());
+        assert!(!keys.toggle_favorite.is_empty());
         assert!(!keys.create_playlist.is_empty());
         assert!(!keys.add_to_playlist.is_empty());
         assert!(!keys.import_opml.is_empty());
@@ -768,6 +771,7 @@ mod tests {
         assert_eq!(keys.delete_all_downloads, vec!["C-x"]);
         assert_eq!(keys.mark_played, vec!["m"]);
         assert_eq!(keys.mark_unplayed, vec!["u"]);
+        assert_eq!(keys.toggle_favorite, vec!["*"]);
         assert_eq!(keys.create_playlist, vec!["c"]);
         assert_eq!(keys.add_to_playlist, vec!["p"]);
         assert_eq!(keys.import_opml, vec!["S-A"]);

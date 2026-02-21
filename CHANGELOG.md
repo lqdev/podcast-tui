@@ -76,6 +76,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Help text updated with `m`/`u` in episode management sections
   - Tests added: 6 unit tests (episode_list buffer), 2 keybinding unit tests, 3 integration tests (storage roundtrip)
 
+- **Episode Favorites/Starring — February 2026**: Press `*` on any episode to toggle its favorite status; favorited episodes show a `★` prefix in all list views. Favorites persist across app restarts. Closes [#106](https://github.com/lqdev/podcast-tui/issues/106).
+  - **`★` indicator**: favorited episodes display `★ <title>` in the episode list and What's New buffers
+  - **`:filter-status favorited`** — filter episode lists to show only starred episodes; combine with other filters using AND logic
+  - **`toggle_favorite` config field** — keybinding is user-configurable via `keybindings.global.toggle_favorite` in `config.json` (default: `["*"]`)
+  - **`#[serde(default)]` on `Episode.favorited`** — existing episode JSON files without the field deserialize with `favorited: false` (fully backward compatible)
+  - Tests added: 10 unit tests (4 model tests, 6 filter tests)
+
 ### Fixed
 
 - Fixed help text to remove ghost keybindings that were listed but not bound (`m`/`u` mark played/unplayed in episode list, `C-n`/`C-p` navigation in What's New buffer, and inaccurate Emacs-style entries in the keybindings reference). Closes [#92](https://github.com/lqdev/podcast-tui/issues/92).

@@ -257,6 +257,7 @@ impl Buffer for EpisodeListBuffer {
             "  X         Delete downloaded file".to_string(),
             "  m         Mark as played".to_string(),
             "  u         Mark as unplayed".to_string(),
+            "  *         Toggle favorite (★)".to_string(),
             "  /         Search episodes".to_string(),
             "  F6        Clear all filters".to_string(),
             "  C-h       Show help".to_string(),
@@ -398,6 +399,33 @@ impl UIComponent for EpisodeListBuffer {
                     None => UIAction::ShowMessage("No episode selected".to_string()),
                 }
             }
+            UIAction::ToggleFavorite => {
+                let result = self
+                    .selected_index
+                    .and_then(|i| self.filtered_indices.get(i))
+                    .copied()
+                    .map(|actual_idx| {
+                        let ep = &self.episodes[actual_idx];
+                        (actual_idx, ep.id.clone(), ep.title.clone())
+                    });
+                match result {
+                    Some((actual_idx, episode_id, episode_title)) => {
+                        self.episodes[actual_idx].toggle_favorite();
+                        let new_favorited = self.episodes[actual_idx].favorited;
+                        // Re-apply filters in case favorites_only is active
+                        if self.filter.favorites_only {
+                            self.apply_filters();
+                        }
+                        UIAction::TriggerToggleFavorite {
+                            podcast_id: self.podcast_id.clone(),
+                            episode_id,
+                            episode_title,
+                            favorited: new_favorited,
+                        }
+                    }
+                    None => UIAction::ShowMessage("No episode selected".to_string()),
+                }
+            }
             // --- Search & Filter actions ---
             UIAction::Search => {
                 // Bubble up to UIApp which will open the minibuffer prompt
@@ -419,13 +447,17 @@ impl UIComponent for EpisodeListBuffer {
             }
             UIAction::SetStatusFilter { status } => {
                 use crate::ui::filters::parse_status_filter;
-                if let Some(sf) = parse_status_filter(&status) {
+                if status.trim().eq_ignore_ascii_case("favorited") {
+                    self.filter.favorites_only = true;
+                    self.apply_filters();
+                    UIAction::Render
+                } else if let Some(sf) = parse_status_filter(&status) {
                     self.filter.status = Some(sf);
                     self.apply_filters();
                     UIAction::Render
                 } else {
                     UIAction::ShowError(format!(
-                        "Unknown status: '{}'. Use: new, downloaded, played, downloading, failed",
+                        "Unknown status: '{}'. Use: new, downloaded, played, downloading, failed, favorited",
                         status
                     ))
                 }
@@ -502,7 +534,9 @@ impl UIComponent for EpisodeListBuffer {
                         episode.title.clone()
                     };
 
-                    let content = format!(" {} {}", status_indicator, title_with_info);
+                    let fav_indicator = if episode.favorited { "★ " } else { "" };
+                    let content =
+                        format!(" {} {}{}", status_indicator, fav_indicator, title_with_info);
 
                     if Some(display_pos) == self.selected_index {
                         ListItem::new(content).style(self.theme.selected_style())

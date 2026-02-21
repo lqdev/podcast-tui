@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 
 /// Filter criteria for episode lists.
 ///
-/// Combines text search, status, date range, and duration filters
+/// Combines text search, status, date range, duration, and favorites filters
 /// using AND logic: an episode must match all active filters.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EpisodeFilter {
@@ -25,6 +25,9 @@ pub struct EpisodeFilter {
 
     /// Filter by duration category
     pub duration: Option<DurationFilter>,
+
+    /// When true, only favorited episodes are shown.
+    pub favorites_only: bool,
 
     /// Configurable threshold: episodes shorter than this (minutes) are "short".
     /// Set from `UiConfig.filter_short_max_minutes`. Default: 15.
@@ -42,6 +45,7 @@ impl Default for EpisodeFilter {
             status: None,
             date_range: None,
             duration: None,
+            favorites_only: false,
             short_max_minutes: DEFAULT_SHORT_MAX_MINUTES,
             long_min_minutes: DEFAULT_LONG_MIN_MINUTES,
         }
@@ -69,6 +73,7 @@ impl EpisodeFilter {
             || self.status.is_some()
             || self.date_range.is_some()
             || self.duration.is_some()
+            || self.favorites_only
     }
 
     /// Check if an episode matches all active filters (AND logic).
@@ -77,6 +82,7 @@ impl EpisodeFilter {
             && self.matches_status(episode)
             && self.matches_date_range(episode)
             && self.matches_duration(episode)
+            && self.matches_favorites(episode)
     }
 
     /// Clear all filters.
@@ -85,6 +91,7 @@ impl EpisodeFilter {
         self.status = None;
         self.date_range = None;
         self.duration = None;
+        self.favorites_only = false;
     }
 
     /// Build a human-readable description of active filters for UI display.
@@ -107,6 +114,9 @@ impl EpisodeFilter {
         }
         if let Some(ref dur) = self.duration {
             parts.push(format!("duration: {}", dur));
+        }
+        if self.favorites_only {
+            parts.push("favorited".to_string());
         }
 
         parts.join(", ")
@@ -156,6 +166,10 @@ impl EpisodeFilter {
                 self.long_min_minutes,
             ),
         }
+    }
+
+    fn matches_favorites(&self, episode: &Episode) -> bool {
+        !self.favorites_only || episode.favorited
     }
 }
 
@@ -865,5 +879,82 @@ mod tests {
         // Should keep defaults when short_max > long_min
         assert_eq!(filter.short_max_minutes, DEFAULT_SHORT_MAX_MINUTES);
         assert_eq!(filter.long_min_minutes, DEFAULT_LONG_MIN_MINUTES);
+    }
+
+    // --- Favorites filter tests ---
+
+    #[test]
+    fn test_favorites_filter_inactive_matches_all() {
+        let filter = EpisodeFilter::default();
+        let mut ep = make_episode("Ep", EpisodeStatus::New, None);
+        ep.favorited = false;
+        assert!(filter.matches(&ep));
+
+        ep.favorited = true;
+        assert!(filter.matches(&ep));
+    }
+
+    #[test]
+    fn test_favorites_filter_active_returns_only_favorited() {
+        let filter = EpisodeFilter {
+            favorites_only: true,
+            ..Default::default()
+        };
+
+        let mut ep_fav = make_episode("Favorited", EpisodeStatus::New, None);
+        ep_fav.favorited = true;
+        assert!(filter.matches(&ep_fav));
+
+        let ep_not_fav = make_episode("Not Favorited", EpisodeStatus::New, None);
+        assert!(!filter.matches(&ep_not_fav));
+    }
+
+    #[test]
+    fn test_favorites_filter_is_active() {
+        let mut filter = EpisodeFilter::default();
+        assert!(!filter.is_active());
+
+        filter.favorites_only = true;
+        assert!(filter.is_active());
+    }
+
+    #[test]
+    fn test_favorites_filter_clear() {
+        let mut filter = EpisodeFilter {
+            favorites_only: true,
+            ..Default::default()
+        };
+        filter.clear();
+        assert!(!filter.favorites_only);
+        assert!(!filter.is_active());
+    }
+
+    #[test]
+    fn test_favorites_filter_description() {
+        let filter = EpisodeFilter {
+            favorites_only: true,
+            ..Default::default()
+        };
+        assert_eq!(filter.description(), "favorited");
+    }
+
+    #[test]
+    fn test_favorites_filter_combined_with_status() {
+        let filter = EpisodeFilter {
+            status: Some(EpisodeStatusFilter::Downloaded),
+            favorites_only: true,
+            ..Default::default()
+        };
+
+        let mut ep = make_episode("Ep", EpisodeStatus::Downloaded, None);
+        ep.favorited = true;
+        assert!(filter.matches(&ep)); // downloaded AND favorited
+
+        ep.favorited = false;
+        assert!(!filter.matches(&ep)); // downloaded but NOT favorited
+
+        let mut ep2 = make_episode("Ep2", EpisodeStatus::New, None);
+        ep2.favorited = true;
+        assert!(!filter.matches(&ep2)); // favorited but NOT downloaded
     }
 }

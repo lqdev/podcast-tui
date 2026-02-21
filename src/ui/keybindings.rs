@@ -184,6 +184,12 @@ impl KeyHandler {
         // Episode status
         self.bind_key(KeyChord::none(KeyCode::Char('m')), UIAction::MarkPlayed);
         self.bind_key(KeyChord::none(KeyCode::Char('u')), UIAction::MarkUnplayed);
+        // '*' toggles favorite (Shift+8 on most keyboards; bind both variants)
+        self.bind_key(KeyChord::none(KeyCode::Char('*')), UIAction::ToggleFavorite);
+        self.bind_key(
+            KeyChord::shift(KeyCode::Char('*')),
+            UIAction::ToggleFavorite,
+        );
 
         // Search and filter
         self.bind_key(KeyChord::none(KeyCode::Char('/')), UIAction::Search);
@@ -325,6 +331,7 @@ impl KeyHandler {
         self.override_binding(&keys.delete_all_downloads, UIAction::DeleteAllDownloads);
         self.override_binding(&keys.mark_played, UIAction::MarkPlayed);
         self.override_binding(&keys.mark_unplayed, UIAction::MarkUnplayed);
+        self.override_binding(&keys.toggle_favorite, UIAction::ToggleFavorite);
 
         // Playlist
         self.override_binding(&keys.create_playlist, UIAction::CreatePlaylist);

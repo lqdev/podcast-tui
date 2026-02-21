@@ -240,6 +240,21 @@ pub enum AppEvent {
         error: String,
     },
 
+    /// Episode favorite toggled successfully
+    EpisodeFavoriteToggled {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        episode_title: String,
+        favorited: bool,
+    },
+
+    /// Episode favorite toggle failed
+    EpisodeFavoriteToggleFailed {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        error: String,
+    },
+
     /// Downloads buffer refreshed
     DownloadsRefreshed,
 

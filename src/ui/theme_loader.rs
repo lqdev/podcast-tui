@@ -26,6 +26,7 @@
 //! - **Named**: `"Red"`, `"Blue"`, `"White"`, etc. (case-insensitive)
 //! - **Reset**: `"reset"` → `Color::Reset`
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use ratatui::style::Color;
@@ -300,6 +301,78 @@ fn parse_named_color(s: &str) -> Result<Color, ThemeError> {
                      color (black, red, green, yellow, blue, magenta, cyan, white, etc.)"
                 .to_string(),
         }),
+    }
+}
+
+/// Registry of all available themes: the four bundled themes plus any user-defined
+/// `.toml` files discovered in the platform config directory.
+pub struct ThemeRegistry {
+    themes: HashMap<String, Theme>,
+}
+
+impl ThemeRegistry {
+    /// Create a new registry pre-populated with the four bundled themes.
+    ///
+    /// Bundled theme keys (lowercase): `dark`, `default` (alias for dark),
+    /// `light`, `high-contrast`, `solarized`.
+    pub fn new() -> Self {
+        let mut themes = HashMap::new();
+        themes.insert("dark".to_string(), Theme::default_dark());
+        themes.insert("default".to_string(), Theme::default_dark());
+        themes.insert("light".to_string(), Theme::light());
+        themes.insert("high-contrast".to_string(), Theme::high_contrast());
+        themes.insert("solarized".to_string(), Theme::solarized());
+        Self { themes }
+    }
+
+    /// Scan `config_dir/themes/` for `.toml` files and register them.
+    ///
+    /// Each file's `[metadata] name` field (lowercased) becomes the lookup key.
+    /// Errors for individual files are collected and returned; the registry
+    /// remains fully functional and bundled themes are unaffected.
+    /// Returns an empty list if the `themes/` directory does not exist.
+    pub fn load_user_themes(&mut self, config_dir: &Path) -> Vec<ThemeError> {
+        let themes_dir = config_dir.join("themes");
+        if !themes_dir.exists() {
+            return vec![];
+        }
+
+        let entries = match std::fs::read_dir(&themes_dir) {
+            Ok(e) => e,
+            Err(e) => return vec![ThemeError::Io(e)],
+        };
+
+        let mut errors = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "toml") {
+                match load_theme_file(&path) {
+                    Ok(theme) => {
+                        self.themes.insert(theme.name.to_lowercase(), theme);
+                    }
+                    Err(e) => errors.push(e),
+                }
+            }
+        }
+        errors
+    }
+
+    /// Look up a theme by name (case-insensitive).
+    pub fn get(&self, name: &str) -> Option<&Theme> {
+        self.themes.get(&name.to_lowercase())
+    }
+
+    /// Return all registered theme names, sorted alphabetically.
+    pub fn list_names(&self) -> Vec<&str> {
+        let mut names: Vec<&str> = self.themes.keys().map(String::as_str).collect();
+        names.sort();
+        names
+    }
+}
+
+impl Default for ThemeRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -710,5 +783,139 @@ name = "Minimal"
         // Assert: all colors match dark defaults
         assert_eq!(theme.colors.background, dark.colors.background);
         assert_eq!(theme.colors.primary, dark.colors.primary);
+    }
+
+    // ── ThemeRegistry tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_registry_has_all_bundled_themes() {
+        // Arrange / Act
+        let registry = ThemeRegistry::new();
+
+        // Assert
+        assert!(registry.get("dark").is_some());
+        assert!(registry.get("default").is_some()); // alias for dark
+        assert!(registry.get("light").is_some());
+        assert!(registry.get("high-contrast").is_some());
+        assert!(registry.get("solarized").is_some());
+    }
+
+    #[test]
+    fn test_registry_get_is_case_insensitive() {
+        // Arrange
+        let registry = ThemeRegistry::new();
+
+        // Act / Assert
+        assert!(registry.get("Dark").is_some());
+        assert!(registry.get("LIGHT").is_some());
+        assert!(registry.get("High-Contrast").is_some());
+    }
+
+    #[test]
+    fn test_registry_get_unknown_returns_none() {
+        // Arrange
+        let registry = ThemeRegistry::new();
+
+        // Act / Assert
+        assert!(registry.get("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_registry_list_names_sorted() {
+        // Arrange
+        let registry = ThemeRegistry::new();
+
+        // Act
+        let names = registry.list_names();
+
+        // Assert: names are sorted alphabetically
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(names, sorted);
+    }
+
+    #[test]
+    fn test_registry_loads_user_theme() {
+        // Arrange
+        let dir = TempDir::new().unwrap();
+        let themes_dir = dir.path().join("themes");
+        std::fs::create_dir(&themes_dir).unwrap();
+        std::fs::write(
+            themes_dir.join("custom.toml"),
+            r##"
+[metadata]
+name = "Custom"
+
+[colors]
+primary = "#ff79c6"
+"##,
+        )
+        .unwrap();
+
+        let mut registry = ThemeRegistry::new();
+
+        // Act
+        let errors = registry.load_user_themes(dir.path());
+
+        // Assert
+        assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
+        let theme = registry.get("custom");
+        assert!(theme.is_some());
+        assert_eq!(theme.unwrap().colors.primary, Color::Rgb(255, 121, 198));
+    }
+
+    #[test]
+    fn test_registry_survives_invalid_theme_file() {
+        // Arrange
+        let dir = TempDir::new().unwrap();
+        let themes_dir = dir.path().join("themes");
+        std::fs::create_dir(&themes_dir).unwrap();
+        std::fs::write(themes_dir.join("bad.toml"), "not valid toml {{{").unwrap();
+
+        let mut registry = ThemeRegistry::new();
+
+        // Act
+        let errors = registry.load_user_themes(dir.path());
+
+        // Assert: error reported but bundled themes unaffected
+        assert!(!errors.is_empty(), "expected an error for invalid TOML");
+        assert!(registry.get("dark").is_some());
+        assert!(registry.get("bad").is_none());
+    }
+
+    #[test]
+    fn test_registry_no_themes_dir_returns_no_errors() {
+        // Arrange: config dir exists but has no themes/ subdir
+        let dir = TempDir::new().unwrap();
+        let mut registry = ThemeRegistry::new();
+
+        // Act
+        let errors = registry.load_user_themes(dir.path());
+
+        // Assert
+        assert!(errors.is_empty());
+        // Bundled themes still present
+        assert!(registry.get("dark").is_some());
+    }
+
+    #[test]
+    fn test_registry_user_theme_name_lowercased() {
+        // Arrange: theme file with mixed-case name
+        let dir = TempDir::new().unwrap();
+        let themes_dir = dir.path().join("themes");
+        std::fs::create_dir(&themes_dir).unwrap();
+        std::fs::write(
+            themes_dir.join("MyTheme.toml"),
+            "[metadata]\nname = \"MyTheme\"\n",
+        )
+        .unwrap();
+
+        let mut registry = ThemeRegistry::new();
+        let errors = registry.load_user_themes(dir.path());
+        assert!(errors.is_empty());
+
+        // Act / Assert: retrievable by lowercase key
+        assert!(registry.get("mytheme").is_some());
+        assert!(registry.get("MyTheme").is_some()); // case-insensitive get also works
     }
 }

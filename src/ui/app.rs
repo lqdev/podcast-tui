@@ -34,10 +34,12 @@ use crate::{
             UIEvent, UIEventHandler,
         },
         keybindings::KeyHandler,
+        theme_loader::ThemeRegistry,
         themes::Theme,
         UIAction, UIComponent, UIError, UIResult,
     },
 };
+use directories::ProjectDirs;
 use std::sync::Arc;
 
 /// The main UI application
@@ -47,6 +49,9 @@ pub struct UIApp {
 
     /// Current theme
     theme: Theme,
+
+    /// Theme registry (bundled + user themes loaded from filesystem)
+    theme_registry: ThemeRegistry,
 
     /// Subscription manager
     subscription_manager: Arc<SubscriptionManager<JsonStorage>>,
@@ -124,7 +129,18 @@ impl UIApp {
             playlists_dir,
         ));
 
-        let theme = Theme::from_name(&config.ui.theme)?;
+        let mut theme_registry = ThemeRegistry::new();
+        if let Some(project_dirs) = ProjectDirs::from("", "", "podcast-tui") {
+            for err in theme_registry.load_user_themes(project_dirs.config_dir()) {
+                eprintln!("[themes] Warning: {err}");
+            }
+        }
+        let theme = theme_registry
+            .get(&config.ui.theme)
+            .cloned()
+            .ok_or_else(|| {
+                UIError::InvalidOperation(format!("Unknown theme: {}", config.ui.theme))
+            })?;
         let buffer_manager = BufferManager::new();
         let mut status_bar = StatusBar::new();
         status_bar.set_theme(theme.clone());
@@ -155,6 +171,7 @@ impl UIApp {
         Ok(Self {
             config,
             theme,
+            theme_registry,
             subscription_manager,
             download_manager,
             playlist_manager,
@@ -197,7 +214,18 @@ impl UIApp {
             playlists_dir,
         ));
 
-        let theme = Theme::from_name(&config.ui.theme)?;
+        let mut theme_registry = ThemeRegistry::new();
+        if let Some(project_dirs) = ProjectDirs::from("", "", "podcast-tui") {
+            for err in theme_registry.load_user_themes(project_dirs.config_dir()) {
+                eprintln!("[themes] Warning: {err}");
+            }
+        }
+        let theme = theme_registry
+            .get(&config.ui.theme)
+            .cloned()
+            .ok_or_else(|| {
+                UIError::InvalidOperation(format!("Unknown theme: {}", config.ui.theme))
+            })?;
         let mut buffer_manager = BufferManager::new();
         let mut status_bar = StatusBar::new();
         status_bar.set_theme(theme.clone());
@@ -250,6 +278,7 @@ impl UIApp {
         Ok(Self {
             config,
             theme,
+            theme_registry,
             subscription_manager,
             download_manager,
             playlist_manager,
@@ -1991,9 +2020,8 @@ impl UIApp {
                 if parts.len() > 1 {
                     self.set_theme_direct(parts[1])
                 } else {
-                    self.show_error(
-                        "Usage: theme <name> (dark, light, high-contrast, solarized)".to_string(),
-                    );
+                    let names = self.theme_registry.list_names().join(", ");
+                    self.show_error(format!("Usage: theme <name> ({})", names));
                     Ok(true)
                 }
             }
@@ -2428,14 +2456,14 @@ impl UIApp {
     /// Set the application theme
     #[allow(dead_code)]
     async fn set_theme(&mut self, theme_name: &str) -> UIResult<bool> {
-        match Theme::from_name(theme_name) {
-            Ok(new_theme) => {
+        match self.theme_registry.get(theme_name).cloned() {
+            Some(new_theme) => {
                 self.theme = new_theme.clone();
                 self.status_bar.set_theme(new_theme);
                 self.show_message(format!("Theme changed to: {}", theme_name));
                 Ok(true)
             }
-            Err(_) => {
+            None => {
                 self.show_error(format!("Unknown theme: {}", theme_name));
                 Ok(true)
             }
@@ -2444,14 +2472,14 @@ impl UIApp {
 
     /// Set the application theme (direct version)
     fn set_theme_direct(&mut self, theme_name: &str) -> UIResult<bool> {
-        match Theme::from_name(theme_name) {
-            Ok(new_theme) => {
+        match self.theme_registry.get(theme_name).cloned() {
+            Some(new_theme) => {
                 self.theme = new_theme.clone();
                 self.status_bar.set_theme(new_theme);
                 self.show_message(format!("Theme changed to: {}", theme_name));
                 Ok(true)
             }
-            Err(_) => {
+            None => {
                 self.show_error(format!("Unknown theme: {}", theme_name));
                 Ok(true)
             }
@@ -2556,7 +2584,7 @@ impl UIApp {
 
     /// Get all available commands for auto-completion
     fn get_available_commands(&self) -> Vec<String> {
-        vec![
+        let mut commands = vec![
             // Core commands
             "quit".to_string(),
             "q".to_string(),
@@ -2564,10 +2592,12 @@ impl UIApp {
             "h".to_string(),
             // Theme commands
             "theme".to_string(),
-            "theme dark".to_string(),
-            "theme light".to_string(),
-            "theme high-contrast".to_string(),
-            "theme solarized".to_string(),
+        ];
+        // Add one completion entry per registered theme name
+        for name in self.theme_registry.list_names() {
+            commands.push(format!("theme {}", name));
+        }
+        commands.extend([
             // Buffer commands
             "buffer".to_string(),
             "b".to_string(),
@@ -2625,7 +2655,8 @@ impl UIApp {
             "sort downloaded".to_string(),
             "sort-asc".to_string(),
             "sort-desc".to_string(),
-        ]
+        ]);
+        commands
     }
 
     /// Update completion mode based on the current input context
@@ -2713,10 +2744,9 @@ impl UIApp {
 
         // Add contextual completions for specific command patterns
         if let Some(theme_part) = input_lower.strip_prefix("theme ") {
-            let themes = ["dark", "light", "high-contrast", "solarized"];
-            for theme in &themes {
-                if theme.starts_with(theme_part) {
-                    completions.push(format!("theme {}", theme));
+            for name in self.theme_registry.list_names() {
+                if name.starts_with(theme_part) {
+                    completions.push(format!("theme {}", name));
                 }
             }
         } else if input_lower.starts_with("buffer ") || input_lower.starts_with("b ") {

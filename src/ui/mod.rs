@@ -298,6 +298,11 @@ pub enum UIAction {
 
     // No operation
     None,
+
+    /// Subscribe to a podcast directly from a discovery result (provides feed URL)
+    SubscribeFromDiscovery {
+        feed_url: String,
+    },
 }
 
 impl UIAction {

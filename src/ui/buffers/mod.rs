@@ -4,6 +4,7 @@
 // where each buffer represents different content (podcast list, episode list, etc.)
 
 pub mod buffer_list;
+pub mod discovery;
 pub mod downloads;
 pub mod episode_detail;
 pub mod episode_list;
@@ -463,6 +464,25 @@ impl BufferManager {
     pub fn create_episode_detail_buffer(&mut self, episode: crate::podcast::Episode) {
         let episode_buffer = crate::ui::buffers::episode_detail::EpisodeDetailBuffer::new(episode);
         let _ = self.add_buffer(Box::new(episode_buffer));
+    }
+
+    /// Create a discovery buffer (search or trending) in loading state.
+    ///
+    /// `buffer_id` must be unique (e.g. `"discovery-rust"` or `"discovery-trending"`).
+    /// `display_title` is shown in the buffer header.
+    pub fn create_discovery_buffer(&mut self, buffer_id: String, display_title: String) {
+        let buf = crate::ui::buffers::discovery::DiscoveryBuffer::new(buffer_id, display_title);
+        let _ = self.add_buffer(Box::new(buf));
+    }
+
+    /// Get mutable reference to a discovery buffer by ID.
+    pub fn get_discovery_buffer_mut_by_id(
+        &mut self,
+        buffer_id: &str,
+    ) -> Option<&mut crate::ui::buffers::discovery::DiscoveryBuffer> {
+        let buffer_id = buffer_id.to_string();
+        self.get_buffer(&buffer_id)
+            .and_then(|buffer| buffer.as_any_mut().downcast_mut())
     }
 
     /// Handle a UI action, dispatching to the active buffer if appropriate

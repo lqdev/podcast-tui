@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PodcastIndex API integration for discovery** — new `:discover <query>` and `:trending` minibuffer commands search the [PodcastIndex.org](https://podcastindex.org/) API and display results in a dedicated `*Discover: …*` buffer. Press Enter on any result to subscribe immediately. API credentials are configured via `discovery.podcastindex_api_key` and `discovery.podcastindex_api_secret` in `config.json` (free credentials at <https://api.podcastindex.org/>). Auth uses a timestamp-based SHA-1 hash (per PodcastIndex spec). Closes [#110](https://github.com/lqdev/podcast-tui/issues/110).
+  - New `src/podcast/discovery.rs`: `PodcastIndexClient`, `PodcastSearchResult`, `DiscoveryError`; `search()` and `trending()` async methods
+  - New `src/ui/buffers/discovery.rs`: `DiscoveryBuffer` implementing `Buffer` trait with arrow-key navigation, description preview, and subscribe-on-enter
+  - New `DiscoveryConfig` section in `src/config.rs` (`podcastindex_api_key`, `podcastindex_api_secret`; `#[serde(default)]` for backward compatibility)
+  - New `AppEvent::DiscoveryResultsLoaded` / `DiscoveryLoadFailed` in `src/ui/events.rs`
+  - New `UIAction::SubscribeFromDiscovery { feed_url }` in `src/ui/mod.rs`
+  - `sha1 = "0.10"` added to `Cargo.toml` for auth header computation
+  - Discovery constants added to `src/constants.rs`: `PODCASTINDEX_API_BASE_URL`, `DEFAULT_TRENDING_COUNT`, `DISCOVERY_REQUEST_TIMEOUT`, `MAX_SEARCH_RESULTS`
+  - Help text updated with discovery command documentation
+  - Tests: 9 unit tests in `discovery.rs` (SHA-1 vectors, URL encoding, error handling, client construction); 12 unit tests in `discovery.rs` buffer (navigation, state transitions, subscribe action)
+
 - **Smart playlists (dynamic filter rules)** — new `:smart-playlist <name> [--filter <spec>...] [--sort <field>] [--limit <n>]` minibuffer command creates playlists that auto-populate based on filter criteria evaluated dynamically each time the playlist is opened. Filter specs: `downloaded`, `favorited`, `played`, `unplayed`, `tag:<name>`, `podcast:<id>`, `newer-than:<days>`; multiple `--filter` flags are AND-ed. Sort options: `date-desc` (default), `date-asc`, `title-asc`, `title-desc`. Smart playlists are marked with a `⚡` prefix in the playlist list and detail buffer. Reorder and remove-episode actions are blocked with a descriptive message for smart playlists. Closes [#109](https://github.com/lqdev/podcast-tui/issues/109).
   - New types: `SmartFilter`, `SmartSort`, `SmartSortField`, `SmartSortDirection`, `SmartPlaylistRule` in `src/playlist/models.rs`
   - `Playlist::is_smart()` convenience predicate; `smart_rules` field is `#[serde(default)]` for backward compatibility

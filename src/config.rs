@@ -15,6 +15,8 @@ pub struct Config {
     pub ui: UiConfig,
     #[serde(default)]
     pub playlist: PlaylistConfig,
+    #[serde(default)]
+    pub discovery: DiscoveryConfig,
 }
 
 impl Config {
@@ -228,6 +230,18 @@ impl Default for PlaylistConfig {
             download_retries: default_playlist_download_retries(),
         }
     }
+}
+
+/// Podcast discovery configuration (PodcastIndex.org API).
+///
+/// Get free API credentials at <https://api.podcastindex.org/>.
+/// Leave both fields empty to disable discovery features.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DiscoveryConfig {
+    /// PodcastIndex API key
+    pub podcastindex_api_key: String,
+    /// PodcastIndex API secret
+    pub podcastindex_api_secret: String,
 }
 
 /// Global keybindings — apply in all buffers unless overridden by a context section.

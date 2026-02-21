@@ -277,13 +277,27 @@ impl KeyHandler {
 
     /// Build a `KeyHandler` from a `KeybindingConfig`.
     ///
-    /// Starts with all default bindings, then applies any non-empty override lists from
-    /// `config`. An empty `Vec<String>` for any field means "keep the default binding".
-    /// If at least one notation in a non-empty list is valid, the defaults for that action
-    /// are replaced with the parsed chords. If all notations in a non-empty list are
-    /// invalid, the action keeps its default binding (the list is treated as a no-op).
+    /// 1. Starts with all default bindings (from `new()`).
+    /// 2. Applies the preset base (`"default"`, `"vim"`, or `"emacs"`), replacing the
+    ///    corresponding action's chords with the preset's values.
+    /// 3. Applies any non-empty override lists from `config.global` on top of the preset.
+    ///    An empty `Vec<String>` for any field means "keep the preset's binding".
+    ///    If all notations in a non-empty list are invalid, the action keeps its current binding.
     pub fn from_config(config: &KeybindingConfig) -> Self {
         let mut handler = Self::new();
+
+        // Apply preset base (replaces defaults with preset-specific values).
+        let preset_base = match config.preset.as_str() {
+            "vim" => GlobalKeys::vim_preset(),
+            "emacs" => GlobalKeys::emacs_preset(),
+            _ => GlobalKeys::default_preset(),
+        };
+        handler.apply_global_overrides(&preset_base);
+        // Conflicts during preset application are transient (intentional key reassignments);
+        // clear them so only user-override conflicts are surfaced by validate().
+        handler.conflict_log.clear();
+
+        // Apply explicit user overrides on top of the preset.
         handler.apply_global_overrides(&config.global);
         handler
     }
@@ -403,6 +417,37 @@ impl KeyHandler {
         // Tab navigation
         self.override_binding(&keys.prev_tab, UIAction::PreviousTab);
         self.override_binding(&keys.next_tab, UIAction::NextTab);
+    }
+
+    /// Generate human-readable help text from the currently active keybindings.
+    ///
+    /// Returns a list of `(key_notation, description)` pairs. Multiple keys that map
+    /// to the same action are merged into a single entry with keys joined by `" / "`.
+    /// Internal and trigger actions (those whose `description()` is empty) are excluded.
+    /// Entries are sorted alphabetically by description.
+    pub fn generate_help_text(&self) -> Vec<(String, String)> {
+        use std::collections::BTreeMap;
+
+        // Group key notations by their action description.
+        let mut by_desc: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (chord, action) in &self.bindings {
+            let desc = action.description();
+            if !desc.is_empty() {
+                by_desc
+                    .entry(desc.to_string())
+                    .or_default()
+                    .push(key_to_notation(chord));
+            }
+        }
+
+        // Sort keys within each group and produce (keys, description) pairs.
+        by_desc
+            .into_iter()
+            .map(|(desc, mut keys)| {
+                keys.sort();
+                (keys.join(" / "), desc)
+            })
+            .collect()
     }
 
     /// Clear any current key sequence (not needed for simple handler)
@@ -800,5 +845,236 @@ mod tests {
 
         // Assert — same action, same chord: no conflict
         assert!(result.conflicts.is_empty());
+    }
+
+    // ── preset tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_vim_preset_binds_hjkl_navigation() {
+        // Arrange
+        let mut config = KeybindingConfig::default();
+        config.preset = "vim".to_string();
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — hjkl all work
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char('h'))),
+            Some(&UIAction::MoveLeft)
+        );
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char('j'))),
+            Some(&UIAction::MoveDown)
+        );
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char('k'))),
+            Some(&UIAction::MoveUp)
+        );
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char('l'))),
+            Some(&UIAction::MoveRight)
+        );
+    }
+
+    #[test]
+    fn test_vim_preset_removes_emacs_cn_cp_aliases() {
+        // Arrange
+        let mut config = KeybindingConfig::default();
+        config.preset = "vim".to_string();
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — Emacs C-n / C-p are not bound in vim preset
+        assert_eq!(handler.lookup(&KeyChord::ctrl(KeyCode::Char('n'))), None);
+        assert_eq!(handler.lookup(&KeyChord::ctrl(KeyCode::Char('p'))), None);
+    }
+
+    #[test]
+    fn test_emacs_preset_binds_cn_cp_navigation() {
+        // Arrange
+        let mut config = KeybindingConfig::default();
+        config.preset = "emacs".to_string();
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — C-n and C-p still work
+        assert_eq!(
+            handler.lookup(&KeyChord::ctrl(KeyCode::Char('n'))),
+            Some(&UIAction::MoveDown)
+        );
+        assert_eq!(
+            handler.lookup(&KeyChord::ctrl(KeyCode::Char('p'))),
+            Some(&UIAction::MoveUp)
+        );
+    }
+
+    #[test]
+    fn test_emacs_preset_removes_vim_jk_aliases() {
+        // Arrange
+        let mut config = KeybindingConfig::default();
+        config.preset = "emacs".to_string();
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — Vim j / k are not bound in emacs preset
+        assert_eq!(handler.lookup(&KeyChord::none(KeyCode::Char('j'))), None);
+        assert_eq!(handler.lookup(&KeyChord::none(KeyCode::Char('k'))), None);
+    }
+
+    #[test]
+    fn test_preset_plus_user_override_applies_override_on_top() {
+        // Arrange — vim preset with custom quit key
+        let mut config = KeybindingConfig::default();
+        config.preset = "vim".to_string();
+        config.global.quit = vec!["C-q".to_string()];
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — custom quit works
+        assert_eq!(
+            handler.lookup(&KeyChord::ctrl(KeyCode::Char('q'))),
+            Some(&UIAction::Quit)
+        );
+        // Default quit keys removed by override
+        assert_eq!(handler.lookup(&KeyChord::none(KeyCode::Char('q'))), None);
+        // But vim hjkl still work (only quit was overridden)
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char('h'))),
+            Some(&UIAction::MoveLeft)
+        );
+    }
+
+    #[test]
+    fn test_unknown_preset_falls_back_to_default() {
+        // Arrange — unknown preset name
+        let mut config = KeybindingConfig::default();
+        config.preset = "dvorak".to_string();
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+        let default_handler = KeyHandler::new();
+
+        // Assert — same as default
+        for chord in [
+            KeyChord::none(KeyCode::Char('j')),
+            KeyChord::none(KeyCode::Char('k')),
+            KeyChord::ctrl(KeyCode::Char('n')),
+        ] {
+            assert_eq!(handler.lookup(&chord), default_handler.lookup(&chord));
+        }
+    }
+
+    #[test]
+    fn test_vim_preset_produces_no_conflicts() {
+        // Arrange
+        let mut config = KeybindingConfig::default();
+        config.preset = "vim".to_string();
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+        let result = handler.validate();
+
+        // Assert — vim preset must be conflict-free
+        assert!(
+            result.conflicts.is_empty(),
+            "Vim preset should have no conflicts, got: {:?}",
+            result.conflicts
+        );
+        assert!(result.unbound_actions.is_empty());
+    }
+
+    #[test]
+    fn test_emacs_preset_produces_no_conflicts() {
+        // Arrange
+        let mut config = KeybindingConfig::default();
+        config.preset = "emacs".to_string();
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+        let result = handler.validate();
+
+        // Assert — emacs preset must be conflict-free
+        assert!(
+            result.conflicts.is_empty(),
+            "Emacs preset should have no conflicts, got: {:?}",
+            result.conflicts
+        );
+        assert!(result.unbound_actions.is_empty());
+    }
+
+    // ── generate_help_text() tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_generate_help_text_includes_user_facing_actions() {
+        // Arrange
+        let handler = KeyHandler::new();
+
+        // Act
+        let help = handler.generate_help_text();
+
+        // Assert — common user-facing actions are present
+        let has_quit = help.iter().any(|(_, desc)| desc == "Quit application");
+        let has_help = help.iter().any(|(_, desc)| desc == "Show help");
+        assert!(has_quit, "Help text should include Quit application");
+        assert!(has_help, "Help text should include Show help");
+    }
+
+    #[test]
+    fn test_generate_help_text_excludes_internal_actions() {
+        // Arrange
+        let handler = KeyHandler::new();
+
+        // Act
+        let help = handler.generate_help_text();
+
+        // Assert — no empty descriptions in the output
+        for (_, desc) in &help {
+            assert!(!desc.is_empty(), "Empty description found in help text");
+        }
+    }
+
+    #[test]
+    fn test_generate_help_text_reflects_active_preset() {
+        // Arrange — vim preset: h is bound to MoveLeft
+        let mut config = KeybindingConfig::default();
+        config.preset = "vim".to_string();
+        let vim_handler = KeyHandler::from_config(&config);
+
+        // Act
+        let help = vim_handler.generate_help_text();
+
+        // Assert — "Move left" entry should contain "h"
+        let move_left_entry = help.iter().find(|(_, desc)| desc == "Move left");
+        assert!(move_left_entry.is_some(), "Move left not in help text");
+        assert!(
+            move_left_entry.unwrap().0.contains('h'),
+            "Vim preset: h should appear in Move left keys, got: {:?}",
+            move_left_entry
+        );
+    }
+
+    #[test]
+    fn test_generate_help_text_matches_bindings() {
+        // Arrange — custom quit keybinding
+        let mut config = KeybindingConfig::default();
+        config.global.quit = vec!["C-q".to_string()];
+        let handler = KeyHandler::from_config(&config);
+
+        // Act
+        let help = handler.generate_help_text();
+
+        // Assert — quit entry shows the custom binding
+        let quit_entry = help.iter().find(|(_, desc)| desc == "Quit application");
+        assert!(quit_entry.is_some());
+        assert!(
+            quit_entry.unwrap().0.contains("C-q"),
+            "Custom C-q should appear in quit entry, got: {:?}",
+            quit_entry
+        );
     }
 }

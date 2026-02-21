@@ -272,9 +272,11 @@ impl BufferManager {
         let _ = self.switch_to_buffer(&buffer_name);
     }
 
-    /// Create help buffer
-    pub fn create_help_buffer(&mut self) {
-        let help_buffer = Box::new(crate::ui::buffers::help::HelpBuffer::new());
+    /// Create help buffer with auto-generated keybinding content
+    pub fn create_help_buffer(&mut self, keybinding_entries: Vec<(String, String)>) {
+        let help_buffer = Box::new(crate::ui::buffers::help::HelpBuffer::keybindings_help(
+            keybinding_entries,
+        ));
         let _ = self.add_buffer(help_buffer);
     }
 

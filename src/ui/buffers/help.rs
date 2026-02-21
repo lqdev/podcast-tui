@@ -43,12 +43,23 @@ impl HelpBuffer {
         }
     }
 
-    /// Create a help buffer for keybindings
-    pub fn keybindings_help() -> Self {
-        Self::with_content(
-            "*Help: Keybindings*".to_string(),
-            Self::keybindings_content(),
-        )
+    /// Create a help buffer for keybindings, built from auto-generated entries.
+    ///
+    /// `entries` comes from `KeyHandler::generate_help_text()` and reflects the
+    /// *actual active bindings*, so the displayed help can never go stale.
+    pub fn keybindings_help(entries: Vec<(String, String)>) -> Self {
+        let mut content = vec![
+            "KEYBINDING REFERENCE".to_string(),
+            "===================".to_string(),
+            "(Generated from your active keybinding configuration)".to_string(),
+            "".to_string(),
+        ];
+
+        for (keys, desc) in entries {
+            content.push(format!("  {:<24} {}", keys, desc));
+        }
+
+        Self::with_content("*Help: Keybindings*".to_string(), content)
     }
 
     /// Get default help content
@@ -241,75 +252,6 @@ impl HelpBuffer {
         ]
     }
 
-    /// Get keybindings-specific help content
-    fn keybindings_content() -> Vec<String> {
-        vec![
-            "KEYBINDING REFERENCE".to_string(),
-            "===================".to_string(),
-            "".to_string(),
-            "NAVIGATION:".to_string(),
-            "  ↑ / k          Move up".to_string(),
-            "  ↓ / j          Move down".to_string(),
-            "  ← →            Move left/right".to_string(),
-            "  PageUp/Down    Page navigation".to_string(),
-            "  Home / g       Move to top".to_string(),
-            "  End / G        Move to bottom".to_string(),
-            "  C-n / C-p      Move down / up (Emacs-style)".to_string(),
-            "  Ctrl+↑/↓       Reorder episodes in playlist".to_string(),
-            "".to_string(),
-            "BUFFER SWITCHING:".to_string(),
-            "  Tab / S-Tab   Next / previous buffer".to_string(),
-            "  C-b           Switch to buffer (by name)".to_string(),
-            "  C-l           List all buffers".to_string(),
-            "  C-k           Close current buffer".to_string(),
-            "  F2            Podcast list".to_string(),
-            "  F4            Downloads buffer".to_string(),
-            "  F7            Playlists buffer".to_string(),
-            "  F8            Sync buffer".to_string(),
-            "".to_string(),
-            "APPLICATION:".to_string(),
-            "  q / F10       Quit".to_string(),
-            "  Esc           Cancel / close minibuffer".to_string(),
-            "  h / ? / F1    Show help".to_string(),
-            "  :             Enter command".to_string(),
-            "  F5            Refresh current buffer".to_string(),
-            "".to_string(),
-            "PODCAST MANAGEMENT:".to_string(),
-            "  a             Add podcast".to_string(),
-            "  d             Delete podcast / playlist".to_string(),
-            "  r             Refresh selected podcast / playlist / downloads".to_string(),
-            "  R (Shift-R)   Refresh all podcasts".to_string(),
-            "  C-r           Hard refresh podcast (re-parse all episodes)".to_string(),
-            "  A (Shift-A)   Import OPML".to_string(),
-            "  E (Shift-E)   Export OPML".to_string(),
-            "".to_string(),
-            "PODCAST TAGS:".to_string(),
-            "  :tag <name>        Add a tag to the selected podcast".to_string(),
-            "  :untag <name>      Remove a tag from the selected podcast".to_string(),
-            "  :tags              List all tags used across podcasts".to_string(),
-            "  :filter-tag <tag>  Show only podcasts with a given tag".to_string(),
-            "".to_string(),
-            "EPISODE MANAGEMENT:".to_string(),
-            "  Enter / Space Select / activate item".to_string(),
-            "  D (Shift-D)   Download episode".to_string(),
-            "  m             Mark episode as played".to_string(),
-            "  u             Mark episode as unplayed".to_string(),
-            "  *             Toggle episode favorite (★)".to_string(),
-            "  o             Cycle sort field (Date → Title → Duration → Status)".to_string(),
-            "  O (Shift-O)   Toggle sort direction (↑ ↓)".to_string(),
-            "  X             Delete downloaded episode file".to_string(),
-            "  p             Add episode to playlist".to_string(),
-            "  /, F3         Search".to_string(),
-            "  F6            Clear filters".to_string(),
-            "".to_string(),
-            "SYNC:".to_string(),
-            "  s             Sync to device".to_string(),
-            "  D (Shift-D)   Dry-run preview (sync buffer only)".to_string(),
-            "  p             Open directory picker (sync buffer only)".to_string(),
-            "  [ / ]         Cycle dry-run preview tabs".to_string(),
-        ]
-    }
-
     /// Scroll the help content
     fn scroll(&mut self, delta: isize) {
         let new_offset = (self.scroll_offset as isize + delta).max(0) as usize;
@@ -493,7 +435,11 @@ mod tests {
 
     #[test]
     fn test_keybindings_help() {
-        let buffer = HelpBuffer::keybindings_help();
+        let entries = vec![
+            ("q".to_string(), "Quit application".to_string()),
+            ("F1".to_string(), "Show help".to_string()),
+        ];
+        let buffer = HelpBuffer::keybindings_help(entries);
         assert_eq!(buffer.name(), "*Help: Keybindings*");
         assert!(!buffer.content.is_empty());
     }

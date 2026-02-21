@@ -300,6 +300,78 @@ pub enum UIAction {
     None,
 }
 
+impl UIAction {
+    /// Returns a short human-readable description of this action for help text generation.
+    /// Returns an empty string for internal/trigger actions that are not user-bindable.
+    pub fn description(&self) -> &str {
+        match self {
+            // Navigation
+            UIAction::MoveUp => "Move up",
+            UIAction::MoveDown => "Move down",
+            UIAction::MoveLeft => "Move left",
+            UIAction::MoveRight => "Move right",
+            UIAction::PageUp => "Page up",
+            UIAction::PageDown => "Page down",
+            UIAction::MoveToTop => "Move to top",
+            UIAction::MoveToBottom => "Move to bottom",
+            UIAction::MoveEpisodeUp => "Reorder episode up",
+            UIAction::MoveEpisodeDown => "Reorder episode down",
+            // Buffer management
+            UIAction::NextBuffer => "Next buffer",
+            UIAction::PreviousBuffer => "Previous buffer",
+            UIAction::CloseCurrentBuffer => "Close current buffer",
+            UIAction::SwitchBuffer(name) => match name.as_str() {
+                "podcast-list" => "Switch to podcast list",
+                "downloads" => "Switch to downloads",
+                "sync" => "Switch to sync",
+                _ => "Switch to buffer",
+            },
+            // Application
+            UIAction::Quit => "Quit application",
+            UIAction::ShowHelp => "Show help",
+            UIAction::Search => "Search",
+            UIAction::ClearFilters => "Clear filters",
+            UIAction::Refresh => "Refresh current buffer",
+            UIAction::PromptCommand => "Enter command",
+            UIAction::SelectItem => "Select / activate item",
+            UIAction::HideMinibuffer => "Cancel / close minibuffer",
+            UIAction::ExecuteCommand(cmd) => match cmd.as_str() {
+                "switch-to-buffer" => "Switch to buffer by name",
+                "list-buffers" => "List all buffers",
+                _ => "",
+            },
+            // Podcast management
+            UIAction::AddPodcast => "Add podcast subscription",
+            UIAction::DeletePodcast => "Delete podcast / playlist",
+            UIAction::DownloadEpisode => "Download selected episode",
+            UIAction::DeleteDownloadedEpisode => "Delete downloaded episode file",
+            UIAction::DeleteAllDownloads => "Delete all downloaded episodes",
+            UIAction::RefreshPodcast => "Refresh selected podcast",
+            UIAction::RefreshAll => "Refresh all podcasts",
+            UIAction::HardRefreshPodcast => "Hard refresh podcast (re-parse episodes)",
+            // Episode status
+            UIAction::MarkPlayed => "Mark episode as played",
+            UIAction::MarkUnplayed => "Mark episode as unplayed",
+            UIAction::ToggleFavorite => "Toggle episode favorite (★)",
+            UIAction::CycleSortField => "Cycle sort field",
+            UIAction::ToggleSortDirection => "Toggle sort direction",
+            // Playlists
+            UIAction::OpenPlaylistList => "Switch to playlists",
+            UIAction::CreatePlaylist => "Create playlist",
+            UIAction::AddToPlaylist => "Add episode to playlist",
+            // OPML
+            UIAction::ImportOpml => "Import OPML",
+            UIAction::ExportOpml => "Export OPML",
+            // Sync / tabs
+            UIAction::SyncToDevice => "Sync to device",
+            UIAction::PreviousTab => "Previous tab",
+            UIAction::NextTab => "Next tab",
+            // Internal / trigger actions — not shown in help
+            _ => "",
+        }
+    }
+}
+
 /// Trait for UI components that can handle events and render themselves
 pub trait UIComponent {
     /// Handle a UI action and return the resulting action

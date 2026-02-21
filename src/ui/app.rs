@@ -131,6 +131,24 @@ impl UIApp {
 
         let minibuffer = Minibuffer::new();
         let key_handler = KeyHandler::from_config(&config.keybindings);
+
+        // Validate keybindings: warn on conflicts, error on unbound critical actions.
+        let validation = key_handler.validate();
+        for warning in &validation.warnings {
+            eprintln!("[keybindings] {warning}");
+        }
+        if let Some(unbound) = validation
+            .unbound_actions
+            .iter()
+            .find(|u| u.action == UIAction::Quit)
+        {
+            return Err(UIError::Keybinding(format!(
+                "Critical action unbound: {:?} has no key assigned (default was '{}'). \
+                 Add a 'quit' entry to your keybindings config.",
+                unbound.action, unbound.default_key
+            )));
+        }
+
         let event_handler =
             UIEventHandler::new(Duration::from_millis(ui_constants::UI_TICK_RATE_MS));
 
@@ -186,6 +204,24 @@ impl UIApp {
 
         let minibuffer = Minibuffer::new();
         let key_handler = KeyHandler::from_config(&config.keybindings);
+
+        // Validate keybindings: warn on conflicts, error on unbound critical actions.
+        let validation = key_handler.validate();
+        for warning in &validation.warnings {
+            eprintln!("[keybindings] {warning}");
+        }
+        if let Some(unbound) = validation
+            .unbound_actions
+            .iter()
+            .find(|u| u.action == UIAction::Quit)
+        {
+            return Err(UIError::Keybinding(format!(
+                "Critical action unbound: {:?} has no key assigned (default was '{}'). \
+                 Add a 'quit' entry to your keybindings config.",
+                unbound.action, unbound.default_key
+            )));
+        }
+
         let event_handler =
             UIEventHandler::new(Duration::from_millis(ui_constants::UI_TICK_RATE_MS));
 

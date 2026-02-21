@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Audio module scaffold (Phase 1)** — new `src/audio/mod.rs` with `PlaybackBackend` trait, `AudioError`, `AudioCommand` enum, and `PlaybackStatus` struct; foundational audio infrastructure for future playback integration. Closes [#133](https://github.com/lqdev/podcast-tui/issues/133), part of [#132](https://github.com/lqdev/podcast-tui/issues/132).
+- **Keybinding conflict detection** — `KeyHandler::validate()` detects duplicate chord assignments and unbound critical actions (Quit, ShowHelp, HideMinibuffer). Conflicts are logged as warnings to stderr at startup; a missing Quit binding aborts startup with a clear error. Closes [#99](https://github.com/lqdev/podcast-tui/issues/99).
 
 **TOML Theme File Format and Parser — February 2026**
 - **User-defined themes via `.toml` files** — new `src/ui/theme_loader` module parses TOML theme files into the existing `ColorScheme`/`Theme` structs; groundwork for loading themes from the filesystem in [#103](https://github.com/lqdev/podcast-tui/issues/103)

@@ -177,7 +177,7 @@ impl HelpBuffer {
             "    --filter <spec>  Filter episodes (can repeat for AND logic)".to_string(),
             "      downloaded  favorited  played  unplayed".to_string(),
             "      tag:<name>  podcast:<id>  newer-than:<days>".to_string(),
-            "    --sort <field>  date-desc | date-asc | title-asc | title-desc".to_string(),
+            "    --sort <field>  date-desc | date-asc | title-asc | title-desc | duration-asc | duration-desc".to_string(),
             "    --limit <n>    Maximum number of episodes".to_string(),
             "  ⚡ prefix marks smart playlists in the list".to_string(),
             "".to_string(),

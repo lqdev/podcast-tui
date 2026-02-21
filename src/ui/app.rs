@@ -2224,8 +2224,15 @@ impl UIApp {
                     );
                     return Ok(true);
                 }
-                let name = parts[1].to_string();
-                match crate::ui::app::parse_smart_playlist_args(&parts[2..]) {
+                // Allow multi-word names: consume tokens until the first --flag
+                let flags_start_idx = parts[2..]
+                    .iter()
+                    .position(|p| p.starts_with("--"))
+                    .map(|i| i + 2)
+                    .unwrap_or(parts.len());
+                let name = parts[1..flags_start_idx].join(" ");
+                let args = &parts[flags_start_idx..];
+                match crate::ui::app::parse_smart_playlist_args(args) {
                     Ok(rule) => self.trigger_async_create_smart_playlist(name, rule),
                     Err(msg) => self.show_error(msg),
                 }
@@ -3549,11 +3556,19 @@ impl UIApp {
             let mut all_episodes = Vec::new();
             let mut all_podcasts = Vec::new();
             for pid in &podcast_ids {
-                if let Ok(podcast) = storage.load_podcast(pid).await {
-                    all_podcasts.push(podcast);
+                match storage.load_podcast(pid).await {
+                    Ok(podcast) => all_podcasts.push(podcast),
+                    Err(e) => eprintln!(
+                        "Warning: failed to load podcast '{}' for smart playlist evaluation: {}",
+                        pid, e
+                    ),
                 }
-                if let Ok(episodes) = storage.load_episodes(pid).await {
-                    all_episodes.extend(episodes);
+                match storage.load_episodes(pid).await {
+                    Ok(episodes) => all_episodes.extend(episodes),
+                    Err(e) => eprintln!(
+                        "Warning: failed to load episodes for podcast '{}' in smart playlist evaluation: {}",
+                        pid, e
+                    ),
                 }
             }
 
@@ -4871,8 +4886,16 @@ fn parse_sort_spec(spec: &str) -> Result<crate::playlist::models::SmartSort, Str
             field: SmartSortField::Title,
             direction: SmartSortDirection::Descending,
         }),
+        "duration-asc" => Ok(SmartSort {
+            field: SmartSortField::Duration,
+            direction: SmartSortDirection::Ascending,
+        }),
+        "duration-desc" => Ok(SmartSort {
+            field: SmartSortField::Duration,
+            direction: SmartSortDirection::Descending,
+        }),
         other => Err(format!(
-            "Unknown sort '{}'. Valid: date-desc, date-asc, title-asc, title-desc",
+            "Unknown sort '{}'. Valid: date-desc, date-asc, title-asc, title-desc, duration-asc, duration-desc",
             other
         )),
     }
@@ -5686,6 +5709,156 @@ mod tests {
                 .switch_to_buffer(&"sync".to_string())
                 .is_ok(),
             "Should be able to switch to sync buffer after initialize()"
+        );
+    }
+
+    // ── parse_smart_playlist_args / parse_filter_spec / parse_sort_spec ────
+
+    #[test]
+    fn test_parse_smart_playlist_args_empty_defaults_to_downloaded() {
+        // Arrange
+        let args: &[&str] = &[];
+        // Act
+        let rule = parse_smart_playlist_args(args).unwrap();
+        // Assert
+        use crate::playlist::models::SmartFilter;
+        assert_eq!(rule.filter, SmartFilter::Downloaded);
+        assert!(rule.sort.is_none());
+        assert!(rule.limit.is_none());
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_single_filter_used_directly() {
+        // Arrange / Act
+        let rule = parse_smart_playlist_args(&["--filter", "favorited"]).unwrap();
+        // Assert
+        use crate::playlist::models::SmartFilter;
+        assert_eq!(rule.filter, SmartFilter::Favorited);
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_multiple_filters_become_and() {
+        // Arrange / Act
+        let rule = parse_smart_playlist_args(&["--filter", "downloaded", "--filter", "favorited"])
+            .unwrap();
+        // Assert
+        use crate::playlist::models::SmartFilter;
+        assert_eq!(
+            rule.filter,
+            SmartFilter::And(vec![SmartFilter::Downloaded, SmartFilter::Favorited])
+        );
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_sort_date_desc() {
+        use crate::playlist::models::{SmartSort, SmartSortDirection, SmartSortField};
+        let rule = parse_smart_playlist_args(&["--sort", "date-desc"]).unwrap();
+        assert_eq!(
+            rule.sort,
+            Some(SmartSort {
+                field: SmartSortField::Date,
+                direction: SmartSortDirection::Descending,
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_sort_duration_asc() {
+        use crate::playlist::models::{SmartSort, SmartSortDirection, SmartSortField};
+        let rule = parse_smart_playlist_args(&["--sort", "duration-asc"]).unwrap();
+        assert_eq!(
+            rule.sort,
+            Some(SmartSort {
+                field: SmartSortField::Duration,
+                direction: SmartSortDirection::Ascending,
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_limit_valid() {
+        // Arrange / Act
+        let rule = parse_smart_playlist_args(&["--limit", "25"]).unwrap();
+        // Assert
+        assert_eq!(rule.limit, Some(25));
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_limit_invalid_returns_error() {
+        // Arrange / Act
+        let err = parse_smart_playlist_args(&["--limit", "abc"]).unwrap_err();
+        // Assert
+        assert!(
+            err.contains("number"),
+            "Error should mention 'number': {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_unknown_flag_returns_error() {
+        let err = parse_smart_playlist_args(&["--unknown", "foo"]).unwrap_err();
+        assert!(
+            err.contains("Unknown argument"),
+            "Error should say 'Unknown argument': {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_filter_tag() {
+        use crate::playlist::models::SmartFilter;
+        let rule = parse_smart_playlist_args(&["--filter", "tag:rust"]).unwrap();
+        assert_eq!(rule.filter, SmartFilter::Tag("rust".to_string()));
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_filter_newer_than_valid() {
+        use crate::playlist::models::SmartFilter;
+        let rule = parse_smart_playlist_args(&["--filter", "newer-than:7"]).unwrap();
+        assert_eq!(rule.filter, SmartFilter::NewerThan(7));
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_filter_newer_than_invalid() {
+        let err = parse_smart_playlist_args(&["--filter", "newer-than:notanumber"]).unwrap_err();
+        assert!(
+            err.contains("number of days"),
+            "Error should mention 'number of days': {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_filter_unknown_returns_error() {
+        let err = parse_smart_playlist_args(&["--filter", "bogus"]).unwrap_err();
+        assert!(
+            err.contains("Unknown filter"),
+            "Error should say 'Unknown filter': {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_all_sort_variants() {
+        for spec in &[
+            "date-asc",
+            "date-desc",
+            "title-asc",
+            "title-desc",
+            "duration-asc",
+            "duration-desc",
+        ] {
+            let result = parse_smart_playlist_args(&["--sort", spec]);
+            assert!(
+                result.is_ok(),
+                "Sort spec '{spec}' should parse successfully"
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_sort_unknown_returns_error() {
+        let err = parse_smart_playlist_args(&["--sort", "random"]).unwrap_err();
+        assert!(
+            err.contains("Unknown sort"),
+            "Error should say 'Unknown sort': {err}"
         );
     }
 }

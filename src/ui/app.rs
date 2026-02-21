@@ -1006,6 +1006,54 @@ impl UIApp {
                 self.trigger_async_mark_unplayed(podcast_id, episode_id, episode_title);
                 Ok(true)
             }
+            UIAction::ToggleFavorite => {
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    let result_action = current_buffer.handle_action(action);
+                    match result_action {
+                        UIAction::TriggerToggleFavorite {
+                            podcast_id,
+                            episode_id,
+                            ref episode_title,
+                            favorited,
+                        } => {
+                            let msg = if favorited {
+                                format!("★ Favorited: {}", episode_title)
+                            } else {
+                                format!("Unfavorited: {}", episode_title)
+                            };
+                            self.show_message(msg);
+                            self.trigger_async_toggle_favorite(
+                                podcast_id,
+                                episode_id,
+                                episode_title.clone(),
+                                favorited,
+                            );
+                        }
+                        UIAction::ShowMessage(msg) => {
+                            self.show_message(msg);
+                        }
+                        _ => {}
+                    }
+                    Ok(true)
+                } else {
+                    self.show_message("No active buffer".to_string());
+                    Ok(true)
+                }
+            }
+            UIAction::TriggerToggleFavorite {
+                podcast_id,
+                episode_id,
+                episode_title,
+                favorited,
+            } => {
+                self.trigger_async_toggle_favorite(
+                    podcast_id,
+                    episode_id,
+                    episode_title,
+                    favorited,
+                );
+                Ok(true)
+            }
             UIAction::TriggerRefreshDownloads => {
                 self.show_message("Refreshing downloads...".to_string());
                 self.trigger_async_refresh_downloads();
@@ -1533,6 +1581,24 @@ impl UIApp {
                 self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
                 self.trigger_background_refresh(BufferRefreshType::WhatsNew);
                 self.show_error(format!("Could not mark episode as unplayed: {}", error));
+            }
+            AppEvent::EpisodeFavoriteToggled {
+                podcast_id: _,
+                episode_id: _,
+                episode_title: _,
+                favorited: _,
+            } => {
+                // Optimistic update already applied; nothing further needed
+            }
+            AppEvent::EpisodeFavoriteToggleFailed {
+                podcast_id,
+                episode_id: _,
+                error,
+            } => {
+                // Refresh buffers to revert optimistic UI update
+                self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers { podcast_id });
+                self.trigger_background_refresh(BufferRefreshType::WhatsNew);
+                self.show_error(format!("Could not save favorite: {}", error));
             }
             AppEvent::DownloadsRefreshed => {
                 // Trigger background refresh of downloads buffer
@@ -2084,7 +2150,7 @@ impl UIApp {
                     Ok(true)
                 } else {
                     self.show_error(
-                        "Usage: filter-status <status> (new, downloaded, played, downloading, failed)"
+                        "Usage: filter-status <status> (new, downloaded, played, downloading, failed, favorited)"
                             .to_string(),
                     );
                     Ok(true)
@@ -2307,6 +2373,7 @@ impl UIApp {
             "filter-status played".to_string(),
             "filter-status downloading".to_string(),
             "filter-status failed".to_string(),
+            "filter-status favorited".to_string(),
             "filter-date".to_string(),
             "filter-date today".to_string(),
             "filter-date 1d".to_string(),
@@ -2904,6 +2971,52 @@ impl UIApp {
                 }
                 Err(e) => {
                     let _ = app_event_tx.send(AppEvent::EpisodeMarkUnplayedFailed {
+                        podcast_id: podcast_id_clone,
+                        episode_id: episode_id_clone,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    /// Trigger async persist of the favorited state for an episode
+    fn trigger_async_toggle_favorite(
+        &mut self,
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        episode_title: String,
+        favorited: bool,
+    ) {
+        let storage = self._storage.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let podcast_id_clone = podcast_id.clone();
+        let episode_id_clone = episode_id.clone();
+
+        tokio::spawn(async move {
+            match storage.load_episode(&podcast_id, &episode_id).await {
+                Ok(mut episode) => {
+                    episode.favorited = favorited;
+                    match storage.save_episode(&podcast_id, &episode).await {
+                        Ok(()) => {
+                            let _ = app_event_tx.send(AppEvent::EpisodeFavoriteToggled {
+                                podcast_id: podcast_id_clone,
+                                episode_id: episode_id_clone,
+                                episode_title,
+                                favorited,
+                            });
+                        }
+                        Err(e) => {
+                            let _ = app_event_tx.send(AppEvent::EpisodeFavoriteToggleFailed {
+                                podcast_id: podcast_id_clone,
+                                episode_id: episode_id_clone,
+                                error: e.to_string(),
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::EpisodeFavoriteToggleFailed {
                         podcast_id: podcast_id_clone,
                         episode_id: episode_id_clone,
                         error: e.to_string(),

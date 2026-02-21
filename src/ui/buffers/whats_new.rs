@@ -392,6 +392,37 @@ impl UIComponent for WhatsNewBuffer {
                     None => UIAction::ShowMessage("No episode selected".to_string()),
                 }
             }
+            UIAction::ToggleFavorite => {
+                let result = self
+                    .selected_index
+                    .and_then(|i| self.filtered_indices.get(i))
+                    .copied()
+                    .map(|actual_idx| {
+                        let agg = &self.episodes[actual_idx];
+                        (
+                            actual_idx,
+                            agg.podcast_id.clone(),
+                            agg.episode.id.clone(),
+                            agg.episode.title.clone(),
+                        )
+                    });
+                match result {
+                    Some((actual_idx, podcast_id, episode_id, episode_title)) => {
+                        self.episodes[actual_idx].episode.toggle_favorite();
+                        let new_favorited = self.episodes[actual_idx].episode.favorited;
+                        if self.filter.favorites_only {
+                            self.apply_filters();
+                        }
+                        UIAction::TriggerToggleFavorite {
+                            podcast_id,
+                            episode_id,
+                            episode_title,
+                            favorited: new_favorited,
+                        }
+                    }
+                    None => UIAction::ShowMessage("No episode selected".to_string()),
+                }
+            }
             UIAction::Search => UIAction::Search,
             UIAction::ApplySearch { query } => {
                 self.filter.text_query = if query.is_empty() { None } else { Some(query) };
@@ -405,13 +436,19 @@ impl UIComponent for WhatsNewBuffer {
             }
             UIAction::SetStatusFilter { status } => {
                 use crate::ui::filters::parse_status_filter;
-                match parse_status_filter(&status) {
-                    Some(sf) => {
-                        self.filter.status = Some(sf);
-                        self.apply_filters();
-                        UIAction::Render
+                if status.trim().eq_ignore_ascii_case("favorited") {
+                    self.filter.favorites_only = true;
+                    self.apply_filters();
+                    UIAction::Render
+                } else {
+                    match parse_status_filter(&status) {
+                        Some(sf) => {
+                            self.filter.status = Some(sf);
+                            self.apply_filters();
+                            UIAction::Render
+                        }
+                        None => UIAction::ShowMessage(format!("Unknown status filter: {}", status)),
                     }
-                    None => UIAction::ShowMessage(format!("Unknown status filter: {}", status)),
                 }
             }
             UIAction::SetDateRangeFilter { range } => {
@@ -536,7 +573,14 @@ impl UIComponent for WhatsNewBuffer {
 
                 Row::new(vec![
                     Cell::from(truncate_string(&agg_episode.podcast_title, 25)),
-                    Cell::from(truncate_string(&episode.title, 65)),
+                    Cell::from(truncate_string(
+                        &format!(
+                            "{}{}",
+                            if episode.favorited { "★ " } else { "" },
+                            episode.title
+                        ),
+                        65,
+                    )),
                     Cell::from(published_str),
                 ])
                 .style(style)

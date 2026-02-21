@@ -230,6 +230,8 @@ pub enum UIAction {
     MarkPlayed,
     /// Mark selected episode as unplayed
     MarkUnplayed,
+    /// Toggle favorite/starred state on selected episode
+    ToggleFavorite,
     /// Trigger async mark episode as played (carries IDs for storage update)
     TriggerMarkPlayed {
         podcast_id: crate::storage::PodcastId,
@@ -241,6 +243,14 @@ pub enum UIAction {
         podcast_id: crate::storage::PodcastId,
         episode_id: crate::storage::EpisodeId,
         episode_title: String,
+    },
+    /// Trigger async persist of favorited state after optimistic in-memory toggle
+    TriggerToggleFavorite {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        episode_title: String,
+        /// The new favorited state to persist
+        favorited: bool,
     },
 
     // Render request

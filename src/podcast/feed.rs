@@ -295,6 +295,7 @@ impl FeedParser {
             notes: None,
             chapters: Vec::new(),
             transcript: None,
+            favorited: false,
         };
 
         Ok(episode)

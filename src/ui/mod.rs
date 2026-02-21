@@ -13,6 +13,7 @@ pub mod events;
 pub mod filters;
 pub mod key_parser;
 pub mod keybindings;
+pub mod theme_loader;
 pub mod themes;
 
 pub use app::UIApp;

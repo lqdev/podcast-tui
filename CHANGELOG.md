@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**TOML Theme File Format and Parser — February 2026**
+- **User-defined themes via `.toml` files** — new `src/ui/theme_loader` module parses TOML theme files into the existing `ColorScheme`/`Theme` structs; groundwork for loading themes from the filesystem in [#103](https://github.com/lqdev/podcast-tui/issues/103)
+- **`load_theme_file(path: &Path) -> Result<Theme, ThemeError>`** — public API that reads a TOML file, resolves the base theme via `extends`, applies color overrides, and returns a `Theme` ready for use
+- **`parse_color(s: &str) -> Result<Color, ThemeError>`** — public color parser supporting four formats:
+  - Hex: `"#rrggbb"` (e.g. `"#ff79c6"` → `Color::Rgb(255, 121, 198)`)
+  - RGB function: `"rgb(r, g, b)"` (e.g. `"rgb(255, 121, 198)"`)
+  - Indexed: `"color(n)"` for 256-color terminals (e.g. `"color(141)"`)
+  - Named: `"Red"`, `"Blue"`, `"DarkGray"`, `"reset"`, etc. (case-insensitive, all Crossterm names)
+- **Theme inheritance via `extends`** — a theme file can specify `extends = "dark"` (or `light`, `high-contrast`, `solarized`) to inherit all colors from a bundled theme and override only the fields it specifies; missing `extends` defaults to the dark theme
+- **Graceful invalid color handling** — unknown color strings produce a descriptive `ThemeError::InvalidColor` with the bad value and a hint about valid formats; invalid TOML produces `ThemeError::TomlParse`
+- **Theme file format** — `[metadata]` section (name, optional author/description/extends) + `[colors]` section (all 21 `ColorScheme` fields as optional strings)
+- Dependency added: `toml = "0.8"` (serde-backed TOML parser)
+- Tests added: 27 unit tests covering all color formats, case insensitivity, inheritance from all 4 bundled themes, partial override, named colors, mixed formats, invalid colors, and missing sections. Closes [#102](https://github.com/lqdev/podcast-tui/issues/102).
+
 **Load Keybindings from Config at Runtime — February 2026**
 - **Keybindings are now loaded from `config.json` at startup** — the `keybindings.global` section in your config overrides the default hardcoded bindings at launch
 - **`KeyHandler::from_config(config: &KeybindingConfig) -> Self`** — new constructor that starts from defaults and applies any non-empty override lists from config; replaces the previous `KeyHandler::new()` call in the UI startup path

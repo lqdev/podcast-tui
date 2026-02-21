@@ -64,7 +64,7 @@ The **Task List** view ([views/1](https://github.com/users/lqdev/projects/1/view
 gh project item-list 1 --owner lqdev --format json --limit 200
 ```
 
-This returns all items including their `"stack rank"` field (a number). **Sort items by Stack Rank ascending** to get the current canonical work order. Parse each item for: issue number, title, status, priority, phase, effort, stack rank, and project item ID.
+This returns all items including their `"stack rank"` field (a number). Treat the JSON output as unsorted — **explicitly sort items by the Stack Rank field ascending** to get the current canonical work order. Parse each item for: issue number, title, status, priority, phase, effort, stack rank, and project item ID.
 
 ### 2. Assess what needs reordering
 
@@ -119,7 +119,10 @@ $projId = "PVT_kwHOAKnYPM4BPqK6"
 $fieldId = "PVTF_lAHOAKnYPM4BPqK6zg-Gc20"
 $rank = 10
 foreach ($item in $orderedItems) {
-    gh project item-edit --project-id $projId --id $item.Id --field-id $fieldId --number $rank 2>&1 | Out-Null
+    $result = gh project item-edit --project-id $projId --id $item.Id --field-id $fieldId --number $rank 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to set Stack Rank $rank for item $($item.Id): $result"
+    }
     $rank += 10
 }
 ```
@@ -158,7 +161,10 @@ $prevId = $null
 $rank = 10
 foreach ($item in $orderedItems) {
     # Set the Stack Rank field (source of truth)
-    gh project item-edit --project-id $projId --id $item.Id --field-id $fieldId --number $rank 2>&1 | Out-Null
+    $editResult = gh project item-edit --project-id $projId --id $item.Id --field-id $fieldId --number $rank 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to set Stack Rank for item $($item.Id): $editResult"
+    }
 
     # Sync the physical board position to match
     if ($prevId) {
@@ -167,7 +173,10 @@ foreach ($item in $orderedItems) {
         $afterClause = ""
     }
     $mutation = "mutation { updateProjectV2ItemPosition(input: { projectId: `"$projId`", itemId: `"$($item.Id)`" $afterClause }) { items(first:1) { nodes { id } } } }"
-    gh api graphql -f query="$mutation" 2>&1 | Out-Null
+    $apiResult = gh api graphql -f query="$mutation" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to update board position for item $($item.Id): $apiResult"
+    }
     $prevId = $item.Id
     $rank += 10
 }
@@ -209,7 +218,7 @@ Position one or a few specific items into the existing board order. Faster than 
 4. Optionally sync physical position with `updateProjectV2ItemPosition`
 5. No user confirmation needed for single-item inserts (the triage-issue skill handles this)
 
-**Gap exhaustion:** If there's no integer gap between two adjacent ranks (e.g., 30 and 31), renumber starting from the insertion point: shift all items below down by 10, then insert at the freed slot.
+**Gap exhaustion:** If there's no integer gap between two adjacent ranks (e.g., 30 and 31), renumber starting from the insertion point: shift the item at the insertion point and all lower-priority items (higher rank numbers) down by 10, then insert at the freed slot.
 
 ## Rules
 

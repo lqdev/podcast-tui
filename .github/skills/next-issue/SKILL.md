@@ -32,7 +32,7 @@ Stack Rank captures strategic nuances (like "finish this epic before starting th
 gh project item-list 1 --owner lqdev --format json --limit 100
 ```
 
-Each item includes a `"stack rank"` field (number). **Sort items by Stack Rank ascending** — this is the canonical work order.
+Each item includes a `"stack rank"` field (number). Treat the JSON output as unsorted. **Explicitly sort the items by this field ascending** to establish the canonical work order.
 
 For dependency checking, you also need issue bodies. Fetch those for the top candidates:
 

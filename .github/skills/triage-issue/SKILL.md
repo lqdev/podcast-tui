@@ -96,11 +96,15 @@ After setting all fields, assign a **Stack Rank** value and position the item in
    ```
 
 2. Sort items by Stack Rank ascending. Find the correct position based on the new item's Priority → Phase → Effort relative to existing items. The item should be placed:
-   - **After** the last item with a higher or equal rank
-   - **Before** the first item with a lower rank
+   - **After** the last item with higher or equal priority (lower or equal Stack Rank number)
+   - **Before** the first item with lower priority (higher Stack Rank number)
    - **Above** all epic/meta-epic items (features sort before their parent epics)
 
-3. Compute a Stack Rank value between the surrounding items. For example, if inserting between rank 30 and 40, use 35. If there's no gap, shift items below by 10 first.
+3. Compute a Stack Rank value between the surrounding items. For example, if inserting between rank 30 and 40, use 35.
+   - If there is a gap (e.g., 30 and 40), pick a value in the gap (e.g., 35).
+   - If there is **no** gap (the surrounding ranks are consecutive, e.g., 30 and 31), handle gap exhaustion explicitly:
+     - Prefer: trigger the `rerank-board` skill to rebalance ranks for the affected section. It implements the gap-compaction and renumbering procedure.
+     - For a small set of items only: increase the Stack Rank of the lower item **and all items below it** by `+10` using `gh project item-edit`, then choose a value in the new gap (for example, between 30 and 40, use 35).
 
 4. Set the Stack Rank field:
    ```powershell

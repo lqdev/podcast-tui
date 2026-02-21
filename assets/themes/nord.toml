@@ -1,0 +1,32 @@
+[metadata]
+name        = "nord"
+author      = "Arctic Ice Studio"
+description = "Arctic, north-bluish colour palette"
+
+[colors]
+# Nord — official palette https://www.nordtheme.com/docs/colors-and-palettes
+background       = "#2e3440"  # nord0 — Polar Night
+surface          = "#3b4252"  # nord1
+overlay          = "#434c5e"  # nord2
+
+text             = "#eceff4"  # nord6 — Snow Storm
+subtext          = "#e5e9f0"  # nord5
+muted            = "#d8dee9"  # nord4
+
+primary          = "#88c0d0"  # nord8 — Frost
+secondary        = "#81a1c1"  # nord9
+success          = "#a3be8c"  # nord14 — Aurora green
+warning          = "#ebcb8b"  # nord13 — Aurora yellow
+error            = "#bf616a"  # nord11 — Aurora red
+
+border           = "#4c566a"  # nord3
+border_focused   = "#88c0d0"  # nord8
+selection        = "#4c566a"  # nord3
+cursor           = "#eceff4"  # nord6
+
+playing          = "#a3be8c"  # nord14 — green
+paused           = "#ebcb8b"  # nord13 — yellow
+downloaded       = "#88c0d0"  # nord8 — frost blue
+downloading      = "#b48ead"  # nord15 — Aurora purple
+queued           = "#4c566a"  # nord3
+active_indicator = "#ebcb8b"  # nord13 — yellow

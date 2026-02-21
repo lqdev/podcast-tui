@@ -1,0 +1,32 @@
+[metadata]
+name        = "catppuccin-mocha"
+author      = "Catppuccin"
+description = "Soothing pastel theme — Mocha flavour (dark)"
+
+[colors]
+# Catppuccin Mocha — official palette https://catppuccin.com/palette
+background       = "#1e1e2e"  # Base
+surface          = "#181825"  # Mantle
+overlay          = "#313244"  # Surface0
+
+text             = "#cdd6f4"  # Text
+subtext          = "#bac2de"  # Subtext1
+muted            = "#a6adc8"  # Subtext0
+
+primary          = "#cba6f7"  # Mauve
+secondary        = "#89dceb"  # Sky
+success          = "#a6e3a1"  # Green
+warning          = "#f9e2af"  # Yellow
+error            = "#f38ba8"  # Red
+
+border           = "#313244"  # Surface0
+border_focused   = "#cba6f7"  # Mauve
+selection        = "#45475a"  # Surface1
+cursor           = "#cdd6f4"  # Text
+
+playing          = "#a6e3a1"  # Green
+paused           = "#f9e2af"  # Yellow
+downloaded       = "#89b4fa"  # Blue
+downloading      = "#cba6f7"  # Mauve
+queued           = "#6c7086"  # Overlay0
+active_indicator = "#f9e2af"  # Yellow

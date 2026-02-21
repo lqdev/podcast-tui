@@ -1,0 +1,32 @@
+[metadata]
+name        = "gruvbox-dark"
+author      = "Pavel Pertsev"
+description = "Retro groove colour scheme — dark variant"
+
+[colors]
+# Gruvbox Dark — official palette https://github.com/morhetz/gruvbox
+background       = "#282828"  # bg0
+surface          = "#3c3836"  # bg1
+overlay          = "#504945"  # bg2
+
+text             = "#ebdbb2"  # fg1
+subtext          = "#d5c4a1"  # fg2
+muted            = "#a89984"  # fg4
+
+primary          = "#83a598"  # bright blue / aqua
+secondary        = "#8ec07c"  # bright aqua
+success          = "#b8bb26"  # bright green
+warning          = "#fabd2f"  # bright yellow
+error            = "#fb4934"  # bright red
+
+border           = "#504945"  # bg2
+border_focused   = "#83a598"  # bright blue
+selection        = "#504945"  # bg2
+cursor           = "#ebdbb2"  # fg1
+
+playing          = "#b8bb26"  # bright green
+paused           = "#fabd2f"  # bright yellow
+downloaded       = "#83a598"  # bright blue
+downloading      = "#d3869b"  # bright purple
+queued           = "#928374"  # gray
+active_indicator = "#fabd2f"  # bright yellow

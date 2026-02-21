@@ -48,7 +48,9 @@ pub enum ThemeError {
     InvalidColor { color: String, reason: String },
 
     #[error(
-        "Unknown base theme '{0}' in extends field — valid names: dark, default, light, high-contrast, solarized"
+        "Unknown base theme '{0}' in extends field — valid names: \
+         dark, default, light, high-contrast, solarized, \
+         catppuccin-mocha, dracula, nord, gruvbox-dark, tokyo-night"
     )]
     UnknownBaseTheme(String),
 }
@@ -61,7 +63,20 @@ pub enum ThemeError {
 /// dependencies. Both [`ThemeRegistry::new`] and [`ThemeRegistry::get_bundled`]
 /// reference this constant — update it here when adding or renaming a bundled
 /// theme, and keep `new()` in sync.
-const BUNDLED_THEME_KEYS: &[&str] = &["dark", "default", "light", "high-contrast", "solarized"];
+const BUNDLED_THEME_KEYS: &[&str] = &[
+    // Rust-defined base themes
+    "dark",
+    "default",
+    "light",
+    "high-contrast",
+    "solarized",
+    // TOML-embedded community themes
+    "catppuccin-mocha",
+    "dracula",
+    "nord",
+    "gruvbox-dark",
+    "tokyo-night",
+];
 
 /// Top-level structure of a `.toml` theme file.
 #[derive(Debug, Deserialize)]
@@ -342,26 +357,75 @@ fn parse_named_color(s: &str) -> Result<Color, ThemeError> {
     }
 }
 
-/// Registry of all available themes: the four bundled themes plus any user-defined
-/// `.toml` files discovered in the platform config directory.
+/// Parse a theme from a TOML string without performing any file I/O.
+///
+/// Used internally to register community themes that are embedded in the
+/// binary via [`include_str!`]. Behaves identically to [`load_theme_file`]
+/// but accepts an in-memory string rather than a filesystem path.
+fn parse_theme_str(content: &str) -> Result<Theme, ThemeError> {
+    let file: ThemeFile = toml::from_str(content)?;
+    let base_colors = match &file.metadata.extends {
+        Some(base_name) => {
+            Theme::from_name(base_name)
+                .map_err(|_| ThemeError::UnknownBaseTheme(base_name.clone()))?
+                .colors
+        }
+        None => Theme::default_dark().colors,
+    };
+    let colors = apply_colors(base_colors, &file.colors)?;
+    Ok(Theme::new(file.metadata.name, colors))
+}
+
+/// Registry of all available themes: the bundled Rust-defined themes, five TOML-embedded
+/// community themes, and any user-defined `.toml` files discovered in the platform config
+/// directory.
 pub struct ThemeRegistry {
     themes: HashMap<String, Theme>,
 }
 
 impl ThemeRegistry {
-    /// Create a new registry pre-populated with the four bundled themes.
+    /// Create a new registry pre-populated with all bundled themes.
     ///
-    /// Bundled theme keys (lowercase): `dark`, `default` (alias for dark),
-    /// `light`, `high-contrast`, `solarized`.
+    /// Bundled keys (case-insensitive):
+    ///   - Rust-defined: `dark`, `default` (alias for dark), `light`, `high-contrast`, `solarized`
+    ///   - TOML-embedded: `catppuccin-mocha`, `dracula`, `nord`, `gruvbox-dark`, `tokyo-night`
     ///
     /// The inserted keys must stay in sync with [`BUNDLED_THEME_KEYS`].
     pub fn new() -> Self {
         let mut themes = HashMap::new();
+
+        // Rust-defined base themes
         themes.insert("dark".to_string(), Theme::default_dark());
         themes.insert("default".to_string(), Theme::default_dark());
         themes.insert("light".to_string(), Theme::light());
         themes.insert("high-contrast".to_string(), Theme::high_contrast());
         themes.insert("solarized".to_string(), Theme::solarized());
+
+        // Community themes embedded as TOML (assets/themes/)
+        for (key, toml_str) in [
+            (
+                "catppuccin-mocha",
+                include_str!("../../assets/themes/catppuccin-mocha.toml"),
+            ),
+            ("dracula", include_str!("../../assets/themes/dracula.toml")),
+            ("nord", include_str!("../../assets/themes/nord.toml")),
+            (
+                "gruvbox-dark",
+                include_str!("../../assets/themes/gruvbox-dark.toml"),
+            ),
+            (
+                "tokyo-night",
+                include_str!("../../assets/themes/tokyo-night.toml"),
+            ),
+        ] {
+            // Embedded TOML is fixed at compile time. A parse error means BUNDLED_THEME_KEYS
+            // would advertise a key that isn't in the registry — an inconsistency that must be
+            // caught during development and CI, not silently swallowed at runtime.
+            let theme = parse_theme_str(toml_str)
+                .unwrap_or_else(|e| panic!("bundled theme '{key}' failed to parse: {e}"));
+            themes.insert(key.to_string(), theme);
+        }
+
         Self { themes }
     }
 
@@ -386,7 +450,7 @@ impl ThemeRegistry {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|ext| ext == "toml") {
-                match load_theme_file(&path) {
+                match resolve_theme(&path, self) {
                     Ok(theme) => {
                         self.themes.insert(theme.name.to_lowercase(), theme);
                     }
@@ -1167,5 +1231,230 @@ primary = "#bd93f9"
 
         // Assert
         assert!(result.is_err(), "user themes must not be valid parents");
+    }
+
+    // ── community theme (parse_theme_str) tests ──────────────────────────────
+
+    #[test]
+    fn test_parse_theme_str_parses_valid_toml() {
+        // Arrange
+        let content = r##"
+[metadata]
+name = "test-theme"
+[colors]
+background = "#ff0000"
+primary    = "#00ff00"
+"##;
+
+        // Act
+        let result = parse_theme_str(content);
+
+        // Assert
+        assert!(
+            result.is_ok(),
+            "valid TOML should parse: {:?}",
+            result.err()
+        );
+        let theme = result.unwrap();
+        assert_eq!(theme.name, "test-theme");
+        assert_eq!(theme.colors.background, Color::Rgb(255, 0, 0));
+        assert_eq!(theme.colors.primary, Color::Rgb(0, 255, 0));
+    }
+
+    #[test]
+    fn test_parse_theme_str_invalid_toml_returns_error() {
+        // Arrange
+        let bad = "not valid toml {{{";
+
+        // Act / Assert
+        assert!(parse_theme_str(bad).is_err());
+    }
+
+    // ── community themes registered in ThemeRegistry ─────────────────────────
+
+    #[test]
+    fn test_registry_has_all_community_themes() {
+        // Arrange / Act
+        let registry = ThemeRegistry::new();
+
+        // Assert: all 5 community themes are accessible by their kebab-case name
+        assert!(
+            registry.get("catppuccin-mocha").is_some(),
+            "catppuccin-mocha should be registered"
+        );
+        assert!(
+            registry.get("dracula").is_some(),
+            "dracula should be registered"
+        );
+        assert!(registry.get("nord").is_some(), "nord should be registered");
+        assert!(
+            registry.get("gruvbox-dark").is_some(),
+            "gruvbox-dark should be registered"
+        );
+        assert!(
+            registry.get("tokyo-night").is_some(),
+            "tokyo-night should be registered"
+        );
+    }
+
+    #[test]
+    fn test_registry_community_themes_accessible_via_get_bundled() {
+        // Arrange / Act
+        let registry = ThemeRegistry::new();
+
+        // Assert: community themes are in BUNDLED_THEME_KEYS → accessible as extends parents
+        for key in &[
+            "catppuccin-mocha",
+            "dracula",
+            "nord",
+            "gruvbox-dark",
+            "tokyo-night",
+        ] {
+            assert!(
+                registry.get_bundled(key).is_some(),
+                "get_bundled('{key}') should return the theme"
+            );
+        }
+    }
+
+    #[test]
+    fn test_catppuccin_mocha_has_correct_palette() {
+        // Arrange / Act
+        let registry = ThemeRegistry::new();
+        let theme = registry.get("catppuccin-mocha").unwrap();
+
+        // Assert: official Catppuccin Mocha palette spot-checks
+        assert_eq!(theme.colors.background, Color::Rgb(0x1e, 0x1e, 0x2e)); // Base
+        assert_eq!(theme.colors.primary, Color::Rgb(0xcb, 0xa6, 0xf7)); // Mauve
+        assert_eq!(theme.colors.error, Color::Rgb(0xf3, 0x8b, 0xa8)); // Red
+        assert_eq!(theme.colors.success, Color::Rgb(0xa6, 0xe3, 0xa1)); // Green
+    }
+
+    #[test]
+    fn test_dracula_has_correct_palette() {
+        // Arrange / Act
+        let registry = ThemeRegistry::new();
+        let theme = registry.get("dracula").unwrap();
+
+        // Assert: official Dracula palette spot-checks
+        assert_eq!(theme.colors.background, Color::Rgb(0x28, 0x2a, 0x36));
+        assert_eq!(theme.colors.primary, Color::Rgb(0xbd, 0x93, 0xf9)); // Purple
+        assert_eq!(theme.colors.success, Color::Rgb(0x50, 0xfa, 0x7b)); // Green
+        assert_eq!(theme.colors.error, Color::Rgb(0xff, 0x55, 0x55)); // Red
+    }
+
+    #[test]
+    fn test_nord_has_correct_palette() {
+        // Arrange / Act
+        let registry = ThemeRegistry::new();
+        let theme = registry.get("nord").unwrap();
+
+        // Assert: official Nord palette spot-checks
+        assert_eq!(theme.colors.background, Color::Rgb(0x2e, 0x34, 0x40)); // nord0
+        assert_eq!(theme.colors.primary, Color::Rgb(0x88, 0xc0, 0xd0)); // nord8
+        assert_eq!(theme.colors.error, Color::Rgb(0xbf, 0x61, 0x6a)); // nord11
+        assert_eq!(theme.colors.warning, Color::Rgb(0xeb, 0xcb, 0x8b)); // nord13
+    }
+
+    #[test]
+    fn test_gruvbox_dark_has_correct_palette() {
+        // Arrange / Act
+        let registry = ThemeRegistry::new();
+        let theme = registry.get("gruvbox-dark").unwrap();
+
+        // Assert: official Gruvbox Dark palette spot-checks
+        assert_eq!(theme.colors.background, Color::Rgb(0x28, 0x28, 0x28)); // bg0
+        assert_eq!(theme.colors.primary, Color::Rgb(0x83, 0xa5, 0x98)); // bright blue
+        assert_eq!(theme.colors.warning, Color::Rgb(0xfa, 0xbd, 0x2f)); // bright yellow
+        assert_eq!(theme.colors.error, Color::Rgb(0xfb, 0x49, 0x34)); // bright red
+    }
+
+    #[test]
+    fn test_tokyo_night_has_correct_palette() {
+        // Arrange / Act
+        let registry = ThemeRegistry::new();
+        let theme = registry.get("tokyo-night").unwrap();
+
+        // Assert: official Tokyo Night palette spot-checks
+        assert_eq!(theme.colors.background, Color::Rgb(0x1a, 0x1b, 0x26)); // bg
+        assert_eq!(theme.colors.primary, Color::Rgb(0x7a, 0xa2, 0xf7)); // blue
+        assert_eq!(theme.colors.error, Color::Rgb(0xf7, 0x76, 0x8e)); // red
+        assert_eq!(theme.colors.success, Color::Rgb(0x9e, 0xce, 0x6a)); // green
+    }
+
+    #[test]
+    fn test_community_themes_all_have_unique_names() {
+        // Arrange
+        let registry = ThemeRegistry::new();
+        let community_keys = [
+            "catppuccin-mocha",
+            "dracula",
+            "nord",
+            "gruvbox-dark",
+            "tokyo-night",
+        ];
+
+        // Act: retrieve each and collect names
+        let names: Vec<&str> = community_keys
+            .iter()
+            .map(|k| registry.get(k).unwrap().name.as_str())
+            .collect();
+
+        // Assert: all names are distinct
+        let mut sorted = names.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            community_keys.len(),
+            "all community theme names must be unique"
+        );
+    }
+
+    #[test]
+    fn test_registry_list_names_includes_community_themes() {
+        // Arrange / Act
+        let registry = ThemeRegistry::new();
+        let names = registry.list_names();
+
+        // Assert: all 5 community theme keys appear in the sorted list
+        for key in &[
+            "catppuccin-mocha",
+            "dracula",
+            "gruvbox-dark",
+            "nord",
+            "tokyo-night",
+        ] {
+            assert!(names.contains(key), "list_names() should include '{key}'");
+        }
+    }
+
+    #[test]
+    fn test_community_themes_can_be_extended_via_resolve_theme() {
+        // Arrange: create a child theme that extends each community theme
+        let dir = TempDir::new().unwrap();
+        let registry = ThemeRegistry::new();
+
+        for base in &[
+            "catppuccin-mocha",
+            "dracula",
+            "nord",
+            "gruvbox-dark",
+            "tokyo-night",
+        ] {
+            let path = dir.path().join(format!("{base}_child.toml"));
+            std::fs::write(
+                &path,
+                format!("[metadata]\nname = \"child\"\nextends = \"{base}\"\n"),
+            )
+            .unwrap();
+
+            let result = resolve_theme(&path, &registry);
+            assert!(
+                result.is_ok(),
+                "extends = '{base}' should be a valid bundled parent: {:?}",
+                result.err()
+            );
+        }
     }
 }

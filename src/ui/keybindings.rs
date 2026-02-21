@@ -7,8 +7,43 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
 
 use crate::config::{GlobalKeys, KeybindingConfig};
-use crate::ui::key_parser::parse_key_notation;
+use crate::ui::key_parser::{key_to_notation, parse_key_notation};
 use crate::ui::UIAction;
+
+/// A conflict where the same key chord was assigned to two different actions.
+#[derive(Debug, Clone)]
+pub struct KeybindingConflict {
+    /// Human-readable key notation, e.g. `"C-n"`.
+    pub key: String,
+    /// The action that previously held this chord.
+    pub action1: UIAction,
+    /// The action that overwrote it.
+    pub action2: UIAction,
+    /// Scope of the binding (currently always `"global"`).
+    pub context: String,
+}
+
+/// A critical action that has no key chord bound to it.
+#[derive(Debug, Clone)]
+pub struct UnboundAction {
+    /// The action with no binding.
+    pub action: UIAction,
+    /// What the default key was before any overrides.
+    pub default_key: String,
+    /// Scope (currently always `"global"`).
+    pub context: String,
+}
+
+/// Result of [`KeyHandler::validate`].
+#[derive(Debug, Default)]
+pub struct ValidationResult {
+    /// Chords that were silently reassigned from one action to another.
+    pub conflicts: Vec<KeybindingConflict>,
+    /// Critical actions (Quit, ShowHelp, Cancel) that have no binding at all.
+    pub unbound_actions: Vec<UnboundAction>,
+    /// Human-readable warning strings summarising both of the above.
+    pub warnings: Vec<String>,
+}
 
 /// Represents a key combination
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -49,12 +84,15 @@ impl From<KeyEvent> for KeyChord {
 pub struct KeyHandler {
     /// Direct key bindings only
     bindings: HashMap<KeyChord, UIAction>,
+    /// Conflicts recorded when a chord was reassigned to a different action.
+    conflict_log: Vec<KeybindingConflict>,
 }
 
 impl KeyHandler {
     pub fn new() -> Self {
         let mut handler = Self {
             bindings: HashMap::new(),
+            conflict_log: Vec::new(),
         };
 
         handler.setup_default_bindings();
@@ -206,9 +244,19 @@ impl KeyHandler {
         self.bind_key(KeyChord::none(KeyCode::Char(']')), UIAction::NextTab);
     }
 
-    /// Bind a key chord to an action
+    /// Bind a key chord to an action, logging a conflict if the chord was
+    /// already mapped to a *different* action.
     pub fn bind_key(&mut self, chord: KeyChord, action: UIAction) {
-        self.bindings.insert(chord, action);
+        if let Some(old_action) = self.bindings.insert(chord.clone(), action.clone()) {
+            if old_action != action {
+                self.conflict_log.push(KeybindingConflict {
+                    key: key_to_notation(&chord),
+                    action1: old_action,
+                    action2: action,
+                    context: "global".to_string(),
+                });
+            }
+        }
     }
 
     /// Handle a key event and return the corresponding action
@@ -252,7 +300,7 @@ impl KeyHandler {
     fn rebind_action(&mut self, action: UIAction, chords: Vec<KeyChord>) {
         self.bindings.retain(|_, v| *v != action);
         for chord in chords {
-            self.bindings.insert(chord, action.clone());
+            self.bind_key(chord, action.clone());
         }
     }
 
@@ -365,6 +413,57 @@ impl KeyHandler {
     /// Get the current key sequence as a string (empty for simple handler)
     pub fn current_sequence_string(&self) -> String {
         String::new()
+    }
+
+    /// Validate the current keybinding state and return any conflicts or
+    /// unbound critical actions.
+    ///
+    /// - **Conflicts** are chords that were reassigned from one action to
+    ///   another during configuration (last writer silently wins).
+    /// - **Unbound actions** are critical actions — `Quit`, `ShowHelp`, and
+    ///   `Cancel` — that have no chord bound to them at all.
+    ///
+    /// Non-critical conflicts produce `warnings`; a missing `Quit` binding is
+    /// considered fatal and the caller should refuse to start the application.
+    pub fn validate(&self) -> ValidationResult {
+        let mut warnings: Vec<String> = Vec::new();
+
+        // Report each recorded conflict as a warning.
+        for c in &self.conflict_log {
+            warnings.push(format!(
+                "Keybinding conflict: key '{}' reassigned from {:?} to {:?} (context: {})",
+                c.key, c.action1, c.action2, c.context
+            ));
+        }
+
+        // Check that critical actions still have at least one binding.
+        let critical: &[(UIAction, &str)] = &[
+            (UIAction::Quit, "q"),
+            (UIAction::ShowHelp, "h"),
+            (UIAction::HideMinibuffer, "Esc"),
+        ];
+
+        let unbound_actions: Vec<UnboundAction> = critical
+            .iter()
+            .filter(|(action, _)| !self.bindings.values().any(|v| v == action))
+            .map(|(action, default_key)| {
+                warnings.push(format!(
+                    "Critical action unbound: {:?} has no key assigned (default was '{}')",
+                    action, default_key
+                ));
+                UnboundAction {
+                    action: action.clone(),
+                    default_key: default_key.to_string(),
+                    context: "global".to_string(),
+                }
+            })
+            .collect();
+
+        ValidationResult {
+            conflicts: self.conflict_log.clone(),
+            unbound_actions,
+            warnings,
+        }
     }
 }
 
@@ -609,5 +708,97 @@ mod tests {
             handler.lookup(&KeyChord::none(KeyCode::F(10))),
             Some(&UIAction::Quit)
         );
+    }
+
+    // ── validate() tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_validate_no_conflicts_with_defaults() {
+        // Arrange
+        let handler = KeyHandler::new();
+
+        // Act
+        let result = handler.validate();
+
+        // Assert — default bindings must be conflict-free
+        assert!(
+            result.conflicts.is_empty(),
+            "Default keybindings should have no conflicts, got: {:?}",
+            result.conflicts
+        );
+        assert!(result.unbound_actions.is_empty());
+        assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validate_detects_duplicate_binding_reports_conflict() {
+        // Arrange — bind the same chord to two different actions
+        let mut handler = KeyHandler::new();
+        handler.bind_key(KeyChord::none(KeyCode::Char('x')), UIAction::Quit);
+        handler.bind_key(KeyChord::none(KeyCode::Char('x')), UIAction::ShowHelp);
+
+        // Act
+        let result = handler.validate();
+
+        // Assert — one conflict recorded (x reassigned from Quit to ShowHelp)
+        assert!(
+            !result.conflicts.is_empty(),
+            "Expected a conflict for key 'x'"
+        );
+        assert_eq!(result.conflicts[0].key, "x");
+        assert_eq!(result.conflicts[0].action1, UIAction::Quit);
+        assert_eq!(result.conflicts[0].action2, UIAction::ShowHelp);
+        assert!(!result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validate_detects_unbound_critical_action_reports_unbound() {
+        // Arrange — remove all Quit bindings
+        let mut handler = KeyHandler::new();
+        handler.bindings.retain(|_, v| *v != UIAction::Quit);
+
+        // Act
+        let result = handler.validate();
+
+        // Assert — Quit flagged as unbound
+        assert!(
+            !result.unbound_actions.is_empty(),
+            "Expected Quit to be reported as unbound"
+        );
+        assert_eq!(result.unbound_actions[0].action, UIAction::Quit);
+        assert!(!result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validate_from_config_conflict_when_two_actions_share_chord() {
+        // Arrange — user maps both quit and move_down to "j"
+        let mut config = KeybindingConfig::default();
+        config.global.quit = vec!["j".to_string()];
+        config.global.move_down = vec!["j".to_string()];
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+        let result = handler.validate();
+
+        // Assert — j was stolen: conflict recorded
+        assert!(
+            !result.conflicts.is_empty(),
+            "Expected a conflict when quit and move_down both map to 'j'"
+        );
+        assert_eq!(result.conflicts[0].key, "j");
+    }
+
+    #[test]
+    fn test_validate_rebinding_same_action_no_conflict() {
+        // Arrange — bind the same chord to the same action twice (idempotent)
+        let mut handler = KeyHandler::new();
+        handler.bind_key(KeyChord::none(KeyCode::Char('q')), UIAction::Quit);
+        handler.bind_key(KeyChord::none(KeyCode::Char('q')), UIAction::Quit);
+
+        // Act
+        let result = handler.validate();
+
+        // Assert — same action, same chord: no conflict
+        assert!(result.conflicts.is_empty());
     }
 }

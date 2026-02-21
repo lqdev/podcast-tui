@@ -1,0 +1,32 @@
+[metadata]
+name        = "tokyo-night"
+author      = "Enkia"
+description = "Clean dark theme inspired by Tokyo at night"
+
+[colors]
+# Tokyo Night — official palette https://github.com/enkia/tokyo-night-vscode-theme
+background       = "#1a1b26"  # bg
+surface          = "#16161e"  # bg_dark
+overlay          = "#24283b"  # bg_highlight variant
+
+text             = "#c0caf5"  # fg
+subtext          = "#a9b1d6"  # fg_dark
+muted            = "#565f89"  # comment
+
+primary          = "#7aa2f7"  # blue
+secondary        = "#bb9af7"  # magenta / purple
+success          = "#9ece6a"  # green
+warning          = "#e0af68"  # yellow
+error            = "#f7768e"  # red
+
+border           = "#292e42"  # bg_highlight
+border_focused   = "#7aa2f7"  # blue
+selection        = "#283457"  # selection
+cursor           = "#c0caf5"  # fg
+
+playing          = "#9ece6a"  # green
+paused           = "#e0af68"  # yellow
+downloaded       = "#7aa2f7"  # blue
+downloading      = "#bb9af7"  # magenta
+queued           = "#565f89"  # comment
+active_indicator = "#e0af68"  # yellow

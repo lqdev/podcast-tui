@@ -1,0 +1,32 @@
+[metadata]
+name        = "dracula"
+author      = "Zeno Rocha"
+description = "Dark theme with vivid accent colours"
+
+[colors]
+# Dracula — official palette https://draculatheme.com/contribute
+background       = "#282a36"  # Background
+surface          = "#21222c"  # Slightly darker surface
+overlay          = "#44475a"  # Current Line
+
+text             = "#f8f8f2"  # Foreground
+subtext          = "#e0d7f5"  # Light purple-tinted foreground
+muted            = "#6272a4"  # Comment
+
+primary          = "#bd93f9"  # Purple
+secondary        = "#8be9fd"  # Cyan
+success          = "#50fa7b"  # Green
+warning          = "#f1fa8c"  # Yellow
+error            = "#ff5555"  # Red
+
+border           = "#44475a"  # Current Line
+border_focused   = "#bd93f9"  # Purple
+selection        = "#44475a"  # Selection
+cursor           = "#f8f8f2"  # Foreground
+
+playing          = "#50fa7b"  # Green
+paused           = "#f1fa8c"  # Yellow
+downloaded       = "#8be9fd"  # Cyan
+downloading      = "#ff79c6"  # Pink
+queued           = "#6272a4"  # Comment
+active_indicator = "#f1fa8c"  # Yellow

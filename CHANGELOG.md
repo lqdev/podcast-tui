@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Bundled community themes** — five popular community colour schemes are now shipped with the binary, available immediately via `:theme <name>` with no file setup required: `catppuccin-mocha`, `dracula`, `nord`, `gruvbox-dark`, `tokyo-night`. Each theme uses the official palette from its upstream project. Community themes are also valid `extends` parents in user `.toml` theme files (e.g. `extends = "catppuccin-mocha"`). Theme files live in `assets/themes/` and are embedded at compile time via `include_str!`. Closes [#105](https://github.com/lqdev/podcast-tui/issues/105).
+  - Tests added: `parse_theme_str` unit tests, palette spot-checks for all 5 themes, `get_bundled()` coverage, `list_names()` coverage, extends-from-community-theme round-trip.
+
 - **Theme inheritance (`resolve_theme`)** — new `resolve_theme(path, registry)` public API in `src/ui/theme_loader.rs` resolves `extends` fields using the `ThemeRegistry`, enforcing single-level bundled-only inheritance. New `Theme::color_scheme()` getter and `Theme::from_color_scheme()` constructor support programmatic theme construction. `ThemeRegistry::get_bundled()` restricts parent lookup to the five built-in themes, preventing user-defined themes from acting as parents (avoids circular dependencies). Closes [#104](https://github.com/lqdev/podcast-tui/issues/104).
   - Tests added: unit tests covering override, fallback to dark base, all bundled parents, unknown parent error, user-theme-as-parent rejection, `color_scheme()` getter, and `from_color_scheme()` constructor.
 

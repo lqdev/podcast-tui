@@ -93,6 +93,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Config-overridable keybindings** — `keybindings.global.cycle_sort_field` and `keybindings.global.toggle_sort_direction` in `config.json`
   - Tests added: 11 unit tests covering all 4 sort fields (asc + desc), field cycle, direction toggle, unknown field error, sort indicator strings, and sort-persists-through-filter-change
 
+**Podcast Tags/Categories — February 2026**: Tag and filter your podcast subscriptions using freeform labels. Closes [#107](https://github.com/lqdev/podcast-tui/issues/107).
+  - **`:tag <name>`** — add a tag to the selected podcast (tags are normalized to lowercase and trimmed; duplicates silently ignored)
+  - **`:untag <name>`** — remove a tag from the selected podcast
+  - **`:tags`** — list all unique tags used across all podcast subscriptions
+  - **`:filter-tag <tag>`** — narrow the podcast list to show only podcasts with a given tag; combine with `:search` for AND filtering
+  - **`[tag]` badges** rendered in the podcast list item for each tagged podcast
+  - Tags persist in `podcast.json` via `tags: Vec<String>`; existing podcast files without the field deserialize with `tags: []` (fully backward compatible via `#[serde(default)]`)
+  - Optimistic UI update pattern: tag changes apply in-memory immediately, then persist asynchronously; reverts on failure
+  - Tests added: 19 unit tests (7 model tests, 4 filter tests, 8 podcast-list buffer tests)
+
 ### Fixed
 
 - Fixed help text to remove ghost keybindings that were listed but not bound (`m`/`u` mark played/unplayed in episode list, `C-n`/`C-p` navigation in What's New buffer, and inaccurate Emacs-style entries in the keybindings reference). Closes [#92](https://github.com/lqdev/podcast-tui/issues/92).

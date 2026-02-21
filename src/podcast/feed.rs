@@ -109,6 +109,7 @@ impl FeedParser {
             explicit: false,        // TODO: Extract from iTunes extensions
             last_updated: Utc::now(),
             episodes: Vec::new(), // Episodes IDs will be added as they're saved
+            tags: Vec::new(),
         };
 
         Ok(podcast)

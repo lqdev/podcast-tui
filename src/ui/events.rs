@@ -409,6 +409,30 @@ pub enum AppEvent {
     DownloadCleanupFailed {
         error: String,
     },
+
+    /// Podcast tag added successfully
+    PodcastTagAdded {
+        podcast_id: crate::storage::PodcastId,
+        tag: String,
+    },
+
+    /// Podcast tag add failed
+    PodcastTagAddFailed {
+        podcast_id: crate::storage::PodcastId,
+        error: String,
+    },
+
+    /// Podcast tag removed successfully
+    PodcastTagRemoved {
+        podcast_id: crate::storage::PodcastId,
+        tag: String,
+    },
+
+    /// Podcast tag remove failed
+    PodcastTagRemoveFailed {
+        podcast_id: crate::storage::PodcastId,
+        error: String,
+    },
 }
 
 /// Types of buffer refresh operations

@@ -239,10 +239,14 @@ impl Default for PlaylistConfig {
 /// Key notation reference:
 /// - Single chars: `q`, `a`, `?`, `/`
 /// - Modified: `C-x` (Ctrl), `S-x` (Shift), `A-x` / `M-x` (Alt), `C-S-x` (Ctrl+Shift)
-/// - Named keys: `Enter`, `Esc`, `Tab`, `Backspace`, `Delete`, `Space`
+/// - Named keys: `Enter`, `Esc`, `Tab`, `BackTab`, `Backspace`, `Delete`, `Space`
 /// - Arrow keys: `Up`, `Down`, `Left`, `Right`
 /// - Navigation: `Home`, `End`, `PgUp`, `PgDn`
 /// - Function keys: `F1`–`F12`
+///
+/// **Note on uppercase chars:** `G` and `S-G` are distinct — `G` is the literal uppercase
+/// character with no modifier, while `S-G` is Shift+G. Unlike Helix, uppercase letters do
+/// not imply a Shift modifier; use the `S-` prefix to explicitly require Shift.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GlobalKeys {
@@ -328,7 +332,9 @@ impl Default for GlobalKeys {
 
             // Buffer navigation
             next_buffer: ["Tab", "C-PgDn"].map(String::from).to_vec(),
-            prev_buffer: ["S-Tab", "C-PgUp"].map(String::from).to_vec(),
+            prev_buffer: ["S-Tab", "BackTab", "S-BackTab", "C-PgUp"]
+                .map(String::from)
+                .to_vec(),
             close_buffer: ["C-k"].map(String::from).to_vec(),
             open_podcast_list: ["F2"].map(String::from).to_vec(),
             open_downloads: ["F4"].map(String::from).to_vec(),
@@ -337,11 +343,11 @@ impl Default for GlobalKeys {
 
             // Application control
             quit: ["q", "F10"].map(String::from).to_vec(),
-            show_help: ["F1", "h", "?"].map(String::from).to_vec(),
+            show_help: ["F1", "h", "?", "S-?"].map(String::from).to_vec(),
             search: ["F3", "/"].map(String::from).to_vec(),
             clear_filters: ["F6"].map(String::from).to_vec(),
             refresh: ["F5"].map(String::from).to_vec(),
-            prompt_command: [":"].map(String::from).to_vec(),
+            prompt_command: [":", "S-:"].map(String::from).to_vec(),
             switch_to_buffer: ["C-b"].map(String::from).to_vec(),
             list_buffers: ["C-l"].map(String::from).to_vec(),
 
@@ -358,7 +364,7 @@ impl Default for GlobalKeys {
 
             // Episode actions
             download_episode: ["S-D"].map(String::from).to_vec(),
-            delete_downloaded_episode: ["X"].map(String::from).to_vec(),
+            delete_downloaded_episode: ["X", "S-X"].map(String::from).to_vec(),
             delete_all_downloads: ["C-x"].map(String::from).to_vec(),
             mark_played: ["m"].map(String::from).to_vec(),
             mark_unplayed: ["u"].map(String::from).to_vec(),
@@ -726,6 +732,8 @@ mod tests {
         assert!(keys.next_buffer.contains(&"Tab".to_string()));
         assert!(keys.next_buffer.contains(&"C-PgDn".to_string()));
         assert!(keys.prev_buffer.contains(&"S-Tab".to_string()));
+        assert!(keys.prev_buffer.contains(&"BackTab".to_string()));
+        assert!(keys.prev_buffer.contains(&"S-BackTab".to_string()));
         assert!(keys.prev_buffer.contains(&"C-PgUp".to_string()));
         assert_eq!(keys.close_buffer, vec!["C-k"]);
         assert_eq!(keys.open_podcast_list, vec!["F2"]);
@@ -737,11 +745,13 @@ mod tests {
         assert!(keys.show_help.contains(&"F1".to_string()));
         assert!(keys.show_help.contains(&"h".to_string()));
         assert!(keys.show_help.contains(&"?".to_string()));
+        assert!(keys.show_help.contains(&"S-?".to_string()));
         assert!(keys.search.contains(&"F3".to_string()));
         assert!(keys.search.contains(&"/".to_string()));
         assert_eq!(keys.clear_filters, vec!["F6"]);
         assert_eq!(keys.refresh, vec!["F5"]);
-        assert_eq!(keys.prompt_command, vec![":"]);
+        assert!(keys.prompt_command.contains(&":".to_string()));
+        assert!(keys.prompt_command.contains(&"S-:".to_string()));
         assert_eq!(keys.switch_to_buffer, vec!["C-b"]);
         assert_eq!(keys.list_buffers, vec!["C-l"]);
         assert!(keys.select.contains(&"Enter".to_string()));
@@ -753,7 +763,8 @@ mod tests {
         assert_eq!(keys.refresh_all, vec!["S-R"]);
         assert_eq!(keys.hard_refresh_podcast, vec!["C-r"]);
         assert_eq!(keys.download_episode, vec!["S-D"]);
-        assert_eq!(keys.delete_downloaded_episode, vec!["X"]);
+        assert!(keys.delete_downloaded_episode.contains(&"X".to_string()));
+        assert!(keys.delete_downloaded_episode.contains(&"S-X".to_string()));
         assert_eq!(keys.delete_all_downloads, vec!["C-x"]);
         assert_eq!(keys.mark_played, vec!["m"]);
         assert_eq!(keys.mark_unplayed, vec!["u"]);

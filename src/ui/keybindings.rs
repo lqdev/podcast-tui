@@ -219,7 +219,9 @@ impl KeyHandler {
     ///
     /// Starts with all default bindings, then applies any non-empty override lists from
     /// `config`. An empty `Vec<String>` for any field means "keep the default binding".
-    /// Unrecognised key notation strings are silently skipped (the action retains its default).
+    /// If at least one notation in a non-empty list is valid, the defaults for that action
+    /// are replaced with the parsed chords. If all notations in a non-empty list are
+    /// invalid, the action keeps its default binding (the list is treated as a no-op).
     pub fn from_config(config: &KeybindingConfig) -> Self {
         let mut handler = Self::new();
         handler.apply_global_overrides(&config.global);
@@ -244,11 +246,18 @@ impl KeyHandler {
 
     /// If `notations` is non-empty, replace all bindings for `action` with parsed chords.
     /// An empty slice is a no-op (preserves the defaults set by `new()`).
+    /// If all notations are invalid (parse to no chords), this is also a no-op to avoid
+    /// clearing the existing default bindings.
     fn override_binding(&mut self, notations: &[String], action: UIAction) {
-        if !notations.is_empty() {
-            let chords = Self::parse_notations(notations);
-            self.rebind_action(action, chords);
+        if notations.is_empty() {
+            return;
         }
+        let chords = Self::parse_notations(notations);
+        if chords.is_empty() {
+            // All provided notations were invalid — keep existing default bindings.
+            return;
+        }
+        self.rebind_action(action, chords);
     }
 
     /// Apply non-empty override lists from `GlobalKeys` to the current bindings.
@@ -539,6 +548,26 @@ mod tests {
         // Assert — valid notation is bound; invalid one is silently skipped
         assert_eq!(
             handler.lookup(&KeyChord::ctrl(KeyCode::Char('q'))),
+            Some(&UIAction::Quit)
+        );
+    }
+
+    #[test]
+    fn test_from_config_all_invalid_notations_preserves_defaults() {
+        // Arrange — every notation in the list is invalid; must not clear defaults
+        let mut config = KeybindingConfig::default();
+        config.global.quit = vec!["NOT-VALID".to_string(), "ALSO-BAD".to_string()];
+
+        // Act — must not panic, and must not clear existing default bindings
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — default quit chords preserved (all-invalid list is a no-op)
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char('q'))),
+            Some(&UIAction::Quit)
+        );
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::F(10))),
             Some(&UIAction::Quit)
         );
     }

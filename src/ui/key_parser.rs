@@ -125,6 +125,7 @@ fn parse_key_code(key_str: &str) -> Result<KeyCode, KeyParseError> {
     match key_lower.as_str() {
         "enter" | "return" => Ok(KeyCode::Enter),
         "tab" => Ok(KeyCode::Tab),
+        "backtab" => Ok(KeyCode::BackTab),
         "esc" | "escape" => Ok(KeyCode::Esc),
         "backspace" | "bs" => Ok(KeyCode::Backspace),
         "delete" | "del" => Ok(KeyCode::Delete),
@@ -192,6 +193,7 @@ fn key_code_to_str(code: &KeyCode) -> String {
         KeyCode::Char(c) => c.to_string(),
         KeyCode::Enter => "Enter".to_string(),
         KeyCode::Tab => "Tab".to_string(),
+        KeyCode::BackTab => "BackTab".to_string(),
         KeyCode::Esc => "Esc".to_string(),
         KeyCode::Backspace => "Backspace".to_string(),
         KeyCode::Delete => "Delete".to_string(),
@@ -317,6 +319,26 @@ mod tests {
     fn test_parse_tab_returns_tab_keycode() {
         let chord = parse_key_notation("Tab").unwrap();
         assert_eq!(chord.code, KeyCode::Tab);
+    }
+
+    #[test]
+    fn test_parse_backtab_returns_backtab_keycode() {
+        let chord = parse_key_notation("BackTab").unwrap();
+        assert_eq!(chord.code, KeyCode::BackTab);
+        assert_eq!(chord.modifiers, KeyModifiers::NONE);
+    }
+
+    #[test]
+    fn test_parse_shift_backtab_returns_backtab_with_shift() {
+        let chord = parse_key_notation("S-BackTab").unwrap();
+        assert_eq!(chord.code, KeyCode::BackTab);
+        assert_eq!(chord.modifiers, KeyModifiers::SHIFT);
+    }
+
+    #[test]
+    fn test_roundtrip_backtab() {
+        let chord = parse_key_notation("BackTab").unwrap();
+        assert_eq!(key_to_notation(&chord), "BackTab");
     }
 
     #[test]

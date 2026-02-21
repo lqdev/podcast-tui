@@ -48,10 +48,20 @@ pub enum ThemeError {
     InvalidColor { color: String, reason: String },
 
     #[error(
-        "Unknown base theme '{0}' in extends field — valid names: dark, light, high-contrast, solarized"
+        "Unknown base theme '{0}' in extends field — valid names: dark, default, light, high-contrast, solarized"
     )]
     UnknownBaseTheme(String),
 }
+
+/// The fixed set of built-in theme keys registered in every [`ThemeRegistry`].
+///
+/// These are the only names accepted by [`ThemeRegistry::get_bundled`] and
+/// therefore the only valid values for the `extends` field in a user theme
+/// file. User-defined themes are intentionally excluded to prevent circular
+/// dependencies. Both [`ThemeRegistry::new`] and [`ThemeRegistry::get_bundled`]
+/// reference this constant — update it here when adding or renaming a bundled
+/// theme, and keep `new()` in sync.
+const BUNDLED_THEME_KEYS: &[&str] = &["dark", "default", "light", "high-contrast", "solarized"];
 
 /// Top-level structure of a `.toml` theme file.
 #[derive(Debug, Deserialize)]
@@ -343,6 +353,8 @@ impl ThemeRegistry {
     ///
     /// Bundled theme keys (lowercase): `dark`, `default` (alias for dark),
     /// `light`, `high-contrast`, `solarized`.
+    ///
+    /// The inserted keys must stay in sync with [`BUNDLED_THEME_KEYS`].
     pub fn new() -> Self {
         let mut themes = HashMap::new();
         themes.insert("dark".to_string(), Theme::default_dark());
@@ -397,9 +409,8 @@ impl ThemeRegistry {
     /// this the right method to use when resolving `extends` in a theme file
     /// (single-level, bundled-parent-only inheritance).
     pub fn get_bundled(&self, name: &str) -> Option<&Theme> {
-        const BUNDLED: &[&str] = &["dark", "default", "light", "high-contrast", "solarized"];
         let lower = name.to_lowercase();
-        if BUNDLED.contains(&lower.as_str()) {
+        if BUNDLED_THEME_KEYS.contains(&lower.as_str()) {
             self.themes.get(&lower)
         } else {
             None

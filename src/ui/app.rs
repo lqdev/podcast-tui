@@ -766,7 +766,21 @@ impl UIApp {
                                 self.playlist_manager.clone(),
                             );
                         }
-                        if let Some(detail_buffer) = self
+                        if playlist.is_smart() {
+                            // For smart playlists, show an empty placeholder then populate
+                            // asynchronously via evaluate.
+                            if let Some(detail_buffer) = self
+                                .buffer_manager
+                                .get_playlist_detail_buffer_mut_by_id(&detail_id)
+                            {
+                                detail_buffer.set_smart(true);
+                            }
+                            self.trigger_async_evaluate_smart_playlist(
+                                playlist_id,
+                                playlist_name,
+                                detail_id.clone(),
+                            );
+                        } else if let Some(detail_buffer) = self
                             .buffer_manager
                             .get_playlist_detail_buffer_mut_by_id(&detail_id)
                         {
@@ -1983,6 +1997,26 @@ impl UIApp {
                 self.trigger_background_refresh(BufferRefreshType::PodcastList);
                 self.show_error(format!("Could not remove tag: {}", error));
             }
+            AppEvent::SmartPlaylistEvaluated {
+                detail_buffer_id,
+                episodes,
+            } => {
+                if let Some(detail_buffer) = self
+                    .buffer_manager
+                    .get_playlist_detail_buffer_mut_by_id(&detail_buffer_id)
+                {
+                    detail_buffer.set_evaluated_episodes(episodes);
+                }
+            }
+            AppEvent::SmartPlaylistEvaluationFailed {
+                playlist_name,
+                error,
+            } => {
+                self.show_error(format!(
+                    "Smart playlist '{}' failed: {}",
+                    playlist_name, error
+                ));
+            }
         }
         Ok(())
     }
@@ -2180,6 +2214,27 @@ impl UIApp {
                         prompt: "Create playlist: ".to_string(),
                         input: String::new(),
                     });
+                }
+                Ok(true)
+            }
+            "smart-playlist" => {
+                if parts.len() < 2 {
+                    self.show_error(
+                        "Usage: :smart-playlist <name> [--filter <spec>...] [--sort <field>] [--limit <n>]".to_string(),
+                    );
+                    return Ok(true);
+                }
+                // Allow multi-word names: consume tokens until the first --flag
+                let flags_start_idx = parts[2..]
+                    .iter()
+                    .position(|p| p.starts_with("--"))
+                    .map(|i| i + 2)
+                    .unwrap_or(parts.len());
+                let name = parts[1..flags_start_idx].join(" ");
+                let args = &parts[flags_start_idx..];
+                match crate::ui::app::parse_smart_playlist_args(args) {
+                    Ok(rule) => self.trigger_async_create_smart_playlist(name, rule),
+                    Err(msg) => self.show_error(msg),
                 }
                 Ok(true)
             }
@@ -2627,6 +2682,7 @@ impl UIApp {
             "playlist-delete".to_string(),
             "playlist-refresh".to_string(),
             "playlist-sync".to_string(),
+            "smart-playlist".to_string(),
             // Cleanup commands
             "clean-older-than".to_string(),
             "cleanup".to_string(),
@@ -3429,6 +3485,112 @@ impl UIApp {
                     });
                 }
             }
+        });
+    }
+
+    fn trigger_async_create_smart_playlist(
+        &mut self,
+        name: String,
+        rule: crate::playlist::models::SmartPlaylistRule,
+    ) {
+        let playlist_manager = self.playlist_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+        let name_for_error = name.clone();
+
+        tokio::spawn(async move {
+            match playlist_manager
+                .create_smart_playlist(&name, None, rule)
+                .await
+            {
+                Ok(playlist) => {
+                    let _ = app_event_tx.send(AppEvent::PlaylistCreated { playlist });
+                }
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::PlaylistCreationFailed {
+                        name: name_for_error,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    fn trigger_async_evaluate_smart_playlist(
+        &mut self,
+        playlist_id: crate::playlist::PlaylistId,
+        playlist_name: String,
+        detail_buffer_id: String,
+    ) {
+        let storage = self._storage.clone();
+        let playlist_manager = self.playlist_manager.clone();
+        let app_event_tx = self.app_event_tx.clone();
+
+        tokio::spawn(async move {
+            // Load the playlist to get its rule
+            let playlist = match playlist_manager.get_playlist(&playlist_id).await {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::SmartPlaylistEvaluationFailed {
+                        playlist_name,
+                        error: e.to_string(),
+                    });
+                    return;
+                }
+            };
+            let rule = match playlist.smart_rules {
+                Some(r) => r,
+                None => return, // not a smart playlist, nothing to do
+            };
+
+            // Load all podcasts and episodes
+            let podcast_ids = match storage.list_podcasts().await {
+                Ok(ids) => ids,
+                Err(e) => {
+                    let _ = app_event_tx.send(AppEvent::SmartPlaylistEvaluationFailed {
+                        playlist_name,
+                        error: e.to_string(),
+                    });
+                    return;
+                }
+            };
+            let mut all_episodes = Vec::new();
+            let mut all_podcasts = Vec::new();
+            for pid in &podcast_ids {
+                match storage.load_podcast(pid).await {
+                    Ok(podcast) => all_podcasts.push(podcast),
+                    Err(e) => eprintln!(
+                        "Warning: failed to load podcast '{}' for smart playlist evaluation: {}",
+                        pid, e
+                    ),
+                }
+                match storage.load_episodes(pid).await {
+                    Ok(episodes) => all_episodes.extend(episodes),
+                    Err(e) => eprintln!(
+                        "Warning: failed to load episodes for podcast '{}' in smart playlist evaluation: {}",
+                        pid, e
+                    ),
+                }
+            }
+
+            let raw = rule.evaluate(&all_episodes, &all_podcasts);
+            // Convert Episode → PlaylistEpisode for display
+            let episodes: Vec<crate::playlist::PlaylistEpisode> = raw
+                .into_iter()
+                .enumerate()
+                .map(|(idx, ep)| crate::playlist::PlaylistEpisode {
+                    podcast_id: ep.podcast_id.clone(),
+                    episode_id: ep.id.clone(),
+                    episode_title: Some(ep.title.clone()),
+                    added_at: chrono::Utc::now(),
+                    order: idx + 1,
+                    file_synced: false,
+                    filename: None,
+                })
+                .collect();
+            let _ = app_event_tx.send(AppEvent::SmartPlaylistEvaluated {
+                detail_buffer_id,
+                episodes,
+            });
         });
     }
 
@@ -4605,6 +4767,140 @@ impl UIApp {
     }
 }
 
+/// Parse `:smart-playlist` command arguments into a `SmartPlaylistRule`.
+///
+/// Supported flags:
+/// - `--filter <spec>` — one or more; multiple filters are AND-ed
+/// - `--sort <field>`  — `date-asc` | `date-desc` | `title-asc` | `title-desc`
+/// - `--limit <n>`     — maximum episodes to return
+///
+/// Filter specs: `downloaded`, `favorited`, `played`, `unplayed`,
+///               `tag:<name>`, `podcast:<id>`, `newer-than:<days>`
+pub(crate) fn parse_smart_playlist_args(
+    args: &[&str],
+) -> Result<crate::playlist::models::SmartPlaylistRule, String> {
+    use crate::playlist::models::{SmartFilter, SmartPlaylistRule, SmartSort};
+
+    let mut filters: Vec<SmartFilter> = Vec::new();
+    let mut sort: Option<SmartSort> = None;
+    let mut limit: Option<usize> = None;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i] {
+            "--filter" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--filter requires a value".to_string());
+                }
+                let spec = args[i];
+                let filter = parse_filter_spec(spec)?;
+                filters.push(filter);
+            }
+            "--sort" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--sort requires a value".to_string());
+                }
+                sort = Some(parse_sort_spec(args[i])?);
+            }
+            "--limit" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--limit requires a value".to_string());
+                }
+                limit =
+                    Some(args[i].parse::<usize>().map_err(|_| {
+                        format!("--limit value must be a number, got '{}'", args[i])
+                    })?);
+            }
+            other => {
+                return Err(format!(
+                    "Unknown argument '{}'. Use --filter, --sort, or --limit",
+                    other
+                ));
+            }
+        }
+        i += 1;
+    }
+
+    let filter = match filters.len() {
+        0 => SmartFilter::Downloaded, // sensible default
+        1 => filters.remove(0),
+        _ => SmartFilter::And(filters),
+    };
+
+    Ok(SmartPlaylistRule {
+        filter,
+        sort,
+        limit,
+    })
+}
+
+fn parse_filter_spec(spec: &str) -> Result<crate::playlist::models::SmartFilter, String> {
+    use crate::playlist::models::SmartFilter;
+    match spec {
+        "downloaded" => Ok(SmartFilter::Downloaded),
+        "favorited" => Ok(SmartFilter::Favorited),
+        "played" => Ok(SmartFilter::Played),
+        "unplayed" => Ok(SmartFilter::Unplayed),
+        other => {
+            if let Some(tag) = other.strip_prefix("tag:") {
+                Ok(SmartFilter::Tag(tag.to_string()))
+            } else if let Some(id) = other.strip_prefix("podcast:") {
+                Ok(SmartFilter::Podcast(id.to_string()))
+            } else if let Some(days_str) = other.strip_prefix("newer-than:") {
+                let days = days_str.parse::<u32>().map_err(|_| {
+                    format!(
+                        "newer-than value must be a number of days, got '{}'",
+                        days_str
+                    )
+                })?;
+                Ok(SmartFilter::NewerThan(days))
+            } else {
+                Err(format!(
+                    "Unknown filter '{}'. Valid: downloaded, favorited, played, unplayed, tag:<name>, podcast:<id>, newer-than:<days>",
+                    other
+                ))
+            }
+        }
+    }
+}
+
+fn parse_sort_spec(spec: &str) -> Result<crate::playlist::models::SmartSort, String> {
+    use crate::playlist::models::{SmartSort, SmartSortDirection, SmartSortField};
+    match spec {
+        "date-desc" => Ok(SmartSort {
+            field: SmartSortField::Date,
+            direction: SmartSortDirection::Descending,
+        }),
+        "date-asc" => Ok(SmartSort {
+            field: SmartSortField::Date,
+            direction: SmartSortDirection::Ascending,
+        }),
+        "title-asc" => Ok(SmartSort {
+            field: SmartSortField::Title,
+            direction: SmartSortDirection::Ascending,
+        }),
+        "title-desc" => Ok(SmartSort {
+            field: SmartSortField::Title,
+            direction: SmartSortDirection::Descending,
+        }),
+        "duration-asc" => Ok(SmartSort {
+            field: SmartSortField::Duration,
+            direction: SmartSortDirection::Ascending,
+        }),
+        "duration-desc" => Ok(SmartSort {
+            field: SmartSortField::Duration,
+            direction: SmartSortDirection::Descending,
+        }),
+        other => Err(format!(
+            "Unknown sort '{}'. Valid: date-desc, date-asc, title-asc, title-desc, duration-asc, duration-desc",
+            other
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5135,6 +5431,7 @@ mod tests {
                 }],
                 created: Utc::now(),
                 last_updated: Utc::now(),
+                smart_rules: None,
             });
         }
         app.buffer_manager.switch_to_buffer(&detail_id).unwrap();
@@ -5223,6 +5520,7 @@ mod tests {
                 }],
                 created: Utc::now(),
                 last_updated: Utc::now(),
+                smart_rules: None,
             });
         }
         app.buffer_manager.switch_to_buffer(&detail_id).unwrap();
@@ -5411,6 +5709,156 @@ mod tests {
                 .switch_to_buffer(&"sync".to_string())
                 .is_ok(),
             "Should be able to switch to sync buffer after initialize()"
+        );
+    }
+
+    // ── parse_smart_playlist_args / parse_filter_spec / parse_sort_spec ────
+
+    #[test]
+    fn test_parse_smart_playlist_args_empty_defaults_to_downloaded() {
+        // Arrange
+        let args: &[&str] = &[];
+        // Act
+        let rule = parse_smart_playlist_args(args).unwrap();
+        // Assert
+        use crate::playlist::models::SmartFilter;
+        assert_eq!(rule.filter, SmartFilter::Downloaded);
+        assert!(rule.sort.is_none());
+        assert!(rule.limit.is_none());
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_single_filter_used_directly() {
+        // Arrange / Act
+        let rule = parse_smart_playlist_args(&["--filter", "favorited"]).unwrap();
+        // Assert
+        use crate::playlist::models::SmartFilter;
+        assert_eq!(rule.filter, SmartFilter::Favorited);
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_multiple_filters_become_and() {
+        // Arrange / Act
+        let rule = parse_smart_playlist_args(&["--filter", "downloaded", "--filter", "favorited"])
+            .unwrap();
+        // Assert
+        use crate::playlist::models::SmartFilter;
+        assert_eq!(
+            rule.filter,
+            SmartFilter::And(vec![SmartFilter::Downloaded, SmartFilter::Favorited])
+        );
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_sort_date_desc() {
+        use crate::playlist::models::{SmartSort, SmartSortDirection, SmartSortField};
+        let rule = parse_smart_playlist_args(&["--sort", "date-desc"]).unwrap();
+        assert_eq!(
+            rule.sort,
+            Some(SmartSort {
+                field: SmartSortField::Date,
+                direction: SmartSortDirection::Descending,
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_sort_duration_asc() {
+        use crate::playlist::models::{SmartSort, SmartSortDirection, SmartSortField};
+        let rule = parse_smart_playlist_args(&["--sort", "duration-asc"]).unwrap();
+        assert_eq!(
+            rule.sort,
+            Some(SmartSort {
+                field: SmartSortField::Duration,
+                direction: SmartSortDirection::Ascending,
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_limit_valid() {
+        // Arrange / Act
+        let rule = parse_smart_playlist_args(&["--limit", "25"]).unwrap();
+        // Assert
+        assert_eq!(rule.limit, Some(25));
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_limit_invalid_returns_error() {
+        // Arrange / Act
+        let err = parse_smart_playlist_args(&["--limit", "abc"]).unwrap_err();
+        // Assert
+        assert!(
+            err.contains("number"),
+            "Error should mention 'number': {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_unknown_flag_returns_error() {
+        let err = parse_smart_playlist_args(&["--unknown", "foo"]).unwrap_err();
+        assert!(
+            err.contains("Unknown argument"),
+            "Error should say 'Unknown argument': {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_filter_tag() {
+        use crate::playlist::models::SmartFilter;
+        let rule = parse_smart_playlist_args(&["--filter", "tag:rust"]).unwrap();
+        assert_eq!(rule.filter, SmartFilter::Tag("rust".to_string()));
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_filter_newer_than_valid() {
+        use crate::playlist::models::SmartFilter;
+        let rule = parse_smart_playlist_args(&["--filter", "newer-than:7"]).unwrap();
+        assert_eq!(rule.filter, SmartFilter::NewerThan(7));
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_filter_newer_than_invalid() {
+        let err = parse_smart_playlist_args(&["--filter", "newer-than:notanumber"]).unwrap_err();
+        assert!(
+            err.contains("number of days"),
+            "Error should mention 'number of days': {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_filter_unknown_returns_error() {
+        let err = parse_smart_playlist_args(&["--filter", "bogus"]).unwrap_err();
+        assert!(
+            err.contains("Unknown filter"),
+            "Error should say 'Unknown filter': {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_all_sort_variants() {
+        for spec in &[
+            "date-asc",
+            "date-desc",
+            "title-asc",
+            "title-desc",
+            "duration-asc",
+            "duration-desc",
+        ] {
+            let result = parse_smart_playlist_args(&["--sort", spec]);
+            assert!(
+                result.is_ok(),
+                "Sort spec '{spec}' should parse successfully"
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_smart_playlist_args_sort_unknown_returns_error() {
+        let err = parse_smart_playlist_args(&["--sort", "random"]).unwrap_err();
+        assert!(
+            err.contains("Unknown sort"),
+            "Error should say 'Unknown sort': {err}"
         );
     }
 }

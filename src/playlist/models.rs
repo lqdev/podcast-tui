@@ -1,3 +1,4 @@
+use crate::podcast::{Episode, EpisodeStatus, Podcast};
 use crate::storage::{EpisodeId, PodcastId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -50,6 +51,19 @@ pub struct Playlist {
     pub episodes: Vec<PlaylistEpisode>,
     pub created: DateTime<Utc>,
     pub last_updated: DateTime<Utc>,
+    /// When set, this is a smart playlist whose episodes are evaluated dynamically.
+    ///
+    /// Smart playlists are stored with an empty `episodes` vec; the episode list
+    /// is computed on every open by calling [`SmartPlaylistRule::evaluate`].
+    #[serde(default)]
+    pub smart_rules: Option<SmartPlaylistRule>,
+}
+
+impl Playlist {
+    /// Returns `true` if this playlist has dynamic filter rules.
+    pub fn is_smart(&self) -> bool {
+        self.smart_rules.is_some()
+    }
 }
 
 /// Distinguishes user-created from auto-generated playlists.
@@ -77,6 +91,185 @@ pub enum RefreshPolicy {
     Manual,
 }
 
+/// Sort field for smart playlist evaluation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SmartSortField {
+    /// Sort by publish date (default: newest first)
+    Date,
+    /// Sort alphabetically by title
+    Title,
+    /// Sort by duration in seconds
+    Duration,
+}
+
+/// Sort direction for smart playlist evaluation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SmartSortDirection {
+    Ascending,
+    Descending,
+}
+
+/// Sort specification for smart playlist evaluation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SmartSort {
+    pub field: SmartSortField,
+    pub direction: SmartSortDirection,
+}
+
+impl Default for SmartSort {
+    fn default() -> Self {
+        Self {
+            field: SmartSortField::Date,
+            direction: SmartSortDirection::Descending,
+        }
+    }
+}
+
+/// A filter rule for smart playlists.
+///
+/// Rules can be combined with `And` / `Or` for compound logic.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum SmartFilter {
+    /// Episodes with status `Downloaded`
+    Downloaded,
+    /// Episodes the user has starred/favorited
+    Favorited,
+    /// Episodes with status `Played`
+    Played,
+    /// Episodes not yet played (status is not `Played`)
+    Unplayed,
+    /// Episodes from podcasts that have the given tag (case-insensitive)
+    Tag(String),
+    /// Episodes from the specific podcast (matched by podcast ID string)
+    Podcast(String),
+    /// Episodes published within the last N days
+    NewerThan(u32),
+    /// All sub-filters must match (logical AND)
+    And(Vec<SmartFilter>),
+    /// Any sub-filter must match (logical OR)
+    Or(Vec<SmartFilter>),
+}
+
+impl SmartFilter {
+    /// Check whether `episode` matches this filter.
+    ///
+    /// `podcasts` is required for filters that inspect podcast-level data
+    /// (e.g., [`SmartFilter::Tag`]).
+    pub fn matches(&self, episode: &Episode, podcasts: &[Podcast]) -> bool {
+        match self {
+            SmartFilter::Downloaded => {
+                matches!(episode.status, EpisodeStatus::Downloaded)
+            }
+            SmartFilter::Favorited => episode.favorited,
+            SmartFilter::Played => matches!(episode.status, EpisodeStatus::Played),
+            SmartFilter::Unplayed => !matches!(episode.status, EpisodeStatus::Played),
+            SmartFilter::Tag(tag) => podcasts
+                .iter()
+                .any(|p| p.id == episode.podcast_id && p.has_tag(tag)),
+            SmartFilter::Podcast(podcast_id_str) => {
+                episode.podcast_id.to_string() == *podcast_id_str
+            }
+            SmartFilter::NewerThan(days) => {
+                let cutoff = Utc::now() - chrono::Duration::days(*days as i64);
+                episode.published >= cutoff
+            }
+            SmartFilter::And(filters) => filters.iter().all(|f| f.matches(episode, podcasts)),
+            SmartFilter::Or(filters) => filters.iter().any(|f| f.matches(episode, podcasts)),
+        }
+    }
+
+    /// Return a short human-readable summary for display (e.g. in buffer titles).
+    pub fn description(&self) -> String {
+        match self {
+            SmartFilter::Downloaded => "downloaded".to_string(),
+            SmartFilter::Favorited => "favorited".to_string(),
+            SmartFilter::Played => "played".to_string(),
+            SmartFilter::Unplayed => "unplayed".to_string(),
+            SmartFilter::Tag(t) => format!("tag:{}", t),
+            SmartFilter::Podcast(id) => format!("podcast:{}", id),
+            SmartFilter::NewerThan(d) => format!("newer-than:{}d", d),
+            SmartFilter::And(fs) => {
+                let parts: Vec<_> = fs.iter().map(|f| f.description()).collect();
+                parts.join(" AND ")
+            }
+            SmartFilter::Or(fs) => {
+                let parts: Vec<_> = fs.iter().map(|f| f.description()).collect();
+                parts.join(" OR ")
+            }
+        }
+    }
+}
+
+/// Rules attached to a smart playlist.
+///
+/// A `Playlist` with `smart_rules: Some(_)` is a smart playlist whose episode
+/// list is computed dynamically on every open rather than stored on disk.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SmartPlaylistRule {
+    /// The filter that each episode must satisfy to be included.
+    pub filter: SmartFilter,
+    /// Optional sort applied after filtering.  Defaults to newest-first when `None`.
+    pub sort: Option<SmartSort>,
+    /// Maximum number of episodes to include after filtering + sorting.
+    pub limit: Option<usize>,
+}
+
+impl SmartPlaylistRule {
+    /// Create a new rule with just a filter; sort and limit use their defaults.
+    pub fn new(filter: SmartFilter) -> Self {
+        Self {
+            filter,
+            sort: None,
+            limit: None,
+        }
+    }
+
+    /// Evaluate the rule against the given episode + podcast sets and return
+    /// the ordered, limited list of matching episodes.
+    pub fn evaluate(&self, episodes: &[Episode], podcasts: &[Podcast]) -> Vec<Episode> {
+        let mut result: Vec<Episode> = episodes
+            .iter()
+            .filter(|e| self.filter.matches(e, podcasts))
+            .cloned()
+            .collect();
+
+        // Apply sort
+        match &self.sort {
+            Some(SmartSort {
+                field: SmartSortField::Date,
+                direction: SmartSortDirection::Ascending,
+            }) => result.sort_by(|a, b| a.published.cmp(&b.published)),
+            Some(SmartSort {
+                field: SmartSortField::Date,
+                direction: SmartSortDirection::Descending,
+            })
+            | None => result.sort_by(|a, b| b.published.cmp(&a.published)),
+            Some(SmartSort {
+                field: SmartSortField::Title,
+                direction: SmartSortDirection::Ascending,
+            }) => result.sort_by(|a, b| a.title.cmp(&b.title)),
+            Some(SmartSort {
+                field: SmartSortField::Title,
+                direction: SmartSortDirection::Descending,
+            }) => result.sort_by(|a, b| b.title.cmp(&a.title)),
+            Some(SmartSort {
+                field: SmartSortField::Duration,
+                direction: SmartSortDirection::Ascending,
+            }) => result.sort_by(|a, b| a.duration.cmp(&b.duration)),
+            Some(SmartSort {
+                field: SmartSortField::Duration,
+                direction: SmartSortDirection::Descending,
+            }) => result.sort_by(|a, b| b.duration.cmp(&a.duration)),
+        }
+
+        if let Some(limit) = self.limit {
+            result.truncate(limit);
+        }
+
+        result
+    }
+}
+
 /// An episode reference within a playlist.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaylistEpisode {
@@ -90,4 +283,247 @@ pub struct PlaylistEpisode {
     pub file_synced: bool,
     /// Filename inside the playlist audio directory.
     pub filename: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::podcast::{Episode, EpisodeStatus, Podcast};
+    use crate::storage::{EpisodeId, PodcastId};
+    use chrono::Utc;
+
+    fn make_episode(podcast_id: PodcastId, status: EpisodeStatus, favorited: bool) -> Episode {
+        let mut ep = Episode::new(
+            podcast_id,
+            "Test Episode".to_string(),
+            "https://example.com/ep.mp3".to_string(),
+            Utc::now(),
+        );
+        ep.status = status;
+        ep.favorited = favorited;
+        ep
+    }
+
+    fn make_podcast(tags: &[&str]) -> Podcast {
+        let mut p = Podcast::new(
+            "Test Podcast".to_string(),
+            "https://example.com/feed.xml".to_string(),
+        );
+        for t in tags {
+            p.add_tag(t);
+        }
+        p
+    }
+
+    #[test]
+    fn test_smart_filter_downloaded_matches_only_downloaded_episodes() {
+        // Arrange
+        let id = PodcastId::new();
+        let downloaded = make_episode(id.clone(), EpisodeStatus::Downloaded, false);
+        let new_ep = make_episode(id.clone(), EpisodeStatus::New, false);
+        let played = make_episode(id.clone(), EpisodeStatus::Played, false);
+
+        // Act & Assert
+        assert!(SmartFilter::Downloaded.matches(&downloaded, &[]));
+        assert!(!SmartFilter::Downloaded.matches(&new_ep, &[]));
+        assert!(!SmartFilter::Downloaded.matches(&played, &[]));
+    }
+
+    #[test]
+    fn test_smart_filter_favorited_matches_only_favorited_episodes() {
+        // Arrange
+        let id = PodcastId::new();
+        let fav = make_episode(id.clone(), EpisodeStatus::New, true);
+        let not_fav = make_episode(id.clone(), EpisodeStatus::New, false);
+
+        // Act & Assert
+        assert!(SmartFilter::Favorited.matches(&fav, &[]));
+        assert!(!SmartFilter::Favorited.matches(&not_fav, &[]));
+    }
+
+    #[test]
+    fn test_smart_filter_played_and_unplayed() {
+        // Arrange
+        let id = PodcastId::new();
+        let played = make_episode(id.clone(), EpisodeStatus::Played, false);
+        let new_ep = make_episode(id.clone(), EpisodeStatus::New, false);
+
+        // Act & Assert
+        assert!(SmartFilter::Played.matches(&played, &[]));
+        assert!(!SmartFilter::Played.matches(&new_ep, &[]));
+        assert!(SmartFilter::Unplayed.matches(&new_ep, &[]));
+        assert!(!SmartFilter::Unplayed.matches(&played, &[]));
+    }
+
+    #[test]
+    fn test_smart_filter_tag_matches_episodes_from_tagged_podcast() {
+        // Arrange
+        let mut podcast = make_podcast(&["tech"]);
+        let episode = make_episode(podcast.id.clone(), EpisodeStatus::New, false);
+        let podcasts = [podcast.clone()];
+
+        // Act & Assert — correct tag matches
+        assert!(SmartFilter::Tag("tech".to_string()).matches(&episode, &podcasts));
+        // Wrong tag does not match
+        assert!(!SmartFilter::Tag("news".to_string()).matches(&episode, &podcasts));
+        // No podcasts → cannot match
+        assert!(!SmartFilter::Tag("tech".to_string()).matches(&episode, &[]));
+
+        // Tag check is case-insensitive (normalized on add_tag)
+        podcast.add_tag("News");
+        let podcasts2 = [podcast];
+        assert!(SmartFilter::Tag("news".to_string()).matches(&episode, &podcasts2));
+    }
+
+    #[test]
+    fn test_smart_filter_and_requires_all_to_match() {
+        // Arrange: downloaded AND favorited
+        let id = PodcastId::new();
+        let both = {
+            let mut e = make_episode(id.clone(), EpisodeStatus::Downloaded, true);
+            e
+        };
+        let only_downloaded = make_episode(id.clone(), EpisodeStatus::Downloaded, false);
+        let only_favorited = make_episode(id.clone(), EpisodeStatus::New, true);
+
+        let filter = SmartFilter::And(vec![SmartFilter::Downloaded, SmartFilter::Favorited]);
+
+        // Act & Assert
+        assert!(filter.matches(&both, &[]));
+        assert!(!filter.matches(&only_downloaded, &[]));
+        assert!(!filter.matches(&only_favorited, &[]));
+    }
+
+    #[test]
+    fn test_smart_filter_or_requires_any_to_match() {
+        // Arrange: downloaded OR favorited
+        let id = PodcastId::new();
+        let downloaded = make_episode(id.clone(), EpisodeStatus::Downloaded, false);
+        let favorited = make_episode(id.clone(), EpisodeStatus::New, true);
+        let neither = make_episode(id.clone(), EpisodeStatus::New, false);
+
+        let filter = SmartFilter::Or(vec![SmartFilter::Downloaded, SmartFilter::Favorited]);
+
+        // Act & Assert
+        assert!(filter.matches(&downloaded, &[]));
+        assert!(filter.matches(&favorited, &[]));
+        assert!(!filter.matches(&neither, &[]));
+    }
+
+    #[test]
+    fn test_smart_playlist_rule_limit_truncates_results() {
+        // Arrange: 5 downloaded episodes, limit 3
+        let id = PodcastId::new();
+        let episodes: Vec<Episode> = (0..5)
+            .map(|_| make_episode(id.clone(), EpisodeStatus::Downloaded, false))
+            .collect();
+
+        let rule = SmartPlaylistRule {
+            filter: SmartFilter::Downloaded,
+            sort: None,
+            limit: Some(3),
+        };
+
+        // Act
+        let result = rule.evaluate(&episodes, &[]);
+
+        // Assert
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_smart_playlist_rule_sort_by_title_ascending() {
+        // Arrange
+        let id = PodcastId::new();
+        let mut ep_z = make_episode(id.clone(), EpisodeStatus::Downloaded, false);
+        ep_z.title = "Zebra".to_string();
+        let mut ep_a = make_episode(id.clone(), EpisodeStatus::Downloaded, false);
+        ep_a.title = "Apple".to_string();
+        let episodes = vec![ep_z, ep_a];
+
+        let rule = SmartPlaylistRule {
+            filter: SmartFilter::Downloaded,
+            sort: Some(SmartSort {
+                field: SmartSortField::Title,
+                direction: SmartSortDirection::Ascending,
+            }),
+            limit: None,
+        };
+
+        // Act
+        let result = rule.evaluate(&episodes, &[]);
+
+        // Assert
+        assert_eq!(result[0].title, "Apple");
+        assert_eq!(result[1].title, "Zebra");
+    }
+
+    #[test]
+    fn test_smart_playlist_rule_serde_roundtrip() {
+        // Arrange
+        let rule = SmartPlaylistRule {
+            filter: SmartFilter::And(vec![
+                SmartFilter::Tag("tech".to_string()),
+                SmartFilter::Unplayed,
+            ]),
+            sort: Some(SmartSort {
+                field: SmartSortField::Date,
+                direction: SmartSortDirection::Descending,
+            }),
+            limit: Some(20),
+        };
+
+        // Act: serialize → deserialize
+        let json = serde_json::to_string(&rule).unwrap(); // unwrap safe: known-valid rule
+        let restored: SmartPlaylistRule = serde_json::from_str(&json).unwrap(); // unwrap safe: same JSON
+
+        // Assert
+        assert_eq!(rule, restored);
+    }
+
+    #[test]
+    fn test_playlist_is_smart_reflects_smart_rules_presence() {
+        // Arrange: playlist without rules
+        let now = Utc::now();
+        let mut playlist = Playlist {
+            id: PlaylistId::new(),
+            name: "Test".to_string(),
+            description: None,
+            playlist_type: PlaylistType::User,
+            episodes: Vec::new(),
+            created: now,
+            last_updated: now,
+            smart_rules: None,
+        };
+
+        // Assert: regular playlist is not smart
+        assert!(!playlist.is_smart());
+
+        // Act: add rules
+        playlist.smart_rules = Some(SmartPlaylistRule::new(SmartFilter::Favorited));
+
+        // Assert: now it is smart
+        assert!(playlist.is_smart());
+    }
+
+    #[test]
+    fn test_playlist_smart_rules_defaults_on_missing_field() {
+        // Arrange: JSON without smart_rules field (backward compat with existing data)
+        let json = r#"{
+            "id": "00000000-0000-0000-0000-000000000001",
+            "name": "Old Playlist",
+            "description": null,
+            "playlist_type": "User",
+            "episodes": [],
+            "created": "2024-01-01T00:00:00Z",
+            "last_updated": "2024-01-01T00:00:00Z"
+        }"#;
+
+        // Act
+        let playlist: Playlist = serde_json::from_str(json).unwrap(); // unwrap safe: static JSON
+
+        // Assert: missing field defaults to None (backward compatible)
+        assert!(playlist.smart_rules.is_none());
+        assert!(!playlist.is_smart());
+    }
 }

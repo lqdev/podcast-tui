@@ -11,6 +11,8 @@ use std::time::Duration;
 
 use crate::storage::{EpisodeId, PodcastId};
 
+pub mod external;
+
 /// Errors that can occur during audio playback.
 #[derive(Debug, thiserror::Error)]
 pub enum AudioError {
@@ -22,6 +24,8 @@ pub enum AudioError {
     SeekFailed(String),
     #[error("External player not found: {0}")]
     ExternalPlayerNotFound(String),
+    #[error("Operation not supported: {0}")]
+    Unsupported(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **ExternalPlayerBackend — fallback audio via system media player** — implements `PlaybackBackend` by spawning `mpv`, `vlc`, or `ffplay` as a subprocess. Used when `config.audio.external_player` is set, or as a fallback when the native Rodio backend cannot initialize (no ALSA device, WSL2, containers). Auto-detects players in priority order: mpv → vlc → ffplay. Drop-safe: running child processes are killed when the backend is dropped. Closes [#135](https://github.com/lqdev/podcast-tui/issues/135). Part of [#132](https://github.com/lqdev/podcast-tui/issues/132).
+  - New `src/audio/external.rs`: `ExternalPlayerBackend` struct, `build_player_args()` helper (correct headless flags per player), `detect()` / `detect_from_candidates()` auto-detection, `Drop` impl
+  - `AudioError::Unsupported(String)` variant added to `src/audio/mod.rs`
+  - Limitations: `pause()` / `resume()` are no-ops; `seek()` returns `AudioError::Unsupported`; `position()` / `duration()` return `None`
+
 - **PodcastIndex API integration for discovery** — new `:discover <query>` and `:trending` minibuffer commands search the [PodcastIndex.org](https://podcastindex.org/) API and display results in a dedicated `*Discover: …*` buffer. Press Enter on any result to subscribe immediately. API credentials are configured via `discovery.podcastindex_api_key` and `discovery.podcastindex_api_secret` in `config.json` (free credentials at <https://api.podcastindex.org/>). Auth uses a timestamp-based SHA-1 hash (per PodcastIndex spec). Closes [#110](https://github.com/lqdev/podcast-tui/issues/110).
   - New `src/podcast/discovery.rs`: `PodcastIndexClient`, `PodcastSearchResult`, `DiscoveryError`; `search()` and `trending()` async methods
   - New `src/ui/buffers/discovery.rs`: `DiscoveryBuffer` implementing `Buffer` trait with arrow-key navigation, description preview, and subscribe-on-enter

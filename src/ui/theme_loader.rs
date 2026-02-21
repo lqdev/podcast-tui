@@ -48,7 +48,9 @@ pub enum ThemeError {
     InvalidColor { color: String, reason: String },
 
     #[error(
-        "Unknown base theme '{0}' in extends field — valid names: dark, default, light, high-contrast, solarized"
+        "Unknown base theme '{0}' in extends field — valid names: \
+         dark, default, light, high-contrast, solarized, \
+         catppuccin-mocha, dracula, nord, gruvbox-dark, tokyo-night"
     )]
     UnknownBaseTheme(String),
 }
@@ -374,18 +376,19 @@ fn parse_theme_str(content: &str) -> Result<Theme, ThemeError> {
     Ok(Theme::new(file.metadata.name, colors))
 }
 
-/// Registry of all available themes: the four bundled themes plus any user-defined
-/// `.toml` files discovered in the platform config directory.
+/// Registry of all available themes: the bundled Rust-defined themes, five TOML-embedded
+/// community themes, and any user-defined `.toml` files discovered in the platform config
+/// directory.
 pub struct ThemeRegistry {
     themes: HashMap<String, Theme>,
 }
 
 impl ThemeRegistry {
-    /// Create a new registry pre-populated with the four bundled themes.
+    /// Create a new registry pre-populated with all bundled themes.
     ///
-    /// Bundled theme keys (lowercase): `dark`, `default` (alias for dark),
-    /// `light`, `high-contrast`, `solarized`, `catppuccin-mocha`, `dracula`,
-    /// `nord`, `gruvbox-dark`, `tokyo-night`.
+    /// Bundled keys (case-insensitive):
+    ///   - Rust-defined: `dark`, `default` (alias for dark), `light`, `high-contrast`, `solarized`
+    ///   - TOML-embedded: `catppuccin-mocha`, `dracula`, `nord`, `gruvbox-dark`, `tokyo-night`
     ///
     /// The inserted keys must stay in sync with [`BUNDLED_THEME_KEYS`].
     pub fn new() -> Self {
@@ -399,22 +402,28 @@ impl ThemeRegistry {
         themes.insert("solarized".to_string(), Theme::solarized());
 
         // Community themes embedded as TOML (assets/themes/)
-        for toml_str in [
-            include_str!("../../assets/themes/catppuccin-mocha.toml"),
-            include_str!("../../assets/themes/dracula.toml"),
-            include_str!("../../assets/themes/nord.toml"),
-            include_str!("../../assets/themes/gruvbox-dark.toml"),
-            include_str!("../../assets/themes/tokyo-night.toml"),
+        for (key, toml_str) in [
+            (
+                "catppuccin-mocha",
+                include_str!("../../assets/themes/catppuccin-mocha.toml"),
+            ),
+            ("dracula", include_str!("../../assets/themes/dracula.toml")),
+            ("nord", include_str!("../../assets/themes/nord.toml")),
+            (
+                "gruvbox-dark",
+                include_str!("../../assets/themes/gruvbox-dark.toml"),
+            ),
+            (
+                "tokyo-night",
+                include_str!("../../assets/themes/tokyo-night.toml"),
+            ),
         ] {
-            match parse_theme_str(toml_str) {
-                Ok(theme) => {
-                    themes.insert(theme.name.to_lowercase(), theme);
-                }
-                Err(e) => {
-                    // Embedded TOML is fixed at compile time; a parse error is a bug.
-                    eprintln!("[themes] bundled theme failed to load: {e}");
-                }
-            }
+            // Embedded TOML is fixed at compile time. A parse error means BUNDLED_THEME_KEYS
+            // would advertise a key that isn't in the registry — an inconsistency that must be
+            // caught during development and CI, not silently swallowed at runtime.
+            let theme = parse_theme_str(toml_str)
+                .unwrap_or_else(|e| panic!("bundled theme '{key}' failed to parse: {e}"));
+            themes.insert(key.to_string(), theme);
         }
 
         Self { themes }
@@ -441,7 +450,7 @@ impl ThemeRegistry {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|ext| ext == "toml") {
-                match load_theme_file(&path) {
+                match resolve_theme(&path, self) {
                     Ok(theme) => {
                         self.themes.insert(theme.name.to_lowercase(), theme);
                     }

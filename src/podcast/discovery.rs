@@ -169,7 +169,7 @@ impl PodcastIndexClient {
             .await
             .map_err(|e| DiscoveryError::Parse(e.to_string()))?;
 
-        // Normalise TrendingFeed → PodcastSearchResult
+        // Normalize TrendingFeed → PodcastSearchResult
         let results = body
             .feeds
             .into_iter()
@@ -199,6 +199,8 @@ impl PodcastIndexClient {
         let hash = hex_sha1(raw.as_bytes());
 
         let mut headers = HeaderMap::new();
+        // SAFETY: api_key, decimal u64, and hex SHA-1 strings are all valid ASCII,
+        // so HeaderValue::from_str() is infallible for these values.
         headers.insert("X-Auth-Key", self.api_key.parse().unwrap());
         headers.insert("X-Auth-Date", now.to_string().parse().unwrap());
         headers.insert("Authorization", hash.parse().unwrap());

@@ -244,7 +244,7 @@ pub struct DiscoveryConfig {
     pub podcastindex_api_secret: String,
 }
 
-/// Global keybindings— apply in all buffers unless overridden by a context section.
+/// Global keybindings — apply in all buffers unless overridden by a context section.
 ///
 /// Each field is a list of key notations (Helix-style: "C-n", "S-Tab", "F1", etc.).
 /// Multiple notations can trigger the same action (e.g., `["Up", "k", "C-p"]` for move-up).

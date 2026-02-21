@@ -86,7 +86,36 @@ If the issue depends on unfinished work:
 - Apply the `blocked` label if the dependency is not yet in progress
 - Set the project board status to `Todo` (not `In Progress`)
 
-### 9. Apply status label (if needed)
+### 9. Position the item on the board
+
+After setting all fields, position the item in the correct physical location on the Task List view. The board's physical order is the canonical stack rank — new items land at the bottom by default and need to be slotted into place.
+
+1. Query the current board order:
+   ```powershell
+   gh project item-list 1 --owner lqdev --format json --limit 200
+   ```
+
+2. Walk the list to find the correct position based on the new item's Priority → Phase → Effort relative to existing items. The item should be placed:
+   - **After** the last item with a higher or equal rank
+   - **Before** the first item with a lower rank
+   - **Above** all epic/meta-epic items (features sort before their parent epics)
+
+3. Use `updateProjectV2ItemPosition` to place it:
+   ```powershell
+   gh api graphql -f query='mutation {
+     updateProjectV2ItemPosition(input: {
+       projectId: "PVT_kwHOAKnYPM4BPqK6"
+       itemId: "<NEW_ITEM_ID>"
+       afterId: "<ITEM_THAT_SHOULD_COME_BEFORE>"
+     }) { items(first:1) { nodes { id } } }
+   }'
+   ```
+
+   If the item should be first on the board, omit `afterId`.
+
+See the `rerank-board` skill for project constants and full reordering mechanics.
+
+### 10. Apply status label (if needed)
 
 | Label | When |
 |-------|------|
@@ -103,6 +132,7 @@ After triaging, the issue should have:
 - [ ] Effort set on project board (`XS`–`XL`)
 - [ ] Phase set on project board (or `Backlog`)
 - [ ] Epic linkage if part of a larger effort
+- [ ] **Positioned in the board's physical order** (not left at bottom)
 - [ ] `needs-triage` label removed
 - [ ] `blocked` label added if dependencies exist
 

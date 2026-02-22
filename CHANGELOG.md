@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Playback UIActions and AppEvents** — adds the full vocabulary for playback interactions between the UI layer, keybindings, and audio backend. Closes [#138](https://github.com/lqdev/podcast-tui/issues/138). Part of [#137](https://github.com/lqdev/podcast-tui/issues/137).
+  - 7 new `UIAction` variants in `src/ui/mod.rs`: `PlayEpisode { podcast_id, episode_id, path }`, `TogglePlayPause`, `StopPlayback`, `SeekForward`, `SeekBackward`, `VolumeUp`, `VolumeDown`
+  - `PlayEpisode` guard in `src/ui/buffers/episode_list.rs`: only fires when `episode.local_path.is_some()`; shows `ShowError` for episodes that are not yet downloaded
+  - Stub match arms for all 7 variants in `app.rs handle_action()` — actual AudioManager dispatch wired in [#141](https://github.com/lqdev/podcast-tui/issues/141)
+  - Note: `AppEvent` audio variants (`PlaybackStarted`, `PlaybackStopped`, `TrackEnded`, `PlaybackError`) were already added in [#136](https://github.com/lqdev/podcast-tui/issues/136)
+  - 2 unit tests: `test_play_episode_action_requires_local_path`, `test_play_episode_action_contains_correct_path`
+
 - **AudioManager — threaded playback coordinator** — creates and owns a `PlaybackBackend` on a dedicated `std::thread` (not `tokio::spawn`) to avoid cpal/rodio deadlock with the async runtime. Communicates with the UI via three channels: `mpsc::UnboundedSender<AudioCommand>` (UI → manager), `watch::Receiver<PlaybackStatus>` (continuous ~4 Hz state: position, volume, state), and `mpsc::UnboundedSender<AppEvent>` (one-shot events: `PlaybackStarted`, `PlaybackStopped`, `TrackEnded`, `PlaybackError`). Backend selection: `config.external_player` set → `ExternalPlayerBackend`; otherwise try `RodioBackend`, fall back to `ExternalPlayerBackend::detect()`, return original rodio error if both fail. Volume tracked in manager (0.0–1.0; `VolumeUp`/`VolumeDown` use `VOLUME_STEP = 0.05`). Thread exits cleanly when command channel is dropped. Closes [#136](https://github.com/lqdev/podcast-tui/issues/136). Part of [#132](https://github.com/lqdev/podcast-tui/issues/132).
   - New `src/audio/manager.rs`: `AudioManager` struct, `run_loop()`, `process_command()`, `create_backend()`
   - New `AppEvent` variants in `src/ui/events.rs`: `PlaybackStarted`, `PlaybackStopped`, `TrackEnded`, `PlaybackError`

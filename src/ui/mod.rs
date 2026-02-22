@@ -303,6 +303,26 @@ pub enum UIAction {
     SubscribeFromDiscovery {
         feed_url: String,
     },
+
+    // Audio playback actions
+    /// Play a downloaded episode through the audio backend
+    PlayEpisode {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+        path: std::path::PathBuf,
+    },
+    /// Toggle play/pause for the current track
+    TogglePlayPause,
+    /// Stop playback and clear the current track
+    StopPlayback,
+    /// Seek forward by `constants::audio::SEEK_STEP_SECS`
+    SeekForward,
+    /// Seek backward by `constants::audio::SEEK_STEP_SECS`
+    SeekBackward,
+    /// Increase volume by `constants::audio::VOLUME_STEP`
+    VolumeUp,
+    /// Decrease volume by `constants::audio::VOLUME_STEP`
+    VolumeDown,
 }
 
 impl UIAction {
@@ -371,6 +391,14 @@ impl UIAction {
             UIAction::SyncToDevice => "Sync to device",
             UIAction::PreviousTab => "Previous tab",
             UIAction::NextTab => "Next tab",
+            // Audio playback
+            UIAction::PlayEpisode { .. } => "Play selected episode",
+            UIAction::TogglePlayPause => "Toggle play / pause",
+            UIAction::StopPlayback => "Stop playback",
+            UIAction::SeekForward => "Seek forward",
+            UIAction::SeekBackward => "Seek backward",
+            UIAction::VolumeUp => "Volume up",
+            UIAction::VolumeDown => "Volume down",
             // Internal / trigger actions — not shown in help
             _ => "",
         }

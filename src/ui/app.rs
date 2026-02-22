@@ -1306,6 +1306,46 @@ impl UIApp {
                 self.trigger_async_add_podcast(feed_url);
                 Ok(true)
             }
+            // Audio playback — pass to buffer to resolve the selected episode, then dispatch
+            // to AudioManager (wired in #141).
+            UIAction::PlayEpisode { .. } => {
+                if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
+                    let result = current_buffer.handle_action(action);
+                    match result {
+                        UIAction::PlayEpisode { .. } => {
+                            // Stub: AudioManager dispatch wired in #141
+                        }
+                        UIAction::ShowError(msg) => self.show_error(msg),
+                        _ => {}
+                    }
+                }
+                Ok(true)
+            }
+            // Simple playback controls forwarded to AudioManager in #141
+            UIAction::TogglePlayPause => {
+                // Stub: AudioManager dispatch wired in #141
+                Ok(true)
+            }
+            UIAction::StopPlayback => {
+                // Stub: AudioManager dispatch wired in #141
+                Ok(true)
+            }
+            UIAction::SeekForward => {
+                // Stub: AudioManager dispatch wired in #141
+                Ok(true)
+            }
+            UIAction::SeekBackward => {
+                // Stub: AudioManager dispatch wired in #141
+                Ok(true)
+            }
+            UIAction::VolumeUp => {
+                // Stub: AudioManager dispatch wired in #141
+                Ok(true)
+            }
+            UIAction::VolumeDown => {
+                // Stub: AudioManager dispatch wired in #141
+                Ok(true)
+            }
             // Buffer-specific actions
             action => {
                 if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {

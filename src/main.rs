@@ -456,13 +456,11 @@ async fn main() -> Result<()> {
             if let Err(e) = update_splash_status(status.message()) {
                 eprintln!("Failed to update splash status: {}", e);
             }
-            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         }
     });
 
     // Load configuration
     update_splash_status(InitStatus::LoadingConfig.message())?;
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     let config_path = matches.get_one::<String>("config");
     let config = Config::load_or_default(config_path)?;
@@ -477,9 +475,8 @@ async fn main() -> Result<()> {
     // Wait for status monitor to finish
     let _ = status_monitor.await;
 
-    // Show final status briefly
+    // Render final status once before clearing the splash screen
     update_splash_status(InitStatus::Complete.message())?;
-    tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
 
     // Clear splash screen and show cursor
     execute!(

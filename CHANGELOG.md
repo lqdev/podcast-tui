@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Audio integration tests now use event-driven polling instead of fixed sleeps** — February 2026
+  - Replaced all `tokio::time::sleep(STATUS_BROADCAST_DELAY)` calls in `tests/test_audio.rs` with a new `wait_for_status()` helper that polls `watch::Receiver::changed()` with a predicate and generous timeout. Tests no longer depend on the 250 ms run_loop interval.
+  - `test_audio_manager_clean_shutdown_on_drop` now verifies thread exit by draining the `app_rx` channel until `recv()` returns `None`, proving the audio thread dropped its sender.
+  - Closes [#177](https://github.com/lqdev/podcast-tui/issues/177).
+
 ### Fixed
 
 - **`:theme` command now visually updates all open buffers and the minibuffer** — February 2026

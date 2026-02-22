@@ -2674,13 +2674,13 @@ impl UIApp {
                             UIAction::ShowError(msg) => self.show_error(msg),
                             _ => {}
                         }
+                        // Switch to podcast list so user sees the filter applied
+                        let _ = self
+                            .buffer_manager
+                            .switch_to_buffer(&"podcast-list".to_string());
                     } else {
                         self.show_error("Podcast list not available".to_string());
                     }
-                    // Switch to podcast list so user sees the filter applied
-                    let _ = self
-                        .buffer_manager
-                        .switch_to_buffer(&"podcast-list".to_string());
                     Ok(true)
                 } else {
                     self.show_error("Usage: filter-tag <tag>".to_string());

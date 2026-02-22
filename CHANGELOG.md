@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Audio integration tests** — 7 integration tests for `AudioManager` end-to-end API (`tests/test_audio.rs`). 5 CI-safe tests use a platform-appropriate external player (`echo` on Unix, `cmd` on Windows); 2 hardware-dependent tests gated with `#[ignore]`. Includes `write_test_wav()` helper for dynamic WAV generation and `wait_for_event()` async helper with timeout+predicate matching. Closes [#143](https://github.com/lqdev/podcast-tui/issues/143). Part of [#142](https://github.com/lqdev/podcast-tui/issues/142).
+
 - **Wire AudioManager into App event loop** — completes the playback integration pipeline so audio commands flow from key presses to the speaker. `App::run()` now spawns `AudioManager`, wires the command sender into `UIApp`, and passes the status watch receiver to `UIApp::run()`. A dedicated `select!` branch triggers re-renders on every `AudioManager` status tick. `UIApp` gains an `audio_command_tx: Option<…>` field and a `set_audio_command_tx()` setter; constructors unchanged (no test breakage). All 7 playback `UIAction` stubs are replaced with real `AudioCommand` dispatch; all 4 `AppEvent` playback stubs are replaced with real business logic. Closes [#141](https://github.com/lqdev/podcast-tui/issues/141). Part of [#137](https://github.com/lqdev/podcast-tui/issues/137).
   - `src/audio/manager.rs`: added `pub fn command_tx()` to expose a cloneable command sender
   - `src/app.rs`: `App::run()` creates `AudioManager`, extracts `audio_command_tx` + `playback_status_rx`, sets both on `UIApp`; graceful `eprintln!` fallback when audio init fails (app still starts)

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`:tag`/`:untag`/`:filter-tag` commands now work from any buffer — February 2026**
+  - All three commands previously routed the action through `current_buffer_mut()`, which meant they silently did nothing when any buffer other than the podcast list had focus (episode list, downloads, help, etc.). Each non-podcast buffer has a `_ => UIAction::None` catch-all that swallowed the action without any feedback.
+  - Fixed by routing all three commands directly to `get_podcast_list_buffer_mut()` — the same typed getter already used correctly by `:tags`.
+  - `:tag <name>` now adds a tag to the selected podcast regardless of which buffer is active; shows a clear error when no podcast is selected (instead of silence).
+  - `:untag <name>` now removes a tag regardless of active buffer; shows a clear error when no podcast is selected.
+  - `:filter-tag <tag>` now filters the podcast list regardless of active buffer; automatically switches focus to the podcast list buffer so the user can see the result.
+  - Closes [#168](https://github.com/lqdev/podcast-tui/issues/168).
+  - 5 unit tests: `test_tag_command_routes_to_podcast_list_not_active_buffer`, `test_untag_command_routes_to_podcast_list_not_active_buffer`, `test_filter_tag_routes_to_podcast_list_and_switches_buffer`, `test_tag_command_shows_error_when_no_podcast_selected`, `test_untag_command_shows_error_when_no_podcast_selected`
+
 ### Added
 
 - **Wire AudioManager into App event loop** — completes the playback integration pipeline so audio commands flow from key presses to the speaker. `App::run()` now spawns `AudioManager`, wires the command sender into `UIApp`, and passes the status watch receiver to `UIApp::run()`. A dedicated `select!` branch triggers re-renders on every `AudioManager` status tick. `UIApp` gains an `audio_command_tx: Option<…>` field and a `set_audio_command_tx()` setter; constructors unchanged (no test breakage). All 7 playback `UIAction` stubs are replaced with real `AudioCommand` dispatch; all 4 `AppEvent` playback stubs are replaced with real business logic. Closes [#141](https://github.com/lqdev/podcast-tui/issues/141). Part of [#137](https://github.com/lqdev/podcast-tui/issues/137).

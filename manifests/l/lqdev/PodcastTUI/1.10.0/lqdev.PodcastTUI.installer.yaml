@@ -12,12 +12,12 @@ Installers:
   - RelativeFilePath: podcast-tui-v1.10.0-windows-aarch64\podcast-tui.exe
     PortableCommandAlias: podcast-tui
   InstallerUrl: https://github.com/lqdev/podcast-tui/releases/download/v1.10.0/podcast-tui-v1.10.0-windows-aarch64.zip
-  InstallerSha256: PLACEHOLDER_UPDATE_AFTER_CI_BUILD
+  InstallerSha256: DF4280CA506F2FEAAC63022B33ED4A0DF160FC752EF8A29DFB5AD1C7F82D189F
 - Architecture: x64
   NestedInstallerFiles:
   - RelativeFilePath: podcast-tui-v1.10.0-windows-x86_64\podcast-tui.exe
     PortableCommandAlias: podcast-tui
   InstallerUrl: https://github.com/lqdev/podcast-tui/releases/download/v1.10.0/podcast-tui-v1.10.0-windows-x86_64.zip
-  InstallerSha256: PLACEHOLDER_UPDATE_AFTER_CI_BUILD
+  InstallerSha256: 15878CFDCF693EC4481AFD52FF1BE68DD33B72B2F56B80784EFBFD9682D858AE
 ManifestType: installer
 ManifestVersion: 1.10.0

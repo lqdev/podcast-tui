@@ -738,6 +738,6 @@ For questions about architecture:
 
 ---
 
-**Document Version**: 1.0  
-**Covers**: Sprint 0-3 (Foundation through Downloads)  
-**Next Review**: After Sprint 4 (Audio Playback)
+**Document Version**: 1.1  
+**Covers**: Sprint 0-4 (Foundation through Audio Playback)  
+**Next Review**: After Sprint 5 (Episode Notes)

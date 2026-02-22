@@ -5,7 +5,7 @@ A cross-platform terminal user interface for podcast management built with Rust.
 ![Build Status](https://github.com/lqdev/podcast-tui/workflows/CI/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Rust Version](https://img.shields.io/badge/rust-1.75+-red.svg)
-![Version](https://img.shields.io/badge/version-1.6.0-green)
+![Version](https://img.shields.io/badge/version-1.10.0-green)
 ![Development Status](https://img.shields.io/badge/status-Active%20Development-blue)
 
 > 📚 **Documentation:** For comprehensive architecture and design patterns, see [**ARCHITECTURE.md**](docs/ARCHITECTURE.md)
@@ -441,6 +441,6 @@ Licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
-**Status**: 🚀 Active Development (v1.6.0)  
+**Status**: 🚀 Active Development (v1.10.0)  
 **Maintainer**: [@lqdev](https://github.com/lqdev)  
-**Version**: 1.6.0
+**Version**: 1.10.0

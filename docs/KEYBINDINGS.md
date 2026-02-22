@@ -210,4 +210,4 @@ Keybindings are designed to work reliably across terminals:
 Some terminals intercept certain key combinations. If a binding is unresponsive, use the alternate or remap via `config.json`.
 
 ---
-*Last Updated: February 2026 | Version: v1.9.0 | Maintainer: [@lqdev](https://github.com/lqdev)*
+*Last Updated: February 2026 | Version: v1.10.0 | Maintainer: [@lqdev](https://github.com/lqdev)*

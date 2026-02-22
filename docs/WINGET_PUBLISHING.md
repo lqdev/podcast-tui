@@ -322,4 +322,4 @@ wingetcreate submit manifests\l\lqdev\PodcastTUI\<VER> --token <PAT>
 - [Build System documentation](BUILD_SYSTEM.md)
 
 ---
-*Last Updated: February 2026 | Version: v1.9.0 | Maintainer: [@lqdev](https://github.com/lqdev)*
+*Last Updated: February 2026 | Version: v1.10.0 | Maintainer: [@lqdev](https://github.com/lqdev)*

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **Removed artificial sleep delays from startup path** — cuts ~1.1 s of dead wait time on every launch.
+  - Deleted 200 ms per-status-update sleep from the status monitor loop.
+  - Deleted 100 ms post-config-load sleep.
+  - Deleted 800 ms "Ready!" splash hold.
+  - Closes [#186](https://github.com/lqdev/podcast-tui/issues/186). Part of [#181](https://github.com/lqdev/podcast-tui/issues/181).
+
 ## [1.10.0] - 2026-02-22
 
 ### Added

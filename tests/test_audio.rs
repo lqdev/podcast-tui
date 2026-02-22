@@ -18,6 +18,19 @@ use tokio::sync::mpsc;
 /// broadcast the updated status (~250 ms loop interval + margin).
 const STATUS_BROADCAST_DELAY: Duration = Duration::from_millis(400);
 
+/// A trivially-available external "player" command for CI-safe tests.
+/// On Unix, `echo` is a standalone binary. On Windows, `echo` is a
+/// shell built-in, so we use `cmd.exe` with `/C echo` via the player args.
+#[cfg(unix)]
+fn ci_external_player() -> String {
+    "echo".into()
+}
+
+#[cfg(windows)]
+fn ci_external_player() -> String {
+    "cmd".into()
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Write a minimal silent PCM WAV file (44 100 Hz · mono · 16-bit).
@@ -75,13 +88,13 @@ where
 
 #[tokio::test]
 async fn test_audio_manager_play_and_stop_lifecycle_with_external_player() {
-    // Arrange — use `echo` as a trivially-available external "player"
+    // Arrange — use a trivially-available external "player"
     let dir = tempfile::TempDir::new().expect("temp dir");
     let wav_path = dir.path().join("test.wav");
     write_test_wav(&wav_path, 1);
 
     let config = AudioConfig {
-        external_player: Some("echo".into()),
+        external_player: Some(ci_external_player()),
         ..Default::default()
     };
     let (app_tx, mut app_rx) = mpsc::unbounded_channel::<AppEvent>();
@@ -163,7 +176,7 @@ async fn test_audio_manager_play_error_fires_playback_error_event() {
 async fn test_audio_manager_subscribe_returns_initial_stopped_status() {
     // Arrange
     let config = AudioConfig {
-        external_player: Some("echo".into()),
+        external_player: Some(ci_external_player()),
         volume: 0.6,
         ..Default::default()
     };
@@ -186,7 +199,7 @@ async fn test_audio_manager_subscribe_returns_initial_stopped_status() {
 async fn test_audio_manager_clean_shutdown_on_drop() {
     // Arrange
     let config = AudioConfig {
-        external_player: Some("echo".into()),
+        external_player: Some(ci_external_player()),
         ..Default::default()
     };
     let (app_tx, _app_rx) = mpsc::unbounded_channel::<AppEvent>();
@@ -204,9 +217,9 @@ async fn test_audio_manager_clean_shutdown_on_drop() {
 
 #[tokio::test]
 async fn test_audio_manager_volume_commands_update_status() {
-    // Arrange — use `echo` as external player for CI compatibility
+    // Arrange — use CI-safe external player
     let config = AudioConfig {
-        external_player: Some("echo".into()),
+        external_player: Some(ci_external_player()),
         volume: 0.5,
         ..Default::default()
     };

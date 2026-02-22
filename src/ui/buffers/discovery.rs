@@ -357,6 +357,10 @@ impl Buffer for DiscoveryBuffer {
         self
     }
 
+    fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "DISCOVERY BUFFER".to_string(),

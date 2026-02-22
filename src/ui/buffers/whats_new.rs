@@ -244,6 +244,10 @@ impl Buffer for WhatsNewBuffer {
         self
     }
 
+    fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+
     fn can_close(&self) -> bool {
         false // Core buffer, cannot be closed
     }

@@ -311,6 +311,10 @@ impl Buffer for NowPlayingBuffer {
         self
     }
 
+    fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+
     fn can_close(&self) -> bool {
         // Persistent buffer — not closeable with C-k.
         false

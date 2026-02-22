@@ -1358,7 +1358,7 @@ impl UIApp {
                                 });
                             } else {
                                 self.show_error(
-                                    "Audio playback not available on this system".to_string(),
+                                    crate::constants::audio::UNAVAILABLE_ERROR.to_string(),
                                 );
                             }
                         }
@@ -1376,6 +1376,8 @@ impl UIApp {
                 }
                 if let Some(ref tx) = self.audio_command_tx {
                     let _ = tx.send(AudioCommand::TogglePlayPause);
+                } else {
+                    self.show_error(crate::constants::audio::UNAVAILABLE_ERROR.to_string());
                 }
                 Ok(true)
             }
@@ -6646,6 +6648,40 @@ mod tests {
         assert!(
             !app.minibuffer.is_input_mode(),
             "Minibuffer should be in error display mode, not input mode"
+        );
+    }
+
+    // ── Issue #171: PlayEpisode default keybinding / TogglePlayPause feedback ──
+
+    #[tokio::test]
+    async fn test_toggle_play_pause_shows_error_when_audio_none() {
+        // Arrange — audio_command_tx is None (audio init failed / not available)
+        let mut app = make_test_app().await;
+        // Do NOT call set_audio_command_tx — leave audio_command_tx as None
+
+        // Act
+        let result = app.handle_action(UIAction::TogglePlayPause).await;
+
+        // Assert — returns Ok(true) and shows an error in the minibuffer
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap(),
+            "handle_action should return true (continue running)"
+        );
+        assert!(
+            app.minibuffer.is_visible(),
+            "Minibuffer should show error when audio is unavailable"
+        );
+        assert!(
+            !app.minibuffer.is_input_mode(),
+            "Minibuffer should be in error display mode, not input mode"
+        );
+        // Verify the exact error message so we catch silent regressions if the
+        // string changes (e.g. a different branch fires instead)
+        let text = app.minibuffer.text_content();
+        assert!(
+            text.contains(crate::constants::audio::UNAVAILABLE_ERROR),
+            "Minibuffer should contain the audio-unavailable error, got: {text:?}"
         );
     }
 }

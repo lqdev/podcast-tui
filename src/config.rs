@@ -330,6 +330,15 @@ pub struct GlobalKeys {
     // ── Tab navigation (e.g., sync dry-run preview tabs) ─────────────────────
     pub prev_tab: Vec<String>,
     pub next_tab: Vec<String>,
+
+    // ── Audio playback ────────────────────────────────────────────────────────
+    pub toggle_play_pause: Vec<String>,
+    pub play_episode: Vec<String>,
+    pub seek_backward: Vec<String>,
+    pub seek_forward: Vec<String>,
+    pub volume_up: Vec<String>,
+    pub volume_down: Vec<String>,
+    pub open_now_playing: Vec<String>,
 }
 
 impl Default for GlobalKeys {
@@ -385,6 +394,13 @@ impl Default for GlobalKeys {
             sync_to_device: vec![],
             prev_tab: vec![],
             next_tab: vec![],
+            toggle_play_pause: vec![],
+            play_episode: vec![],
+            seek_backward: vec![],
+            seek_forward: vec![],
+            volume_up: vec![],
+            volume_down: vec![],
+            open_now_playing: vec![],
         }
     }
 }
@@ -463,6 +479,17 @@ impl GlobalKeys {
             // Tab navigation
             prev_tab: ["["].map(String::from).to_vec(),
             next_tab: ["]"].map(String::from).to_vec(),
+
+            // Audio playback — keys chosen to avoid displacing any existing default binding.
+            // 'P' (S-P / Shift+P) is mnemonic for Play/Pause; lowercase 'p' is AddToPlaylist.
+            // PlayEpisode is intentionally unbound (Enter/SelectItem already plays in episode list).
+            toggle_play_pause: ["S-P"].map(String::from).to_vec(),
+            play_episode: vec![],
+            seek_backward: ["C-Left"].map(String::from).to_vec(),
+            seek_forward: ["C-Right"].map(String::from).to_vec(),
+            volume_up: ["+", "="].map(String::from).to_vec(),
+            volume_down: ["-"].map(String::from).to_vec(),
+            open_now_playing: ["F9"].map(String::from).to_vec(),
         }
     }
 
@@ -803,7 +830,7 @@ mod tests {
         assert!(!keys.quit.is_empty());
         assert!(!keys.show_help.is_empty());
         assert!(!keys.search.is_empty());
-        assert!(!keys.clear_filters.is_empty());
+        assert!(!keys.clear_filters.is_empty()); // F6 → ClearFilters
         assert!(!keys.refresh.is_empty());
         assert!(!keys.prompt_command.is_empty());
         assert!(!keys.switch_to_buffer.is_empty());
@@ -828,6 +855,15 @@ mod tests {
         assert!(!keys.sync_to_device.is_empty());
         assert!(!keys.prev_tab.is_empty());
         assert!(!keys.next_tab.is_empty());
+
+        // Audio playback — seek/volume/now-playing/toggle have defaults; play_episode is intentionally unbound
+        assert!(!keys.toggle_play_pause.is_empty()); // S-P
+        assert!(keys.play_episode.is_empty()); // p is AddToPlaylist; user must configure
+        assert!(!keys.seek_backward.is_empty());
+        assert!(!keys.seek_forward.is_empty());
+        assert!(!keys.volume_up.is_empty());
+        assert!(!keys.volume_down.is_empty());
+        assert!(!keys.open_now_playing.is_empty());
 
         // GlobalKeys::default() returns empty vecs (no explicit override = use preset)
         let empty = GlobalKeys::default();
@@ -904,6 +940,16 @@ mod tests {
         assert_eq!(keys.sync_to_device, vec!["s"]);
         assert_eq!(keys.prev_tab, vec!["["]);
         assert_eq!(keys.next_tab, vec!["]"]);
+
+        // Audio playback — non-displacing defaults
+        assert_eq!(keys.toggle_play_pause, vec!["S-P"]); // P (Shift+P), mnemonic for Play/Pause
+        assert!(keys.play_episode.is_empty()); // intentionally unbound (p = AddToPlaylist)
+        assert_eq!(keys.seek_backward, vec!["C-Left"]);
+        assert_eq!(keys.seek_forward, vec!["C-Right"]);
+        assert!(keys.volume_up.contains(&"+".to_string()));
+        assert!(keys.volume_up.contains(&"=".to_string()));
+        assert_eq!(keys.volume_down, vec!["-"]);
+        assert_eq!(keys.open_now_playing, vec!["F9"]);
     }
 
     #[test]

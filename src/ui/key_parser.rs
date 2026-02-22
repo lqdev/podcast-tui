@@ -10,7 +10,7 @@
 //   Named keys: Enter, Tab, Esc, Backspace, Delete, Up, Down, Left, Right,
 //               Home, End, PgUp/PageUp, PgDn/PageDown
 
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{KeyCode, KeyModifiers, MediaKeyCode};
 
 use crate::ui::keybindings::KeyChord;
 
@@ -213,7 +213,26 @@ fn key_code_to_str(code: &KeyCode) -> String {
         KeyCode::Pause => "Pause".to_string(),
         KeyCode::Menu => "Menu".to_string(),
         KeyCode::F(n) => format!("F{n}"),
+        KeyCode::Media(m) => media_key_to_str(m),
         // Fallback for keys not in our notation (shouldn't appear in practice).
+        _ => format!("{code:?}"),
+    }
+}
+
+/// Convert a `MediaKeyCode` to a human-readable Unicode symbol string.
+fn media_key_to_str(code: &MediaKeyCode) -> String {
+    match code {
+        MediaKeyCode::Play => "⏵".to_string(),
+        MediaKeyCode::Pause => "⏸".to_string(),
+        MediaKeyCode::PlayPause => "⏯".to_string(),
+        MediaKeyCode::Stop => "⏹".to_string(),
+        MediaKeyCode::FastForward => "⏩".to_string(),
+        MediaKeyCode::Rewind => "⏪".to_string(),
+        MediaKeyCode::TrackNext => "⏭".to_string(),
+        MediaKeyCode::TrackPrevious => "⏮".to_string(),
+        MediaKeyCode::RaiseVolume => "🔊".to_string(),
+        MediaKeyCode::LowerVolume => "🔉".to_string(),
+        MediaKeyCode::MuteVolume => "🔇".to_string(),
         _ => format!("{code:?}"),
     }
 }

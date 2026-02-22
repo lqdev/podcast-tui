@@ -557,6 +557,14 @@ impl Minibuffer {
         self.theme = theme;
     }
 
+    /// Get the display text for the minibuffer.
+    ///
+    /// Returns the current rendered string (e.g. `"Error: …"`, `"M-x "`, the
+    /// prompt+input, etc.). Useful for testing and accessibility.
+    pub fn text_content(&self) -> String {
+        self.display_text()
+    }
+
     /// Get the display text for the minibuffer
     fn display_text(&self) -> String {
         match &self.content {

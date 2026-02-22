@@ -1358,7 +1358,7 @@ impl UIApp {
                                 });
                             } else {
                                 self.show_error(
-                                    "Audio playback not available on this system".to_string(),
+                                    crate::constants::audio::UNAVAILABLE_ERROR.to_string(),
                                 );
                             }
                         }
@@ -1377,7 +1377,7 @@ impl UIApp {
                 if let Some(ref tx) = self.audio_command_tx {
                     let _ = tx.send(AudioCommand::TogglePlayPause);
                 } else {
-                    self.show_error("Audio playback not available on this system".to_string());
+                    self.show_error(crate::constants::audio::UNAVAILABLE_ERROR.to_string());
                 }
                 Ok(true)
             }
@@ -6675,6 +6675,13 @@ mod tests {
         assert!(
             !app.minibuffer.is_input_mode(),
             "Minibuffer should be in error display mode, not input mode"
+        );
+        // Verify the exact error message so we catch silent regressions if the
+        // string changes (e.g. a different branch fires instead)
+        let text = app.minibuffer.text_content();
+        assert!(
+            text.contains(crate::constants::audio::UNAVAILABLE_ERROR),
+            "Minibuffer should contain the audio-unavailable error, got: {text:?}"
         );
     }
 }

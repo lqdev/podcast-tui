@@ -18,8 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`TogglePlayPause` (`S-P`) now shows an error message when audio is unavailable** — previously silently no-oped when `audio_command_tx` is `None` (audio hardware init failed). Now mirrors `PlayEpisode`'s existing error pattern and shows "Audio playback not available on this system". Closes [#171](https://github.com/lqdev/podcast-tui/issues/171).
 
-### Fixed
-
 - **`:tag`/`:untag`/`:filter-tag` commands now work from any buffer — February 2026**
   - All three commands previously routed the action through `current_buffer_mut()`, which meant they silently did nothing when any buffer other than the podcast list had focus (episode list, downloads, help, etc.). Each non-podcast buffer has a `_ => UIAction::None` catch-all that swallowed the action without any feedback.
   - Fixed by routing all three commands directly to `get_podcast_list_buffer_mut()` — the same typed getter already used correctly by `:tags`.

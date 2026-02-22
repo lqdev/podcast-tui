@@ -166,6 +166,10 @@ pub mod audio {
 
     /// Crossfade duration between tracks (milliseconds)
     pub const CROSSFADE_DURATION_MS: u64 = 1000;
+
+    /// Error message shown to the user when audio hardware init failed and playback
+    /// is requested. Centralised here to keep all user-facing strings consistent.
+    pub const UNAVAILABLE_ERROR: &str = "Audio playback not available on this system";
 }
 
 /// Podcast discovery (PodcastIndex API) constants

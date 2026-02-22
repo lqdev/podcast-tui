@@ -1298,7 +1298,7 @@ mod tests {
 
     #[test]
     fn test_config_overrides_play_episode() {
-        // Arrange — bind PlayEpisode (unbound by default) to F11
+        // Arrange — override default S-Enter PlayEpisode binding to F11 for this test
         let mut config = KeybindingConfig::default();
         config.global.play_episode = vec!["F11".to_string()];
         // Act

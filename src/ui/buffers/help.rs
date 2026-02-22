@@ -59,6 +59,17 @@ impl HelpBuffer {
             content.push(format!("  {:<24} {}", keys, desc));
         }
 
+        content.push("".to_string());
+        content.push("NOW PLAYING BUFFER (F9):".to_string());
+        content.push(
+            "  Shows episode title, podcast name, progress bar, volume, and playback state."
+                .to_string(),
+        );
+        content.push(
+            "  All playback keys (S-P, +/-, C-←/→) work from any buffer, not just here."
+                .to_string(),
+        );
+
         Self::with_content("*Help: Keybindings*".to_string(), content)
     }
 
@@ -254,7 +265,7 @@ impl HelpBuffer {
             "PLAYBACK CONTROLS (work from any buffer):".to_string(),
             "  S-P           Toggle play / pause".to_string(),
             "  ⏯ (media key) Toggle play / pause".to_string(),
-            "  ⏵ (media key) Play".to_string(),
+            "  ⏵ (media key) Toggle play / pause (Play key treated as toggle)".to_string(),
             "  C-←           Seek backward 10s".to_string(),
             "  C-→           Seek forward 10s".to_string(),
             "  + / =         Volume up".to_string(),

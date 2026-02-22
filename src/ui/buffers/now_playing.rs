@@ -22,6 +22,7 @@ use crate::{
         themes::Theme,
         UIAction, UIComponent,
     },
+    utils::time::format_duration,
 };
 
 /// Buffer that displays real-time playback information.
@@ -101,12 +102,12 @@ impl NowPlayingBuffer {
             )]),
             Line::from(""),
             Line::from(vec![Span::styled(
-                "  Open an episode list and press S-P or ⏯ to start playback.",
+                "  Open an episode list, select an episode, and trigger Play to start playback.",
                 self.theme.muted_style(),
             )]),
             Line::from(""),
             Line::from(vec![Span::styled(
-                "  S-P / ⏯  Play/pause  •  +/−  Volume",
+                "  Once playing: S-P / ⏯  Pause/resume  •  +/-  Volume",
                 self.theme.help_style(),
             )]),
         ];
@@ -119,8 +120,8 @@ impl NowPlayingBuffer {
 
     /// Render the playing / paused state (episode info, progress, volume, hints).
     fn render_playing(&self, frame: &mut Frame, inner: Rect) {
-        // We need at least 8 rows to show everything; fall back to compact if smaller.
-        if inner.height < 6 {
+        // We need at least 7 rows to show everything; fall back to compact if smaller.
+        if inner.height < 7 {
             self.render_compact(frame, inner);
             return;
         }
@@ -200,9 +201,9 @@ impl NowPlayingBuffer {
 
         // ── Keybinding hints ─────────────────────────────────────────────────
         let hints_line = if self.status.position.is_some() {
-            "  S-P: play/pause  •  C-←/→: seek ±10s  •  +/−: volume  •  F9: now playing"
+            "  S-P: play/pause  •  C-←/→: seek ±10s  •  +/-: volume  •  F9: now playing"
         } else {
-            "  S-P: play/pause  •  +/−: volume  •  External player active"
+            "  S-P: play/pause  •  +/-: volume  •  External player active"
         };
         frame.render_widget(
             Paragraph::new(hints_line).style(self.theme.help_style()),
@@ -319,22 +320,10 @@ impl Buffer for NowPlayingBuffer {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/// Format a `Duration` as "m:ss" or "h:mm:ss".
-pub fn format_duration(d: Duration) -> String {
-    let total_secs = d.as_secs();
-    let h = total_secs / 3600;
-    let m = (total_secs % 3600) / 60;
-    let s = total_secs % 60;
-    if h > 0 {
-        format!("{h}:{m:02}:{s:02}")
-    } else {
-        format!("{m}:{s:02}")
-    }
-}
-
 /// Compute progress ratio (0.0–1.0) and a "pos / dur" label string.
 ///
-/// Returns `(0.0, "—")` when position or duration is unavailable.
+/// Returns `(0.0, "— / —")` when neither position nor duration is available,
+/// or `(0.0, "<pos> / —")` when position is known but duration is not.
 fn progress_ratio_and_label(
     position: Option<Duration>,
     duration: Option<Duration>,
@@ -342,10 +331,17 @@ fn progress_ratio_and_label(
     match (position, duration) {
         (Some(pos), Some(dur)) if !dur.is_zero() => {
             let ratio = (pos.as_secs_f64() / dur.as_secs_f64()).clamp(0.0, 1.0);
-            let label = format!("{} / {}", format_duration(pos), format_duration(dur));
+            let label = format!(
+                "{} / {}",
+                format_duration(pos.as_secs() as u32),
+                format_duration(dur.as_secs() as u32)
+            );
             (ratio, label)
         }
-        (Some(pos), None) => (0.0, format!("{} / —", format_duration(pos))),
+        (Some(pos), None) => (
+            0.0,
+            format!("{} / —", format_duration(pos.as_secs() as u32)),
+        ),
         _ => (0.0, "— / —".to_string()),
     }
 }
@@ -406,13 +402,22 @@ mod tests {
 
     #[test]
     fn test_now_playing_buffer_formats_duration_correctly() {
-        // Arrange / Act / Assert — seconds only
-        assert_eq!(format_duration(Duration::from_secs(75)), "1:15");
-        assert_eq!(format_duration(Duration::from_secs(0)), "0:00");
-        assert_eq!(format_duration(Duration::from_secs(59)), "0:59");
-        // Hours
-        assert_eq!(format_duration(Duration::from_secs(3661)), "1:01:01");
-        assert_eq!(format_duration(Duration::from_secs(7322)), "2:02:02");
+        // Verify duration formatting through progress_ratio_and_label labels.
+        // The buffer delegates to crate::utils::time::format_duration (shared utility).
+
+        // Arrange — mixed m:ss and h:mm:ss cases
+        let pos = Duration::from_secs(75); // 1:15
+        let dur = Duration::from_secs(3661); // 1:01:01
+
+        // Act
+        let (_, label) = progress_ratio_and_label(Some(pos), Some(dur));
+
+        // Assert — correct m:ss / h:mm:ss formatting in label
+        assert_eq!(label, "1:15 / 1:01:01");
+
+        // Partial: position known, duration unknown
+        let (_, partial) = progress_ratio_and_label(Some(Duration::from_secs(90)), None);
+        assert_eq!(partial, "1:30 / —");
     }
 
     #[test]

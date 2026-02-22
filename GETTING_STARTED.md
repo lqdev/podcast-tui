@@ -16,11 +16,11 @@ This guide will help you get Podcast TUI running on your system, regardless of p
 ✅ Sync to MP3 players/USB devices  
 ✅ Search & filter episodes (text, status, date range)  
 ✅ OPML import/export  
+✅ Audio playback (rodio backend + external player fallback)  
 ✅ Intuitive keyboard shortcuts  
 ✅ 4 color themes  
 
 ### Not Yet Working
-❌ Audio playback (planned for a future sprint)  
 ❌ Episode notes  
 ❌ Statistics  
 
@@ -54,6 +54,8 @@ cargo build --release
 - `↓`/`↑` → Navigate
 - `Enter` → Select
 - `Shift+D` → Download episode
+- `Shift+Enter` → Play downloaded episode
+- `Shift+P` → Toggle play/pause
 - `p` → Add selected episode to playlist
 - `q` or `F10` → Quit
 
@@ -69,12 +71,12 @@ cargo build --release
 - Search & filter episodes (text, status, date range)
 - OPML import/export
 - Playlist management (user + auto-generated Today playlist)
+- Audio playback (rodio backend, external player fallback)
 - Intuitive keyboard navigation
 - Multiple color themes
 - Cross-platform builds (Windows/Linux)
 
 **🚧 What's Coming:**
-- Audio playback (rodio integration, planned)
 - Episode notes
 - Statistics tracking
 
@@ -222,7 +224,31 @@ sudo pacman -S base-devel rust openssl
 3. Press `Shift+D` to download the episode (works in both episode list and episode detail views)
 4. Press `Tab` or `Ctrl+b` to switch between buffers (podcast list, episode list, downloads)
 
-### 4. Essential Keybindings
+### 4. Playing Episodes
+
+1. Navigate to a downloaded episode in the episode list
+2. Press `Shift+Enter` to play the episode
+3. Press `F9` to open the now playing buffer (shows progress, volume, and playback state)
+
+**Playback Controls (work from any buffer):**
+- `Shift+P` - Toggle play/pause (also ⏯ media key)
+- `Ctrl+Left` - Seek backward 10s
+- `Ctrl+Right` - Seek forward 10s
+- `+` / `=` - Volume up
+- `-` - Volume down
+
+**External Player:**
+If the built-in rodio backend is unavailable, Podcast TUI falls back to an external player. Configure a preferred player in `config.json`:
+
+```json
+{
+  "audio": {
+    "external_player": "mpv"
+  }
+}
+```
+
+### 5. Essential Keybindings
 
 **Navigation:**
 - `↑` / `↓` - Previous/Next item
@@ -306,6 +332,13 @@ The application will create configuration files on first run:
   },
   "ui": {
     "theme": "dark"
+  },
+  "audio": {
+    "volume": 0.8,
+    "seek_seconds": 10,
+    "external_player": null,
+    "auto_play_next": false,
+    "remember_position": true
   },
   "storage": {
     "data_directory": null
@@ -447,9 +480,9 @@ sudo pacman -S openssl
 - ✅ Device Sync (MP3 player sync, metadata-based comparison)
 - ✅ Search & Filter (Text, status, date range)
 - ✅ Playlists (User playlists + Today auto-playlist)
+- ✅ Audio Playback (rodio backend, external player fallback, now playing buffer)
 
 **In Progress / Planned:**
-- 🚧 Audio Playback (rodio integration)
 - 🚧 Episode Notes
 - 🚧 Statistics & Reporting
 

@@ -625,25 +625,52 @@ pub mod downloads {
 - `utils/validation.rs`: Input validation (URLs, paths, ranges)
 - `utils/string.rs`: String utilities (sanitization, truncation)
 
-#### 3. Audio Playback (Sprint 4)
+#### 3. Audio Playback
 
-**Approach**: Use `rodio` for cross-platform audio
+**Backend**: `rodio` for cross-platform audio, with external player fallback
 
-**Architecture Addition**:
+**Architecture**:
 ```
-┌──────────────────┐
-│  Audio Manager   │
-│                  │
-│  • Play/Pause    │
-│  • Seek          │
-│  • Volume        │
-│  • Queue         │
-└──────────────────┘
-        ↓
-   rodio crate
+┌─────────────────────────────────────────────┐
+│  UI (tokio async)                           │
+│                                             │
+│  command_tx ──────┐                         │
+│                   │  mpsc (AudioCommand)     │
+│  status_rx  ◀─────┤  watch (PlaybackStatus)  │
+│  event_rx   ◀─────┤  mpsc (AppEvent)        │
+└───────────────────┼─────────────────────────┘
+                    │
+┌───────────────────▼─────────────────────────┐
+│  AudioManager (dedicated std::thread)       │
+│                                             │
+│  ┌────────────────────────────────────────┐ │
+│  │ PlaybackBackend trait                  │ │
+│  │  ├── RodioBackend (default)            │ │
+│  │  └── ExternalPlayerBackend (fallback)  │ │
+│  └────────────────────────────────────────┘ │
+│                                             │
+│  • Play / Pause / Stop                      │
+│  • Seek (forward / backward)                │
+│  • Volume control                           │
+│  • ~4 Hz status broadcast                   │
+└─────────────────────────────────────────────┘
 ```
 
-**Integration**: New buffer for "Now Playing", event-driven playback control
+**Threading model**: `AudioManager` runs on a dedicated `std::thread` (not `tokio::spawn`) to avoid cpal/rodio deadlock with the tokio async executor. Three channels connect the UI to the audio thread:
+
+| Channel | Direction | Type | Purpose |
+|---------|-----------|------|---------|
+| `command_tx` | UI → Audio | `mpsc::UnboundedSender<AudioCommand>` | Play, pause, seek, volume commands |
+| `status_rx` | Audio → UI | `watch::Receiver<PlaybackStatus>` | Continuous state updates (~4 Hz) |
+| `event_tx` | Audio → UI | `mpsc::UnboundedSender<AppEvent>` | One-shot lifecycle events |
+
+**Backend selection** (in `AudioManager::new()`):
+1. `config.external_player` set → `ExternalPlayerBackend`
+2. `RodioBackend::new()` succeeds → use it
+3. `RodioBackend` fails → `ExternalPlayerBackend::detect()`
+4. Both fail → return error (playback disabled with user notification)
+
+**Integration**: `NowPlaying` buffer (F9) displays episode title, podcast name, progress bar, volume, and playback state. All playback keys (`S-P`, `+/-`, `C-←/→`) work from any buffer.
 
 #### 4. Statistics (Sprint 6)
 

@@ -2180,11 +2180,7 @@ impl UIApp {
                 episode_id,
             } => {
                 // Persist completion: update position to full duration (auto-marks played at ≥95%).
-                match self
-                    ._storage
-                    .load_episode(&podcast_id, &episode_id)
-                    .await
-                {
+                match self._storage.load_episode(&podcast_id, &episode_id).await {
                     Ok(mut episode) => {
                         if let Some(duration) = episode.duration {
                             episode.update_position(duration);
@@ -2573,8 +2569,9 @@ impl UIApp {
             "tag" => {
                 if parts.len() > 1 {
                     let tag = parts[1..].join(" ");
-                    if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
-                        let result = current_buffer.handle_action(UIAction::AddTag { tag });
+                    if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut()
+                    {
+                        let result = podcast_buffer.handle_action(UIAction::AddTag { tag });
                         match result {
                             UIAction::TriggerAddTag {
                                 podcast_id,
@@ -2589,8 +2586,14 @@ impl UIApp {
                             }
                             UIAction::ShowMessage(msg) => self.show_message(msg),
                             UIAction::ShowError(msg) => self.show_error(msg),
-                            _ => {}
+                            _ => {
+                                self.show_error(
+                                    "Could not add tag. Is a podcast selected?".to_string(),
+                                );
+                            }
                         }
+                    } else {
+                        self.show_error("Podcast list not available".to_string());
                     }
                     Ok(true)
                 } else {
@@ -2601,8 +2604,9 @@ impl UIApp {
             "untag" => {
                 if parts.len() > 1 {
                     let tag = parts[1..].join(" ");
-                    if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
-                        let result = current_buffer.handle_action(UIAction::RemoveTag { tag });
+                    if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut()
+                    {
+                        let result = podcast_buffer.handle_action(UIAction::RemoveTag { tag });
                         match result {
                             UIAction::TriggerRemoveTag {
                                 podcast_id,
@@ -2617,8 +2621,14 @@ impl UIApp {
                             }
                             UIAction::ShowMessage(msg) => self.show_message(msg),
                             UIAction::ShowError(msg) => self.show_error(msg),
-                            _ => {}
+                            _ => {
+                                self.show_error(
+                                    "Could not remove tag. Is a podcast selected?".to_string(),
+                                );
+                            }
                         }
+                    } else {
+                        self.show_error("Podcast list not available".to_string());
                     }
                     Ok(true)
                 } else {
@@ -2655,8 +2665,9 @@ impl UIApp {
             "filter-tag" => {
                 if parts.len() > 1 {
                     let tag = parts[1..].join(" ");
-                    if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
-                        let result = current_buffer
+                    if let Some(podcast_buffer) = self.buffer_manager.get_podcast_list_buffer_mut()
+                    {
+                        let result = podcast_buffer
                             .handle_action(UIAction::FilterByTag { tag: tag.clone() });
                         match result {
                             UIAction::ShowMessage(msg) => self.show_message(msg),
@@ -2664,8 +2675,12 @@ impl UIApp {
                             _ => {}
                         }
                     } else {
-                        self.show_error("No buffer available for filtering".to_string());
+                        self.show_error("Podcast list not available".to_string());
                     }
+                    // Switch to podcast list so user sees the filter applied
+                    let _ = self
+                        .buffer_manager
+                        .switch_to_buffer(&"podcast-list".to_string());
                     Ok(true)
                 } else {
                     self.show_error("Usage: filter-tag <tag>".to_string());
@@ -6219,7 +6234,9 @@ mod tests {
 
         // Assert
         assert!(result.is_ok());
-        let cmd = audio_rx.try_recv().expect("Expected AudioCommand to be sent");
+        let cmd = audio_rx
+            .try_recv()
+            .expect("Expected AudioCommand to be sent");
         assert!(
             matches!(cmd, AudioCommand::TogglePlayPause),
             "Expected TogglePlayPause, got {cmd:?}"
@@ -6259,7 +6276,10 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let cmd = audio_rx.try_recv().expect("Expected AudioCommand::Stop");
-        assert!(matches!(cmd, AudioCommand::Stop), "Expected Stop, got {cmd:?}");
+        assert!(
+            matches!(cmd, AudioCommand::Stop),
+            "Expected Stop, got {cmd:?}"
+        );
     }
 
     #[tokio::test]
@@ -6274,8 +6294,13 @@ mod tests {
 
         // Assert
         assert!(result.is_ok());
-        let cmd = audio_rx.try_recv().expect("Expected AudioCommand::VolumeUp");
-        assert!(matches!(cmd, AudioCommand::VolumeUp), "Expected VolumeUp, got {cmd:?}");
+        let cmd = audio_rx
+            .try_recv()
+            .expect("Expected AudioCommand::VolumeUp");
+        assert!(
+            matches!(cmd, AudioCommand::VolumeUp),
+            "Expected VolumeUp, got {cmd:?}"
+        );
     }
 
     #[tokio::test]
@@ -6428,6 +6453,199 @@ mod tests {
         assert!(
             !app.minibuffer.is_input_mode(),
             "Minibuffer should be in message/error display mode, not input mode"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tag_command_routes_to_podcast_list_not_active_buffer() {
+        use crate::podcast::Podcast;
+
+        // Arrange — seed podcast list buffer, then make episode list the active buffer
+        let mut app = make_test_app().await;
+        let podcast = Podcast::new(
+            "Test Podcast".to_string(),
+            "https://example.com/feed.xml".to_string(),
+        );
+        let podcast_id = podcast.id.clone();
+        if let Some(buf) = app.buffer_manager.get_podcast_list_buffer_mut() {
+            buf.set_podcasts(vec![podcast]);
+        }
+        app.buffer_manager.create_episode_list_buffer(
+            "Test Podcast".to_string(),
+            podcast_id.clone(),
+            app.subscription_manager.clone(),
+            app.download_manager.clone(),
+        );
+        // Switch to an episode list so podcast-list is NOT the active buffer
+        let _ = app
+            .buffer_manager
+            .switch_to_buffer(&format!("episodes-{}", podcast_id));
+
+        // Act
+        let result = app.execute_command_direct("tag tech".to_string());
+
+        // Assert — command succeeded and tag was added to the podcast in the podcast list buffer
+        assert!(result.is_ok());
+        if let Some(buf) = app.buffer_manager.get_podcast_list_buffer_mut() {
+            let tagged = buf
+                .podcasts()
+                .iter()
+                .any(|p| p.id == podcast_id && p.has_tag("tech"));
+            assert!(
+                tagged,
+                "Expected podcast to have tag 'tech' after :tag command"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_untag_command_routes_to_podcast_list_not_active_buffer() {
+        use crate::podcast::Podcast;
+
+        // Arrange — seed podcast list with a tagged podcast, make episode list active
+        let mut app = make_test_app().await;
+        let mut podcast = Podcast::new(
+            "Test Podcast".to_string(),
+            "https://example.com/feed.xml".to_string(),
+        );
+        podcast.add_tag("tech");
+        let podcast_id = podcast.id.clone();
+        if let Some(buf) = app.buffer_manager.get_podcast_list_buffer_mut() {
+            buf.set_podcasts(vec![podcast]);
+        }
+        app.buffer_manager.create_episode_list_buffer(
+            "Test Podcast".to_string(),
+            podcast_id.clone(),
+            app.subscription_manager.clone(),
+            app.download_manager.clone(),
+        );
+        // Switch to episode list so podcast-list is NOT the active buffer
+        let _ = app
+            .buffer_manager
+            .switch_to_buffer(&format!("episodes-{}", podcast_id));
+
+        // Act
+        let result = app.execute_command_direct("untag tech".to_string());
+
+        // Assert — tag was removed from the podcast in the podcast list buffer
+        assert!(result.is_ok());
+        if let Some(buf) = app.buffer_manager.get_podcast_list_buffer_mut() {
+            let still_tagged = buf
+                .podcasts()
+                .iter()
+                .any(|p| p.id == podcast_id && p.has_tag("tech"));
+            assert!(
+                !still_tagged,
+                "Expected 'tech' tag to be removed after :untag command"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_filter_tag_routes_to_podcast_list_and_switches_buffer() {
+        use crate::podcast::Podcast;
+
+        // Arrange — 2 podcasts: one tagged "tech", one untagged; episode list is active
+        let mut app = make_test_app().await;
+        let mut tagged_podcast = Podcast::new(
+            "Tech Podcast".to_string(),
+            "https://example.com/tech.xml".to_string(),
+        );
+        tagged_podcast.add_tag("tech");
+        let tagged_id = tagged_podcast.id.clone();
+
+        let other_podcast = Podcast::new(
+            "News Podcast".to_string(),
+            "https://example.com/news.xml".to_string(),
+        );
+        if let Some(buf) = app.buffer_manager.get_podcast_list_buffer_mut() {
+            buf.set_podcasts(vec![tagged_podcast, other_podcast]);
+        }
+        app.buffer_manager.create_episode_list_buffer(
+            "Tech Podcast".to_string(),
+            tagged_id.clone(),
+            app.subscription_manager.clone(),
+            app.download_manager.clone(),
+        );
+        // Switch to episode list so podcast-list is NOT the active buffer
+        let _ = app
+            .buffer_manager
+            .switch_to_buffer(&format!("episodes-{}", tagged_id));
+        assert_ne!(
+            app.buffer_manager.current_buffer_id(),
+            Some("podcast-list".to_string()),
+            "Precondition: episode list should be active, not podcast list"
+        );
+
+        // Act
+        let result = app.execute_command_direct("filter-tag tech".to_string());
+
+        // Assert — command succeeded AND we switched to podcast-list
+        assert!(result.is_ok());
+        assert_eq!(
+            app.buffer_manager.current_buffer_id(),
+            Some("podcast-list".to_string()),
+            "Expected :filter-tag to switch to podcast list buffer"
+        );
+        // Only the tagged podcast should be visible after filter
+        if let Some(buf) = app.buffer_manager.get_podcast_list_buffer_mut() {
+            // selected_podcast() returns Some only if a filtered result exists
+            let selected = buf.selected_podcast().map(|p| p.id.clone());
+            assert_eq!(
+                selected,
+                Some(tagged_id),
+                "Expected the tech-tagged podcast to be selected after filter"
+            );
+            // The other (untagged) podcast should not be visible — verify it has the tag
+            let selected_has_tag = buf
+                .selected_podcast()
+                .map(|p| p.has_tag("tech"))
+                .unwrap_or(false);
+            assert!(
+                selected_has_tag,
+                "Selected podcast should have the 'tech' tag after :filter-tag tech"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tag_command_shows_error_when_no_podcast_selected() {
+        // Arrange — empty podcast list (no selection possible)
+        let mut app = make_test_app().await;
+        // podcast list buffer is created by UIApp::new() but is empty by default
+
+        // Act
+        let result = app.execute_command_direct("tag tech".to_string());
+
+        // Assert — returns Ok but shows error in minibuffer (no silent failure)
+        assert!(result.is_ok());
+        assert!(
+            app.minibuffer.is_visible(),
+            "Expected error message in minibuffer when no podcast is selected"
+        );
+        assert!(
+            !app.minibuffer.is_input_mode(),
+            "Minibuffer should be in error display mode, not input mode"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_untag_command_shows_error_when_no_podcast_selected() {
+        // Arrange — empty podcast list (no selection possible)
+        let mut app = make_test_app().await;
+
+        // Act
+        let result = app.execute_command_direct("untag tech".to_string());
+
+        // Assert — returns Ok but shows error in minibuffer (no silent failure)
+        assert!(result.is_ok());
+        assert!(
+            app.minibuffer.is_visible(),
+            "Expected error message in minibuffer when no podcast is selected for :untag"
+        );
+        assert!(
+            !app.minibuffer.is_input_mode(),
+            "Minibuffer should be in error display mode, not input mode"
         );
     }
 }

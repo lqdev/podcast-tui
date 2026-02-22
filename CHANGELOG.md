@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **F1 / `?` help buffer now displays keybindings in logical sections** — February 2026
+  - Added `UIAction::category()` method to assign every action to one of nine groups: Navigation, Buffer Management, Application, Podcast Management, Episode Status & Sorting, Playlists, OPML Import/Export, Device Sync, Audio Playback.
+  - `generate_help_text()` now returns `(category, keys, description)` triples; `keybindings_help()` renders them as labelled sections with a `CATEGORY:` header line followed by indented keybinding entries.
+  - Removed the stale `default_help_content()` method (~218 lines of hardcoded static text that was never displayed and would drift from actual bindings).
+  - Categories are a property of the action, not the key — user-remapped keys appear under the correct section automatically.
+  - Closes [#179](https://github.com/lqdev/podcast-tui/issues/179).
+
 ### Changed
 
 - **Audio integration tests now use event-driven polling instead of fixed sleeps** — February 2026

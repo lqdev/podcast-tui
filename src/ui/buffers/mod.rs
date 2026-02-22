@@ -301,7 +301,7 @@ impl BufferManager {
     }
 
     /// Create help buffer with auto-generated keybinding content
-    pub fn create_help_buffer(&mut self, keybinding_entries: Vec<(String, String)>) {
+    pub fn create_help_buffer(&mut self, keybinding_entries: Vec<(String, String, String)>) {
         let help_buffer = Box::new(crate::ui::buffers::help::HelpBuffer::keybindings_help(
             keybinding_entries,
         ));

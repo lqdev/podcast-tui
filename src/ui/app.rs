@@ -20,6 +20,7 @@ use ratatui::{
 use tokio::sync::mpsc;
 
 use crate::{
+    audio::{AudioCommand, PlaybackStatus},
     config::Config,
     constants::ui as ui_constants,
     download::DownloadManager,
@@ -100,6 +101,9 @@ pub struct UIApp {
 
     /// Pending cleanup duration in hours (set when user confirms age-based cleanup)
     pending_cleanup_hours: Option<u64>,
+
+    /// Sender for dispatching audio playback commands (None when audio init failed).
+    audio_command_tx: Option<mpsc::UnboundedSender<AudioCommand>>,
 
     /// Last render time for performance tracking
     last_render: Instant,
@@ -184,6 +188,7 @@ impl UIApp {
             event_handler,
             app_event_tx,
             should_quit: false,
+            audio_command_tx: None,
             last_render: Instant::now(),
             frame_count: 0,
             pending_deletion: None,
@@ -292,6 +297,7 @@ impl UIApp {
             event_handler,
             app_event_tx,
             should_quit: false,
+            audio_command_tx: None,
             last_render: Instant::now(),
             frame_count: 0,
             pending_deletion: None,
@@ -301,10 +307,19 @@ impl UIApp {
         })
     }
 
+    /// Wire the audio command sender into the app.
+    ///
+    /// Called from `App::run()` after `AudioManager` is initialised. All
+    /// playback `UIAction` handlers check this before sending commands.
+    pub fn set_audio_command_tx(&mut self, tx: mpsc::UnboundedSender<AudioCommand>) {
+        self.audio_command_tx = Some(tx);
+    }
+
     /// Run the UI application
     pub async fn run(
         &mut self,
         mut app_event_rx: mpsc::UnboundedReceiver<AppEvent>,
+        mut playback_status_rx: Option<tokio::sync::watch::Receiver<PlaybackStatus>>,
     ) -> UIResult<()> {
         // Initialize terminal
         enable_raw_mode().map_err(UIError::Terminal)?;
@@ -334,6 +349,12 @@ impl UIApp {
             self.trigger_background_refresh(crate::ui::events::BufferRefreshType::PodcastList);
             self.trigger_background_refresh(crate::ui::events::BufferRefreshType::Downloads);
             self.trigger_background_refresh(crate::ui::events::BufferRefreshType::WhatsNew);
+        }
+
+        // Wire the AudioManager status receiver into the NowPlaying buffer so it
+        // receives live playback state updates (~4 Hz from the audio thread).
+        if let Some(rx) = playback_status_rx.as_ref() {
+            self.buffer_manager.set_now_playing_status_rx(rx.clone());
         }
 
         // Perform initial render to display UI immediately (before event loop)
@@ -373,6 +394,16 @@ impl UIApp {
                             ));
                         }
                     }
+                }
+                // Playback status changed — NowPlaying buffer reads from its own
+                // watch::Receiver in render(); this branch just triggers a re-render.
+                _ = async {
+                    match playback_status_rx.as_mut() {
+                        Some(rx) => { let _ = rx.changed().await; }
+                        None => std::future::pending::<()>().await,
+                    }
+                } => {
+                    // Status updated; fall through to render below.
                 }
                 // Render timeout
                 _ = tokio::time::sleep(Duration::from_millis(16)) => {
@@ -1309,13 +1340,27 @@ impl UIApp {
                 Ok(true)
             }
             // Audio playback — pass to buffer to resolve the selected episode, then dispatch
-            // to AudioManager (wired in #141).
+            // to AudioManager.
             UIAction::PlayEpisode { .. } => {
                 if let Some(current_buffer) = self.buffer_manager.current_buffer_mut() {
                     let result = current_buffer.handle_action(action);
                     match result {
-                        UIAction::PlayEpisode { .. } => {
-                            // Stub: AudioManager dispatch wired in #141
+                        UIAction::PlayEpisode {
+                            podcast_id,
+                            episode_id,
+                            path,
+                        } => {
+                            if let Some(ref tx) = self.audio_command_tx {
+                                let _ = tx.send(AudioCommand::Play {
+                                    path,
+                                    episode_id,
+                                    podcast_id,
+                                });
+                            } else {
+                                self.show_error(
+                                    "Audio playback not available on this system".to_string(),
+                                );
+                            }
                         }
                         UIAction::ShowError(msg) => self.show_error(msg),
                         _ => {}
@@ -1323,29 +1368,49 @@ impl UIApp {
                 }
                 Ok(true)
             }
-            // Simple playback controls forwarded to AudioManager in #141
+            // Simple playback controls forwarded to AudioManager
             UIAction::TogglePlayPause => {
-                // Stub: AudioManager dispatch wired in #141
+                // Guard: S-P in minibuffer input mode is a typed character, not a command.
+                if self.minibuffer.is_input_mode() {
+                    return Ok(true);
+                }
+                if let Some(ref tx) = self.audio_command_tx {
+                    let _ = tx.send(AudioCommand::TogglePlayPause);
+                }
                 Ok(true)
             }
             UIAction::StopPlayback => {
-                // Stub: AudioManager dispatch wired in #141
+                if let Some(ref tx) = self.audio_command_tx {
+                    let _ = tx.send(AudioCommand::Stop);
+                }
                 Ok(true)
             }
             UIAction::SeekForward => {
-                // Stub: AudioManager dispatch wired in #141
+                if let Some(ref tx) = self.audio_command_tx {
+                    let _ = tx.send(AudioCommand::SeekForward(Duration::from_secs(
+                        crate::constants::audio::SEEK_STEP_SECS,
+                    )));
+                }
                 Ok(true)
             }
             UIAction::SeekBackward => {
-                // Stub: AudioManager dispatch wired in #141
+                if let Some(ref tx) = self.audio_command_tx {
+                    let _ = tx.send(AudioCommand::SeekBackward(Duration::from_secs(
+                        crate::constants::audio::SEEK_STEP_SECS,
+                    )));
+                }
                 Ok(true)
             }
             UIAction::VolumeUp => {
-                // Stub: AudioManager dispatch wired in #141
+                if let Some(ref tx) = self.audio_command_tx {
+                    let _ = tx.send(AudioCommand::VolumeUp);
+                }
                 Ok(true)
             }
             UIAction::VolumeDown => {
-                // Stub: AudioManager dispatch wired in #141
+                if let Some(ref tx) = self.audio_command_tx {
+                    let _ = tx.send(AudioCommand::VolumeDown);
+                }
                 Ok(true)
             }
             // Buffer-specific actions
@@ -2086,15 +2151,61 @@ impl UIApp {
                 }
                 self.show_error(format!("Discovery failed: {}", error));
             }
-            AppEvent::PlaybackStarted { .. } => {
-                // AudioManager started playback — NowPlaying buffer will reflect
-                // state via the watch::Receiver<PlaybackStatus> on the next tick.
+            AppEvent::PlaybackStarted {
+                podcast_id,
+                episode_id,
+            } => {
+                // Look up episode title and podcast name for the NowPlaying buffer.
+                let episode_title = self
+                    ._storage
+                    .load_episode(&podcast_id, &episode_id)
+                    .await
+                    .ok()
+                    .map(|ep| ep.title);
+                let podcast_name = self
+                    ._storage
+                    .load_podcast(&podcast_id)
+                    .await
+                    .ok()
+                    .map(|p| p.title);
+                self.buffer_manager
+                    .set_now_playing_info(episode_title, podcast_name);
+                self.show_message("Now playing…".to_string());
             }
             AppEvent::PlaybackStopped => {
-                // AudioManager stopped playback — status watch will update UI.
+                self.show_message("Playback stopped".to_string());
             }
-            AppEvent::TrackEnded { .. } => {
-                // Track reached natural end — future issues will handle auto-play-next.
+            AppEvent::TrackEnded {
+                podcast_id,
+                episode_id,
+            } => {
+                // Persist completion: update position to full duration (auto-marks played at ≥95%).
+                match self
+                    ._storage
+                    .load_episode(&podcast_id, &episode_id)
+                    .await
+                {
+                    Ok(mut episode) => {
+                        if let Some(duration) = episode.duration {
+                            episode.update_position(duration);
+                        } else {
+                            // No duration recorded — mark as played without position update.
+                            episode.mark_played();
+                        }
+                        if let Err(e) = self._storage.save_episode(&podcast_id, &episode).await {
+                            eprintln!("[audio] Failed to save episode after track end: {e}");
+                        }
+                        // Refresh episode buffers so played status is reflected immediately.
+                        self.trigger_background_refresh(BufferRefreshType::EpisodeBuffers {
+                            podcast_id: podcast_id.clone(),
+                        });
+                        self.trigger_background_refresh(BufferRefreshType::AllEpisodeBuffers);
+                    }
+                    Err(e) => {
+                        eprintln!("[audio] Failed to load episode for track-end update: {e}");
+                    }
+                }
+                self.show_message("Finished playing episode".to_string());
             }
             AppEvent::PlaybackError { error } => {
                 self.show_error(format!("Playback error: {}", error));
@@ -6046,6 +6157,277 @@ mod tests {
         assert!(
             err.contains("Unknown sort"),
             "Error should say 'Unknown sort': {err}"
+        );
+    }
+
+    // ── AudioManager wiring tests (#141) ─────────────────────────────────────
+
+    /// Creates a UIApp backed by real storage (initialized).
+    /// Returns both the app and the storage so tests can pre-populate data.
+    async fn make_test_app_with_storage() -> (UIApp, Arc<crate::storage::JsonStorage>) {
+        use crate::config::DownloadConfig;
+        use crate::storage::JsonStorage;
+        use tempfile::TempDir;
+
+        let config = Config::default();
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.keep();
+
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_path.clone()));
+        storage.initialize().await.unwrap();
+
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_path.clone(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
+
+        let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager,
+            storage.clone(),
+            app_event_tx,
+        )
+        .unwrap();
+        app.initialize().await.unwrap();
+
+        (app, storage)
+    }
+
+    async fn make_test_app() -> UIApp {
+        make_test_app_with_storage().await.0
+    }
+
+    #[tokio::test]
+    async fn test_handle_action_toggle_play_pause_sends_command_when_audio_available() {
+        // Arrange
+        let mut app = make_test_app().await;
+        let (audio_tx, mut audio_rx) = mpsc::unbounded_channel::<AudioCommand>();
+        app.set_audio_command_tx(audio_tx);
+
+        // Act
+        let result = app.handle_action(UIAction::TogglePlayPause).await;
+
+        // Assert
+        assert!(result.is_ok());
+        let cmd = audio_rx.try_recv().expect("Expected AudioCommand to be sent");
+        assert!(
+            matches!(cmd, AudioCommand::TogglePlayPause),
+            "Expected TogglePlayPause, got {cmd:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_action_toggle_play_pause_blocked_in_minibuffer_input_mode() {
+        // Arrange
+        let mut app = make_test_app().await;
+        let (audio_tx, mut audio_rx) = mpsc::unbounded_channel::<AudioCommand>();
+        app.set_audio_command_tx(audio_tx);
+        app.minibuffer.show_prompt("test: ".to_string());
+        assert!(app.minibuffer.is_input_mode());
+
+        // Act
+        let result = app.handle_action(UIAction::TogglePlayPause).await;
+
+        // Assert — no command should be dispatched while minibuffer is in input mode
+        assert!(result.is_ok());
+        assert!(
+            audio_rx.try_recv().is_err(),
+            "No AudioCommand should be sent when minibuffer is in input mode"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_action_stop_playback_sends_stop_command() {
+        // Arrange
+        let mut app = make_test_app().await;
+        let (audio_tx, mut audio_rx) = mpsc::unbounded_channel::<AudioCommand>();
+        app.set_audio_command_tx(audio_tx);
+
+        // Act
+        let result = app.handle_action(UIAction::StopPlayback).await;
+
+        // Assert
+        assert!(result.is_ok());
+        let cmd = audio_rx.try_recv().expect("Expected AudioCommand::Stop");
+        assert!(matches!(cmd, AudioCommand::Stop), "Expected Stop, got {cmd:?}");
+    }
+
+    #[tokio::test]
+    async fn test_handle_action_volume_up_sends_volume_up_command() {
+        // Arrange
+        let mut app = make_test_app().await;
+        let (audio_tx, mut audio_rx) = mpsc::unbounded_channel::<AudioCommand>();
+        app.set_audio_command_tx(audio_tx);
+
+        // Act
+        let result = app.handle_action(UIAction::VolumeUp).await;
+
+        // Assert
+        assert!(result.is_ok());
+        let cmd = audio_rx.try_recv().expect("Expected AudioCommand::VolumeUp");
+        assert!(matches!(cmd, AudioCommand::VolumeUp), "Expected VolumeUp, got {cmd:?}");
+    }
+
+    #[tokio::test]
+    async fn test_handle_app_event_track_ended_marks_episode_played_and_persists() {
+        use crate::podcast::{Episode, Podcast};
+        use crate::storage::Storage;
+        use chrono::Utc;
+
+        // Arrange
+        let (mut app, storage) = make_test_app_with_storage().await;
+
+        let mut podcast = Podcast::new(
+            "Test Podcast".to_string(),
+            "http://example.com/feed.xml".to_string(),
+        );
+        let mut episode = Episode::new(
+            podcast.id.clone(),
+            "Test Episode".to_string(),
+            "http://example.com/ep1.mp3".to_string(),
+            Utc::now(),
+        );
+        episode.duration = Some(3600);
+        podcast.episodes.push(episode.id.clone());
+        storage.save_podcast(&podcast).await.unwrap(); // unwrap OK — test setup
+        storage.save_episode(&podcast.id, &episode).await.unwrap(); // unwrap OK — test setup
+
+        // Act
+        app.handle_app_event(AppEvent::TrackEnded {
+            podcast_id: podcast.id.clone(),
+            episode_id: episode.id.clone(),
+        })
+        .await
+        .unwrap(); // unwrap OK — testing success path
+
+        // Assert — reload from storage and verify persistence
+        let saved = storage
+            .load_episode(&podcast.id, &episode.id)
+            .await
+            .unwrap(); // unwrap OK — episode was saved above
+        assert!(saved.is_played(), "Episode should be marked as played");
+        assert_eq!(
+            saved.last_played_position,
+            Some(3600),
+            "Position should be set to full duration"
+        );
+        assert_eq!(saved.play_count, 1, "play_count should be incremented to 1");
+    }
+
+    #[tokio::test]
+    async fn test_handle_app_event_track_ended_marks_played_when_no_duration() {
+        use crate::podcast::{Episode, Podcast};
+        use crate::storage::Storage;
+        use chrono::Utc;
+
+        // Arrange
+        let (mut app, storage) = make_test_app_with_storage().await;
+
+        let mut podcast = Podcast::new(
+            "Test Podcast".to_string(),
+            "http://example.com/feed.xml".to_string(),
+        );
+        let episode = Episode::new(
+            podcast.id.clone(),
+            "Test Episode No Duration".to_string(),
+            "http://example.com/ep2.mp3".to_string(),
+            Utc::now(),
+        );
+        // No duration set — episode.duration is None
+        podcast.episodes.push(episode.id.clone());
+        storage.save_podcast(&podcast).await.unwrap(); // unwrap OK — test setup
+        storage.save_episode(&podcast.id, &episode).await.unwrap(); // unwrap OK — test setup
+
+        // Act
+        app.handle_app_event(AppEvent::TrackEnded {
+            podcast_id: podcast.id.clone(),
+            episode_id: episode.id.clone(),
+        })
+        .await
+        .unwrap(); // unwrap OK — testing success path
+
+        // Assert — mark_played() is called when no duration is available
+        let saved = storage
+            .load_episode(&podcast.id, &episode.id)
+            .await
+            .unwrap(); // unwrap OK — episode was saved above
+        assert!(
+            saved.is_played(),
+            "Episode with no duration should still be marked played"
+        );
+        assert_eq!(saved.play_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_handle_app_event_playback_started_sets_now_playing_info() {
+        use crate::podcast::{Episode, Podcast};
+        use crate::storage::Storage;
+        use chrono::Utc;
+
+        // Arrange
+        let (mut app, storage) = make_test_app_with_storage().await;
+
+        let mut podcast = Podcast::new(
+            "My Podcast".to_string(),
+            "http://example.com/feed.xml".to_string(),
+        );
+        let episode = Episode::new(
+            podcast.id.clone(),
+            "My Episode".to_string(),
+            "http://example.com/ep1.mp3".to_string(),
+            Utc::now(),
+        );
+        podcast.episodes.push(episode.id.clone());
+        storage.save_podcast(&podcast).await.unwrap(); // unwrap OK — test setup
+        storage.save_episode(&podcast.id, &episode).await.unwrap(); // unwrap OK — test setup
+
+        // Act
+        app.handle_app_event(AppEvent::PlaybackStarted {
+            podcast_id: podcast.id.clone(),
+            episode_id: episode.id.clone(),
+        })
+        .await
+        .unwrap(); // unwrap OK — testing success path
+
+        // Assert — NowPlaying buffer should display the episode and podcast names
+        let buf = app
+            .buffer_manager
+            .get_now_playing_buffer_mut()
+            .expect("NowPlaying buffer should exist after initialize()");
+        assert_eq!(buf.episode_title(), Some("My Episode"));
+        assert_eq!(buf.podcast_name(), Some("My Podcast"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_app_event_playback_error_shows_error_message() {
+        // Arrange
+        let mut app = make_test_app().await;
+
+        // Act
+        app.handle_app_event(AppEvent::PlaybackError {
+            error: "device unavailable".to_string(),
+        })
+        .await
+        .unwrap(); // unwrap OK — testing success path
+
+        // Assert
+        assert!(
+            app.minibuffer.is_visible(),
+            "Minibuffer should show error after PlaybackError"
+        );
+        assert!(
+            !app.minibuffer.is_input_mode(),
+            "Minibuffer should be in message/error display mode, not input mode"
         );
     }
 }

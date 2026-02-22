@@ -79,6 +79,13 @@ impl AudioManager {
     pub fn subscribe(&self) -> watch::Receiver<PlaybackStatus> {
         self.status_rx.clone()
     }
+
+    /// Return a cloned `UnboundedSender` for sending commands to the audio thread.
+    ///
+    /// Used by `UIApp` to dispatch playback actions without holding the full manager.
+    pub fn command_tx(&self) -> mpsc::UnboundedSender<AudioCommand> {
+        self.command_tx.clone()
+    }
 }
 
 // ---------- Backend selection -----------------------------------------------

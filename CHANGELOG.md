@@ -9,7 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **NowPlaying buffer** — new `NowPlayingBuffer` implementing the `Buffer` trait that shows current episode title, podcast name, playback state icon (▶/⏸/⏹), progress bar, and volume level. Accessible via `F9` keybinding. Buffer UI is complete in this PR; live AudioManager status updates will be connected in [#141](https://github.com/lqdev/podcast-tui/issues/141). Gracefully handles stopped state (no episode playing), external player mode (position/duration unavailable), and small terminal areas (compact fallback rendering). Closes [#140](https://github.com/lqdev/podcast-tui/issues/140). Part of [#137](https://github.com/lqdev/podcast-tui/issues/137).
+- **Wire AudioManager into App event loop** — completes the playback integration pipeline so audio commands flow from key presses to the speaker. `App::run()` now spawns `AudioManager`, wires the command sender into `UIApp`, and passes the status watch receiver to `UIApp::run()`. A dedicated `select!` branch triggers re-renders on every `AudioManager` status tick. `UIApp` gains an `audio_command_tx: Option<…>` field and a `set_audio_command_tx()` setter; constructors unchanged (no test breakage). All 7 playback `UIAction` stubs are replaced with real `AudioCommand` dispatch; all 4 `AppEvent` playback stubs are replaced with real business logic. Closes [#141](https://github.com/lqdev/podcast-tui/issues/141). Part of [#137](https://github.com/lqdev/podcast-tui/issues/137).
+  - `src/audio/manager.rs`: added `pub fn command_tx()` to expose a cloneable command sender
+  - `src/app.rs`: `App::run()` creates `AudioManager`, extracts `audio_command_tx` + `playback_status_rx`, sets both on `UIApp`; graceful `eprintln!` fallback when audio init fails (app still starts)
+  - `src/ui/app.rs`:
+    - `UIApp::run()` accepts `playback_status_rx: Option<watch::Receiver<PlaybackStatus>>`; wires it to the NowPlaying buffer via `BufferManager::set_now_playing_status_rx()`
+    - `select!` event loop branch: re-renders on `AudioManager` status change
+    - `handle_action`: `PlayEpisode` → `AudioCommand::Play`; `TogglePlayPause` → `AudioCommand::TogglePlayPause` (guarded when minibuffer is in input mode); `StopPlayback` → `AudioCommand::Stop`; `SeekForward`/`SeekBackward` → `AudioCommand::SeekForward/Backward(SEEK_STEP_SECS)`; `VolumeUp`/`VolumeDown` → `AudioCommand::VolumeUp/VolumeDown`
+    - `handle_app_event`: `PlaybackStarted` → loads episode + podcast from storage, calls `set_now_playing_info`, shows "Now playing…"; `PlaybackStopped` → shows message; `TrackEnded` → calls `episode.update_position(duration)` or `episode.mark_played()`, saves, triggers buffer refresh; `PlaybackError` → shows error
+  - `src/ui/buffers/now_playing.rs`: added `episode_title()` and `podcast_name()` public getters
+  - 8 unit tests: `test_handle_action_toggle_play_pause_sends_command_when_audio_available`, `test_handle_action_toggle_play_pause_blocked_in_minibuffer_input_mode`, `test_handle_action_stop_playback_sends_stop_command`, `test_handle_action_volume_up_sends_volume_up_command`, `test_handle_app_event_track_ended_marks_episode_played_and_persists`, `test_handle_app_event_track_ended_marks_played_when_no_duration`, `test_handle_app_event_playback_started_sets_now_playing_info`, `test_handle_app_event_playback_error_shows_error_message`
+
+
   - New `src/ui/buffers/now_playing.rs`: `NowPlayingBuffer` struct, `progress_ratio_and_label()` helper (reuses `utils::time::format_duration`)
   - `can_close()` returns `false` — persistent buffer, not closeable with `C-k`
   - `set_status_rx()` method: replaces watch receiver when AudioManager is wired in ([#141](https://github.com/lqdev/podcast-tui/issues/141))

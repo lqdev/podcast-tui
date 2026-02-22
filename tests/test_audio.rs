@@ -8,15 +8,16 @@ use std::path::Path;
 use std::time::Duration;
 
 use podcast_tui::audio::manager::AudioManager;
-use podcast_tui::audio::{AudioCommand, PlaybackState};
+use podcast_tui::audio::{AudioCommand, PlaybackState, PlaybackStatus};
 use podcast_tui::config::AudioConfig;
 use podcast_tui::storage::{EpisodeId, PodcastId};
 use podcast_tui::ui::events::AppEvent;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
-/// Time to wait for the AudioManager run_loop to process a command and
-/// broadcast the updated status (~250 ms loop interval + margin).
-const STATUS_BROADCAST_DELAY: Duration = Duration::from_millis(400);
+/// Generous timeout for status watch channel updates in tests.
+/// The run_loop broadcasts at ~4 Hz (250 ms), so any command result should
+/// appear well within this window — even on slow CI runners.
+const STATUS_CHANGE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// A trivially-available external "player" command for CI-safe tests.
 /// On Unix, `echo` is a standalone binary. On Windows, `echo` is a
@@ -87,6 +88,35 @@ where
     }
 }
 
+/// Wait for the status watch to satisfy `predicate`, with a timeout.
+///
+/// Polls `watch::Receiver::changed()` in a loop, checking each new value
+/// against the predicate.  Returns once matched; panics on timeout.
+async fn wait_for_status<F>(
+    rx: &mut watch::Receiver<PlaybackStatus>,
+    timeout: Duration,
+    description: &str,
+    predicate: F,
+) where
+    F: Fn(&PlaybackStatus) -> bool,
+{
+    if predicate(&rx.borrow_and_update()) {
+        return;
+    }
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        match tokio::time::timeout_at(deadline, rx.changed()).await {
+            Ok(Ok(())) => {
+                if predicate(&rx.borrow_and_update()) {
+                    return;
+                }
+            }
+            Ok(Err(_)) => panic!("status channel closed while waiting for {description}"),
+            Err(_) => panic!("{description}: condition not met within {timeout:?}"),
+        }
+    }
+}
+
 // ── CI-safe tests (external player backend) ─────────────────────────────────
 
 #[tokio::test]
@@ -102,7 +132,7 @@ async fn test_audio_manager_play_and_stop_lifecycle_with_external_player() {
     };
     let (app_tx, mut app_rx) = mpsc::unbounded_channel::<AppEvent>();
     let manager = AudioManager::new(&config, app_tx).expect("AudioManager should init");
-    let status_rx = manager.subscribe();
+    let mut status_rx = manager.subscribe();
 
     // Assert — initial status is Stopped
     assert_eq!(status_rx.borrow().state, PlaybackState::Stopped);
@@ -141,8 +171,13 @@ async fn test_audio_manager_play_and_stop_lifecycle_with_external_player() {
     assert!(matches!(event, AppEvent::PlaybackStopped));
 
     // Assert — status watch reflects Stopped after broadcast cycle
-    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
-    assert_eq!(status_rx.borrow().state, PlaybackState::Stopped);
+    wait_for_status(
+        &mut status_rx,
+        STATUS_CHANGE_TIMEOUT,
+        "state → Stopped after stop",
+        |s| s.state == PlaybackState::Stopped,
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -205,17 +240,21 @@ async fn test_audio_manager_clean_shutdown_on_drop() {
         external_player: Some(ci_external_player()),
         ..Default::default()
     };
-    let (app_tx, _app_rx) = mpsc::unbounded_channel::<AppEvent>();
+    let (app_tx, mut app_rx) = mpsc::unbounded_channel::<AppEvent>();
     let manager = AudioManager::new(&config, app_tx).expect("AudioManager should init");
 
-    // Act — dropping the manager should disconnect the command channel,
-    // causing the audio thread to exit cleanly.
+    // Act — drop triggers thread shutdown
     drop(manager);
 
-    // Assert — if the thread panicked, the process would abort. Reaching
-    // this point confirms clean shutdown. Allow a brief window for the
-    // thread to notice the disconnect (250 ms loop interval + overhead).
-    tokio::time::sleep(STATUS_BROADCAST_DELAY + Duration::from_millis(100)).await;
+    // Assert — drain app_rx until None (proves audio thread dropped its sender)
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        match tokio::time::timeout_at(deadline, app_rx.recv()).await {
+            Ok(None) => break,       // channel closed = thread exited
+            Ok(Some(_)) => continue, // drain remaining events
+            Err(_) => panic!("audio thread did not shut down within 2s"),
+        }
+    }
 }
 
 #[tokio::test]
@@ -228,12 +267,18 @@ async fn test_audio_manager_volume_commands_update_status() {
     };
     let (app_tx, _app_rx) = mpsc::unbounded_channel::<AppEvent>();
     let manager = AudioManager::new(&config, app_tx).expect("AudioManager should init");
-    let status_rx = manager.subscribe();
+    let mut status_rx = manager.subscribe();
 
     // Act — SetVolume
     manager.send(AudioCommand::SetVolume(0.3));
     // Wait for the run_loop to process the command and broadcast
-    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
+    wait_for_status(
+        &mut status_rx,
+        STATUS_CHANGE_TIMEOUT,
+        "volume → 0.3",
+        |s| (s.volume - 0.3).abs() < f32::EPSILON,
+    )
+    .await;
 
     // Assert
     let status = status_rx.borrow().clone();
@@ -245,7 +290,13 @@ async fn test_audio_manager_volume_commands_update_status() {
 
     // Act — VolumeUp
     manager.send(AudioCommand::VolumeUp);
-    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
+    wait_for_status(
+        &mut status_rx,
+        STATUS_CHANGE_TIMEOUT,
+        "volume → ~0.35 after VolumeUp",
+        |s| (s.volume - 0.35).abs() < 0.01,
+    )
+    .await;
 
     // Assert — volume increased by VOLUME_STEP (0.05)
     let status = status_rx.borrow().clone();
@@ -270,7 +321,7 @@ async fn test_full_playback_lifecycle_play_pause_resume_stop() {
     let (app_tx, mut app_rx) = mpsc::unbounded_channel::<AppEvent>();
     let manager = AudioManager::new(&config, app_tx)
         .expect("AudioManager should init — this test requires an audio device");
-    let status_rx = manager.subscribe();
+    let mut status_rx = manager.subscribe();
 
     let ep_id = EpisodeId::new();
     let pod_id = PodcastId::new();
@@ -288,18 +339,33 @@ async fn test_full_playback_lifecycle_play_pause_resume_stop() {
         |e| matches!(e, AppEvent::PlaybackStarted { .. }),
     )
     .await;
-    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
-    assert_eq!(status_rx.borrow().state, PlaybackState::Playing);
+    wait_for_status(
+        &mut status_rx,
+        STATUS_CHANGE_TIMEOUT,
+        "state → Playing after play",
+        |s| s.state == PlaybackState::Playing,
+    )
+    .await;
 
     // ── Pause ───────────────────────────────────────────────────────────
     manager.send(AudioCommand::Pause);
-    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
-    assert_eq!(status_rx.borrow().state, PlaybackState::Paused);
+    wait_for_status(
+        &mut status_rx,
+        STATUS_CHANGE_TIMEOUT,
+        "state → Paused after pause",
+        |s| s.state == PlaybackState::Paused,
+    )
+    .await;
 
     // ── Resume ──────────────────────────────────────────────────────────
     manager.send(AudioCommand::Resume);
-    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
-    assert_eq!(status_rx.borrow().state, PlaybackState::Playing);
+    wait_for_status(
+        &mut status_rx,
+        STATUS_CHANGE_TIMEOUT,
+        "state → Playing after resume",
+        |s| s.state == PlaybackState::Playing,
+    )
+    .await;
 
     // ── Stop ────────────────────────────────────────────────────────────
     manager.send(AudioCommand::Stop);
@@ -310,9 +376,13 @@ async fn test_full_playback_lifecycle_play_pause_resume_stop() {
         |e| matches!(e, AppEvent::PlaybackStopped),
     )
     .await;
-    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
-    assert_eq!(status_rx.borrow().state, PlaybackState::Stopped);
-    assert!(status_rx.borrow().episode_id.is_none());
+    wait_for_status(
+        &mut status_rx,
+        STATUS_CHANGE_TIMEOUT,
+        "state → Stopped with episode cleared",
+        |s| s.state == PlaybackState::Stopped && s.episode_id.is_none(),
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -327,7 +397,7 @@ async fn test_full_playback_position_advances_and_resets() {
     let (app_tx, mut app_rx) = mpsc::unbounded_channel::<AppEvent>();
     let manager = AudioManager::new(&config, app_tx)
         .expect("AudioManager should init — this test requires an audio device");
-    let status_rx = manager.subscribe();
+    let mut status_rx = manager.subscribe();
 
     let ep_id = EpisodeId::new();
     let pod_id = PodcastId::new();
@@ -345,7 +415,17 @@ async fn test_full_playback_position_advances_and_resets() {
         |e| matches!(e, AppEvent::PlaybackStarted { .. }),
     )
     .await;
-    tokio::time::sleep(Duration::from_millis(600)).await;
+    // Wait for real audio to play and position to advance
+    wait_for_status(
+        &mut status_rx,
+        STATUS_CHANGE_TIMEOUT,
+        "position advanced past 200 ms",
+        |s| {
+            s.position
+                .is_some_and(|p| p >= Duration::from_millis(200))
+        },
+    )
+    .await;
 
     // Assert — position should have advanced
     let status = status_rx.borrow().clone();
@@ -361,7 +441,13 @@ async fn test_full_playback_position_advances_and_resets() {
 
     // Act — Stop
     manager.send(AudioCommand::Stop);
-    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
+    wait_for_status(
+        &mut status_rx,
+        STATUS_CHANGE_TIMEOUT,
+        "state → Stopped with position cleared",
+        |s| s.state == PlaybackState::Stopped && s.position.is_none(),
+    )
+    .await;
 
     // Assert — position resets to None when stopped
     let status = status_rx.borrow().clone();

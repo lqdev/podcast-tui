@@ -14,6 +14,10 @@ use podcast_tui::storage::{EpisodeId, PodcastId};
 use podcast_tui::ui::events::AppEvent;
 use tokio::sync::mpsc;
 
+/// Time to wait for the AudioManager run_loop to process a command and
+/// broadcast the updated status (~250 ms loop interval + margin).
+const STATUS_BROADCAST_DELAY: Duration = Duration::from_millis(400);
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Write a minimal silent PCM WAV file (44 100 Hz · mono · 16-bit).
@@ -121,7 +125,7 @@ async fn test_audio_manager_play_and_stop_lifecycle_with_external_player() {
     assert!(matches!(event, AppEvent::PlaybackStopped));
 
     // Assert — status watch reflects Stopped after broadcast cycle
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
     assert_eq!(status_rx.borrow().state, PlaybackState::Stopped);
 }
 
@@ -139,8 +143,10 @@ async fn test_audio_manager_play_error_fires_playback_error_event() {
     let pod_id = PodcastId::new();
 
     // Act — Play with a non-existent player → should fire PlaybackError
+    let dir = tempfile::TempDir::new().expect("temp dir");
+    let fake_path = dir.path().join("fake.mp3");
     manager.send(AudioCommand::Play {
-        path: "/tmp/fake.mp3".into(),
+        path: fake_path,
         episode_id: ep_id,
         podcast_id: pod_id,
     });
@@ -192,8 +198,8 @@ async fn test_audio_manager_clean_shutdown_on_drop() {
 
     // Assert — if the thread panicked, the process would abort. Reaching
     // this point confirms clean shutdown. Allow a brief window for the
-    // thread to notice the disconnect (250 ms loop + overhead).
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // thread to notice the disconnect (250 ms loop interval + overhead).
+    tokio::time::sleep(STATUS_BROADCAST_DELAY + Duration::from_millis(100)).await;
 }
 
 #[tokio::test]
@@ -211,7 +217,7 @@ async fn test_audio_manager_volume_commands_update_status() {
     // Act — SetVolume
     manager.send(AudioCommand::SetVolume(0.3));
     // Wait for the run_loop to process the command and broadcast
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
 
     // Assert
     let status = status_rx.borrow().clone();
@@ -223,7 +229,7 @@ async fn test_audio_manager_volume_commands_update_status() {
 
     // Act — VolumeUp
     manager.send(AudioCommand::VolumeUp);
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
 
     // Assert — volume increased by VOLUME_STEP (0.05)
     let status = status_rx.borrow().clone();
@@ -266,17 +272,17 @@ async fn test_full_playback_lifecycle_play_pause_resume_stop() {
         |e| matches!(e, AppEvent::PlaybackStarted { .. }),
     )
     .await;
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
     assert_eq!(status_rx.borrow().state, PlaybackState::Playing);
 
     // ── Pause ───────────────────────────────────────────────────────────
     manager.send(AudioCommand::Pause);
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
     assert_eq!(status_rx.borrow().state, PlaybackState::Paused);
 
     // ── Resume ──────────────────────────────────────────────────────────
     manager.send(AudioCommand::Resume);
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
     assert_eq!(status_rx.borrow().state, PlaybackState::Playing);
 
     // ── Stop ────────────────────────────────────────────────────────────
@@ -288,7 +294,7 @@ async fn test_full_playback_lifecycle_play_pause_resume_stop() {
         |e| matches!(e, AppEvent::PlaybackStopped),
     )
     .await;
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
     assert_eq!(status_rx.borrow().state, PlaybackState::Stopped);
     assert!(status_rx.borrow().episode_id.is_none());
 }
@@ -339,7 +345,7 @@ async fn test_full_playback_position_advances_and_resets() {
 
     // Act — Stop
     manager.send(AudioCommand::Stop);
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    tokio::time::sleep(STATUS_BROADCAST_DELAY).await;
 
     // Assert — position resets to None when stopped
     let status = status_rx.borrow().clone();

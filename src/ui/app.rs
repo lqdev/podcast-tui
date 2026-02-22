@@ -265,6 +265,7 @@ impl UIApp {
             download_manager.clone(),
             config.ui.whats_new_episode_limit,
         );
+        buffer_manager.create_now_playing_buffer();
 
         // Set initial buffer
         if let Some(buffer_id) = buffer_manager.get_buffer_ids().first() {
@@ -447,6 +448,7 @@ impl UIApp {
         );
         self.buffer_manager
             .create_playlist_list_buffer(self.playlist_manager.clone());
+        self.buffer_manager.create_now_playing_buffer();
 
         // Set initial buffer
         if let Some(buffer_id) = self.buffer_manager.get_buffer_ids().first() {

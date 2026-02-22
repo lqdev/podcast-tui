@@ -12,6 +12,7 @@ use std::time::Duration;
 use crate::storage::{EpisodeId, PodcastId};
 
 pub mod external;
+pub mod rodio_backend;
 
 /// Errors that can occur during audio playback.
 #[derive(Debug, thiserror::Error)]

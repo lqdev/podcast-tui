@@ -459,6 +459,27 @@ pub enum AppEvent {
         buffer_id: String,
         error: String,
     },
+
+    // Audio playback lifecycle events
+    /// Playback started successfully for an episode
+    PlaybackStarted {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+    },
+
+    /// Playback stopped explicitly (user-initiated)
+    PlaybackStopped,
+
+    /// Track reached its natural end
+    TrackEnded {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+    },
+
+    /// Audio backend reported an error during playback
+    PlaybackError {
+        error: String,
+    },
 }
 
 /// Types of buffer refresh operations

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **AudioManager — threaded playback coordinator** — creates and owns a `PlaybackBackend` on a dedicated `std::thread` (not `tokio::spawn`) to avoid cpal/rodio deadlock with the async runtime. Communicates with the UI via three channels: `mpsc::UnboundedSender<AudioCommand>` (UI → manager), `watch::Receiver<PlaybackStatus>` (continuous ~4 Hz state: position, volume, state), and `mpsc::UnboundedSender<AppEvent>` (one-shot events: `PlaybackStarted`, `PlaybackStopped`, `TrackEnded`, `PlaybackError`). Backend selection: `config.external_player` set → `ExternalPlayerBackend`; otherwise try `RodioBackend`, fall back to `ExternalPlayerBackend::detect()`, return original rodio error if both fail. Volume tracked in manager (0.0–1.0; `VolumeUp`/`VolumeDown` use `VOLUME_STEP = 0.05`). Thread exits cleanly when command channel is dropped. Closes [#136](https://github.com/lqdev/podcast-tui/issues/136). Part of [#132](https://github.com/lqdev/podcast-tui/issues/132).
+  - New `src/audio/manager.rs`: `AudioManager` struct, `run_loop()`, `process_command()`, `create_backend()`
+  - New `AppEvent` variants in `src/ui/events.rs`: `PlaybackStarted`, `PlaybackStopped`, `TrackEnded`, `PlaybackError`
+  - 17 unit tests: mock `PlaybackBackend` (no audio hardware required), command routing, event firing, volume clamping, channel lifecycle
+
 - **ExternalPlayerBackend — fallback audio via system media player** — implements `PlaybackBackend` by spawning `mpv`, `vlc`, or `ffplay` as a subprocess. Used when `config.audio.external_player` is set, or as a fallback when the native Rodio backend cannot initialize (no ALSA device, WSL2, containers). Auto-detects players in priority order: mpv → vlc → ffplay. Drop-safe: running child processes are killed when the backend is dropped. Closes [#135](https://github.com/lqdev/podcast-tui/issues/135). Part of [#132](https://github.com/lqdev/podcast-tui/issues/132).
   - New `src/audio/external.rs`: `ExternalPlayerBackend` struct, `build_player_args()` helper (correct headless flags per player), `detect()` / `detect_from_candidates()` auto-detection, `Drop` impl
   - `AudioError::Unsupported(String)` variant added to `src/audio/mod.rs`

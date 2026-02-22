@@ -2044,6 +2044,19 @@ impl UIApp {
                 }
                 self.show_error(format!("Discovery failed: {}", error));
             }
+            AppEvent::PlaybackStarted { .. } => {
+                // AudioManager started playback — NowPlaying buffer will reflect
+                // state via the watch::Receiver<PlaybackStatus> on the next tick.
+            }
+            AppEvent::PlaybackStopped => {
+                // AudioManager stopped playback — status watch will update UI.
+            }
+            AppEvent::TrackEnded { .. } => {
+                // Track reached natural end — future issues will handle auto-play-next.
+            }
+            AppEvent::PlaybackError { error } => {
+                self.show_error(format!("Playback error: {}", error));
+            }
         }
         Ok(())
     }

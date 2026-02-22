@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Deleted 800 ms "Ready!" splash hold.
   - Closes [#186](https://github.com/lqdev/podcast-tui/issues/186). Part of [#181](https://github.com/lqdev/podcast-tui/issues/181).
 
+- **Eliminate redundant UIApp recreation during startup** — February 2026
+  - `App::run()` previously discarded the fully-initialised `UIApp` built during the splash screen and rebuilt an empty one just to pass a new `app_event_tx`. A new `UIApp::set_app_event_tx()` method now wires the channel into the existing instance instead.
+  - UIApp is now constructed exactly once; the pre-loaded buffer path in `UIApp::run()` is the path taken on every startup.
+  - Closes [#185](https://github.com/lqdev/podcast-tui/issues/185). Part of [#181](https://github.com/lqdev/podcast-tui/issues/181).
+
+- **Defer download cleanup to background task on startup** — February 2026
+  - `cleanup_stuck_downloads()` and `cleanup_old_downloads()` previously ran synchronously in `initialize()`, delaying the first UI render on large libraries or slow disks.
+  - Both operations now run in a `tokio::spawn` background task in the pre-loaded path, so the first render is not gated on I/O.
+  - Cleanup errors are logged to stderr; the stuck-download pass still runs on every startup and the age-based pass still runs when configured.
+  - Closes [#184](https://github.com/lqdev/podcast-tui/issues/184). Part of [#181](https://github.com/lqdev/podcast-tui/issues/181).
+
 ## [1.10.0] - 2026-02-22
 
 ### Added

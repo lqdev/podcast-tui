@@ -13,9 +13,6 @@ use tokio::sync::mpsc;
 /// Main application state and orchestration
 pub struct App {
     config: Config,
-    storage: Arc<JsonStorage>,
-    subscription_manager: Arc<SubscriptionManager<JsonStorage>>,
-    download_manager: Arc<DownloadManager<JsonStorage>>,
     ui: UIApp,
 }
 
@@ -74,13 +71,7 @@ impl App {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize UI: {e}"))?;
 
-        Ok(Self {
-            config,
-            storage,
-            subscription_manager,
-            download_manager,
-            ui,
-        })
+        Ok(Self { config, ui })
     }
 
     /// Run the main application loop
@@ -103,15 +94,8 @@ impl App {
         let audio_command_tx = audio_manager.as_ref().map(|m| m.command_tx());
         let playback_status_rx = audio_manager.as_ref().map(|m| m.subscribe());
 
-        // Recreate UI with the new app event sender
-        self.ui = UIApp::new(
-            self.config.clone(),
-            self.subscription_manager.clone(),
-            self.download_manager.clone(),
-            self.storage.clone(),
-            app_event_tx,
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to initialize UI: {e}"))?;
+        // Wire new event channel into existing UI (instead of recreating it)
+        self.ui.set_app_event_tx(app_event_tx.clone());
 
         // Wire the audio command sender into the UI (None when audio disabled)
         if let Some(tx) = audio_command_tx {

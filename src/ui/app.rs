@@ -354,22 +354,33 @@ impl UIApp {
             self.trigger_background_refresh(crate::ui::events::BufferRefreshType::PodcastList);
             self.trigger_background_refresh(crate::ui::events::BufferRefreshType::Downloads);
             self.trigger_background_refresh(crate::ui::events::BufferRefreshType::WhatsNew);
+            self.trigger_async_refresh_today();
 
             // Defer download cleanup to background — don't block the first render
             let dm = self.download_manager.clone();
             let cleanup_days = self.config.downloads.cleanup_after_days;
+            let app_event_tx = self.app_event_tx.clone();
             tokio::spawn(async move {
                 if let Err(e) = dm.cleanup_stuck_downloads().await {
-                    eprintln!("[cleanup] Could not clean up stuck downloads: {e}");
+                    let _ = app_event_tx.send(AppEvent::DownloadCleanupFailed {
+                        error: format!("Stuck download cleanup failed: {e}"),
+                    });
                 }
                 if let Some(days) = cleanup_days {
                     if days > 0 {
                         match dm.cleanup_old_downloads(days).await {
                             Ok(0) => {}
-                            Ok(count) => eprintln!(
-                                "[cleanup] Auto-cleanup: deleted {count} episode(s) older than {days} days"
-                            ),
-                            Err(e) => eprintln!("[cleanup] Auto-cleanup failed: {e}"),
+                            Ok(count) => {
+                                let _ = app_event_tx.send(AppEvent::DownloadCleanupCompleted {
+                                    deleted_count: count,
+                                    duration_label: format!("{days} days"),
+                                });
+                            }
+                            Err(e) => {
+                                let _ = app_event_tx.send(AppEvent::DownloadCleanupFailed {
+                                    error: e.to_string(),
+                                });
+                            }
                         }
                     }
                 }

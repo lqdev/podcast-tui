@@ -9,6 +9,7 @@ pub mod downloads;
 pub mod episode_detail;
 pub mod episode_list;
 pub mod help;
+pub mod now_playing;
 pub mod playlist_detail;
 pub mod playlist_list;
 pub mod playlist_picker;
@@ -483,6 +484,49 @@ impl BufferManager {
         let buffer_id = buffer_id.to_string();
         self.get_buffer(&buffer_id)
             .and_then(|buffer| buffer.as_any_mut().downcast_mut())
+    }
+
+    /// Create the NowPlaying buffer with a default (Stopped) watch channel.
+    ///
+    /// The watch sender is intentionally dropped here: the receiver will hold
+    /// the last value (Stopped) indefinitely. Call `set_now_playing_status_rx()`
+    /// after AudioManager is initialised (#141) to replace it with a live feed.
+    pub fn create_now_playing_buffer(&mut self) {
+        let (_tx, rx) = tokio::sync::watch::channel(crate::audio::PlaybackStatus::default());
+        let buffer = crate::ui::buffers::now_playing::NowPlayingBuffer::new(rx);
+        let _ = self.add_buffer(Box::new(buffer));
+    }
+
+    /// Get a mutable reference to the NowPlaying buffer.
+    pub fn get_now_playing_buffer_mut(
+        &mut self,
+    ) -> Option<&mut crate::ui::buffers::now_playing::NowPlayingBuffer> {
+        let buffer_id = "now-playing".to_string();
+        self.get_buffer(&buffer_id)
+            .and_then(|buffer| buffer.as_any_mut().downcast_mut())
+    }
+
+    /// Replace the watch receiver in the NowPlaying buffer (called from #141).
+    pub fn set_now_playing_status_rx(
+        &mut self,
+        rx: tokio::sync::watch::Receiver<crate::audio::PlaybackStatus>,
+    ) {
+        if let Some(buf) = self.get_now_playing_buffer_mut() {
+            buf.set_status_rx(rx);
+        }
+    }
+
+    /// Set the episode title and podcast name displayed in the NowPlaying buffer.
+    ///
+    /// Called when `AppEvent::PlaybackStarted` fires (wired in #141).
+    pub fn set_now_playing_info(
+        &mut self,
+        episode_title: Option<String>,
+        podcast_name: Option<String>,
+    ) {
+        if let Some(buf) = self.get_now_playing_buffer_mut() {
+            buf.set_now_playing_info(episode_title, podcast_name);
+        }
     }
 
     /// Handle a UI action, dispatching to the active buffer if appropriate

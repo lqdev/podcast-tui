@@ -146,8 +146,7 @@ pub mod playlist {
     pub const MAX_USER_PLAYLISTS: usize = 50;
 }
 
-/// Audio playback constants (for future Sprint 4)
-#[allow(dead_code)]
+/// Audio playback constants
 pub mod audio {
     /// Default volume level (0.0 to 1.0)
     pub const DEFAULT_VOLUME: f32 = 0.8;

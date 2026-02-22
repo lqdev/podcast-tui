@@ -12,7 +12,7 @@ A cross-platform terminal user interface for podcast management built with Rust.
 
 ## 📊 Current Status (February 2026)
 
-**v1.6.0** — The application has a fully working feature set for podcast subscription management, downloading, device sync, and playlist management. Audio playback is not yet implemented.
+**v1.6.0** — The application has a fully working feature set for podcast subscription management, downloading, device sync, playlist management, and audio playback.
 
 ✅ **Working Features:**
 - RSS feed subscription management with OPML import/export
@@ -23,16 +23,16 @@ A cross-platform terminal user interface for podcast management built with Rust.
 - Playlist management (user playlists + auto-generated "Today" playlist)
 - Search & filter by text, status, date range
 - Download cleanup (auto on startup + manual `:clean-older-than`)
+- Audio playback with rodio backend and external player fallback
 - Intuitive keyboard navigation and buffer management
 - Multi-theme support (dark, light, high-contrast, solarized)
 - Cross-platform builds (Windows x64/ARM64, Linux x64/ARM64)
 
 ⏳ **Not Yet Implemented:**
-- Audio playback (rodio integration pending)
 - Episode notes
 - Statistics tracking
 
-**⚠️ Audio playback is not yet implemented.** The current release is suitable for managing subscriptions, downloading episodes, syncing to devices, and managing playlists.
+**⚠️ Episode notes and statistics tracking are not yet implemented.** The current release is suitable for managing subscriptions, downloading episodes, playing audio, syncing to devices, and managing playlists.
 
 ## 🎧 Features
 
@@ -52,9 +52,9 @@ A cross-platform terminal user interface for podcast management built with Rust.
 - ✅ **Search & Filter** - Text search, status filter, date range filter
 - ✅ **Theme System** - Multiple themes (dark, light, high-contrast, solarized)
 - ✅ **Cross-platform Build** - Windows and Linux build support
+- ✅ **Audio Playback** - Play downloaded episodes with rodio backend or external player
 
 **⏳ In Progress / Planned:**
-- ⏳ **Audio Playback** - Basic playback controls (not yet implemented)
 - ⏳ **Episode Notes** - Add personal notes to episodes (not yet implemented)
 - ⏳ **Statistics Tracking** - Listen time and download statistics (not yet implemented)
 
@@ -73,11 +73,11 @@ A cross-platform terminal user interface for podcast management built with Rust.
 - **Windows x64**: Requires MSVC Build Tools (see [scripts/INSTALL-MSVC-TOOLS.md](scripts/INSTALL-MSVC-TOOLS.md))
 - **Linux**: Standard build tools (gcc/clang) required
 
-The application is currently **in active development** with core RSS/download features complete but audio playback not yet implemented.
+The application is currently **in active development** with core RSS/download features and audio playback complete.
 
 ### Installation
 
-**🚧 Development Status**: Pre-built binaries are available for testing core features (RSS subscriptions, downloads, and UI). Audio playback is not yet functional.
+**🚧 Development Status**: Pre-built binaries are available for testing core features (RSS subscriptions, downloads, audio playback, and UI).
 
 #### Windows (winget)
 ```powershell
@@ -152,13 +152,12 @@ Podcast TUI features a custom icon combining a cassette tape and RSS feed symbol
 See [assets/README.md](assets/README.md) for more details about the icon design and installation.
 
 ### First Run
-**Note:** Audio playback is not yet implemented. Current features include subscription management, episode browsing, and downloading.
-
 1. Start the application: `podcast-tui`
 2. Press `a` to add your first podcast
 3. Enter an RSS feed URL (try: `https://feeds.simplecast.com/54nAGcIl`)
 4. Navigate with arrow keys or Up/Down to browse episodes
 5. Press `D` to download episodes, `F1` or `?` for help
+6. Press `Shift+Enter` on a downloaded episode to play it
 
 ## 🎹 Keybindings
 
@@ -221,9 +220,14 @@ See [assets/README.md](assets/README.md) for more details about the icon design 
 - `q` - Quit application
 - `F10` - Quit application
 
-### Future Playback Controls (Not Yet Implemented)
-- `Space` - Play/pause
-- Audio controls coming in a future sprint
+### Audio Playback
+- `Shift+P` - Toggle play/pause
+- `Shift+Enter` - Play selected downloaded episode
+- `Ctrl+Left` - Seek backward 10s
+- `Ctrl+Right` - Seek forward 10s
+- `+` / `=` - Volume up
+- `-` - Volume down
+- `F9` - Open now playing buffer
 
 See [complete keybinding reference](docs/KEYBINDINGS.md) for all shortcuts.
 
@@ -260,7 +264,10 @@ Configuration is stored in JSON format at:
   },
   "audio": {
     "volume": 0.8,
-    "seek_seconds": 30
+    "seek_seconds": 10,
+    "external_player": null,
+    "auto_play_next": false,
+    "remember_position": true
   },
   "ui": {
     "theme": "dark",
@@ -389,10 +396,10 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 - [x] **Search & Filter** - Text search, status filter, date range filter
 - [x] **Playlist Management** - User playlists + auto-generated "Today" playlist
 - [x] **Winget Publishing** - Available on Windows Package Manager
+- [x] **Audio Playback** - Rodio backend with external player fallback
 
 ### In Progress / Planned
 
-- [ ] **Audio Playback** - Basic playback controls with rodio
 - [ ] **Episode Notes** - Add personal notes to episodes
 - [ ] **Statistics Tracking** - Listen time and download statistics
 - [ ] **Duration Filter** - Filter episodes by duration (deferred pending RSS duration data)
@@ -406,7 +413,6 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 ## 🐛 Known Issues
 
 **Not Yet Implemented:**
-- ⚠️ **Audio playback** - rodio integration pending
 - ⚠️ **Episode notes** - planned for a future release
 - ⚠️ **Statistics tracking** - planned for a future release
 - ⚠️ **Duration filter** - deferred until episode duration is reliably populated from RSS feeds

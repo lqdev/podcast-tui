@@ -93,6 +93,20 @@ Press `F1`, `?`, or run `:help` to open `*Help: Keybindings*`. This buffer refle
 | `[` | Previous tab |
 | `]` | Next tab |
 
+### Audio Playback
+
+| Key(s) | Action |
+|--------|--------|
+| `S-P` | Toggle play / pause |
+| `⏯` (media key) | Toggle play / pause |
+| `⏵` (media key) | Toggle play / pause |
+| `S-Enter` | Play selected downloaded episode |
+| `C-Left` | Seek backward 10 s |
+| `C-Right` | Seek forward 10 s |
+| `+` / `=` | Volume up |
+| `-` | Volume down |
+| `F9` | Open now playing buffer |
+
 ## Vim Preset
 
 All default bindings apply except:

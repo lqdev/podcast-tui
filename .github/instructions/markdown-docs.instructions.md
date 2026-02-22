@@ -68,7 +68,6 @@ See [ADR-002](docs/adr/ADR-002-buffer-based-ui.md) for the buffer system decisio
 ## What NOT to Document
 
 Do not document as complete or available:
-- Audio playback (rodio linked but not wired up)
 - Episode notes (not implemented)
 - Statistics tracking (not implemented)
 - Duration-based filtering (deferred — see `docs/rfcs/RFC-001-search-and-filter.md`)

@@ -20,7 +20,10 @@ const STATUS_BROADCAST_DELAY: Duration = Duration::from_millis(400);
 
 /// A trivially-available external "player" command for CI-safe tests.
 /// On Unix, `echo` is a standalone binary. On Windows, `echo` is a
-/// shell built-in, so we use `cmd.exe` with `/C echo` via the player args.
+/// shell built-in so `std::process::Command` cannot spawn it; we use
+/// `cmd.exe` instead, which is a real executable. The external player
+/// backend passes the file path as the sole argument (`cmd <path>`),
+/// which exits immediately — sufficient for CI lifecycle tests.
 #[cfg(unix)]
 fn ci_external_player() -> String {
     "echo".into()

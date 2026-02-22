@@ -482,9 +482,9 @@ impl GlobalKeys {
 
             // Audio playback — keys chosen to avoid displacing any existing default binding.
             // 'P' (S-P / Shift+P) is mnemonic for Play/Pause; lowercase 'p' is AddToPlaylist.
-            // PlayEpisode is intentionally unbound (Enter/SelectItem already plays in episode list).
+            // S-Enter plays the selected episode (Enter opens detail; S-Enter = play).
             toggle_play_pause: ["S-P"].map(String::from).to_vec(),
-            play_episode: vec![],
+            play_episode: ["S-Enter"].map(String::from).to_vec(),
             seek_backward: ["C-Left"].map(String::from).to_vec(),
             seek_forward: ["C-Right"].map(String::from).to_vec(),
             volume_up: ["+", "="].map(String::from).to_vec(),
@@ -856,9 +856,9 @@ mod tests {
         assert!(!keys.prev_tab.is_empty());
         assert!(!keys.next_tab.is_empty());
 
-        // Audio playback — seek/volume/now-playing/toggle have defaults; play_episode is intentionally unbound
+        // Audio playback — seek/volume/now-playing/toggle have defaults; play_episode bound to S-Enter
         assert!(!keys.toggle_play_pause.is_empty()); // S-P
-        assert!(keys.play_episode.is_empty()); // p is AddToPlaylist; user must configure
+        assert!(!keys.play_episode.is_empty()); // S-Enter (Shift+Enter)
         assert!(!keys.seek_backward.is_empty());
         assert!(!keys.seek_forward.is_empty());
         assert!(!keys.volume_up.is_empty());
@@ -943,7 +943,7 @@ mod tests {
 
         // Audio playback — non-displacing defaults
         assert_eq!(keys.toggle_play_pause, vec!["S-P"]); // P (Shift+P), mnemonic for Play/Pause
-        assert!(keys.play_episode.is_empty()); // intentionally unbound (p = AddToPlaylist)
+        assert_eq!(keys.play_episode, vec!["S-Enter"]); // Shift+Enter; plain Enter = SelectItem
         assert_eq!(keys.seek_backward, vec!["C-Left"]);
         assert_eq!(keys.seek_forward, vec!["C-Right"]);
         assert!(keys.volume_up.contains(&"+".to_string()));

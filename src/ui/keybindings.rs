@@ -277,6 +277,19 @@ impl KeyHandler {
             KeyChord::none(KeyCode::Media(MediaKeyCode::Play)),
             UIAction::TogglePlayPause,
         );
+
+        // Play episode — S-Enter (Shift+Enter) plays the selected downloaded episode.
+        // Stores nil placeholder IDs; the episode list buffer replaces them with real
+        // data in its handle_action() before dispatching to the audio backend.
+        // S-Enter is free (Enter = SelectItem) and intuitive: Enter = open, S-Enter = play.
+        self.bind_key(
+            KeyChord::shift(KeyCode::Enter),
+            UIAction::PlayEpisode {
+                podcast_id: PodcastId(Uuid::nil()),
+                episode_id: EpisodeId(Uuid::nil()),
+                path: PathBuf::new(),
+            },
+        );
     }
 
     /// Bind a key chord to an action, logging a conflict if the chord was
@@ -1288,7 +1301,6 @@ mod tests {
         // Arrange — bind PlayEpisode (unbound by default) to F11
         let mut config = KeybindingConfig::default();
         config.global.play_episode = vec!["F11".to_string()];
-
         // Act
         let handler = KeyHandler::from_config(&config);
 
@@ -1309,6 +1321,85 @@ mod tests {
             handler.lookup(&KeyChord::none(KeyCode::Char('p'))),
             Some(&UIAction::AddToPlaylist),
             "'p' must remain AddToPlaylist after configuring play_episode"
+        );
+    }
+
+    #[test]
+    fn test_default_bindings_include_shift_enter_play_episode() {
+        // Arrange
+        let handler = KeyHandler::new();
+
+        // Act + Assert — S-Enter triggers PlayEpisode with nil placeholder IDs
+        match handler.lookup(&KeyChord::shift(KeyCode::Enter)) {
+            Some(UIAction::PlayEpisode {
+                podcast_id,
+                episode_id,
+                ..
+            }) => {
+                assert_eq!(
+                    podcast_id,
+                    &PodcastId(Uuid::nil()),
+                    "Default PlayEpisode binding must use nil podcast_id placeholder"
+                );
+                assert_eq!(
+                    episode_id,
+                    &EpisodeId(Uuid::nil()),
+                    "Default PlayEpisode binding must use nil episode_id placeholder"
+                );
+            }
+            other => panic!(
+                "Expected S-Enter → PlayEpisode with nil IDs, got {:?}",
+                other
+            ),
+        }
+        // Enter (without Shift) must still select items — not displaced
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Enter)),
+            Some(&UIAction::SelectItem),
+            "Enter must remain SelectItem — S-Enter takes PlayEpisode, not plain Enter"
+        );
+    }
+
+    #[test]
+    fn test_config_default_preset_includes_play_episode() {
+        // Arrange — default preset applied via from_config() with default config
+        let config = KeybindingConfig::default();
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — S-Enter must be bound to PlayEpisode after default preset application
+        match handler.lookup(&KeyChord::shift(KeyCode::Enter)) {
+            Some(UIAction::PlayEpisode { .. }) => {}
+            other => panic!(
+                "Expected S-Enter → PlayEpisode after default preset, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn test_config_play_episode_override_displaces_default_shift_enter() {
+        // Arrange — user overrides play_episode to F11; S-Enter should be cleared
+        let mut config = KeybindingConfig::default();
+        config.global.play_episode = vec!["F11".to_string()];
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — F11 now triggers PlayEpisode
+        assert!(
+            matches!(
+                handler.lookup(&KeyChord::none(KeyCode::F(11))),
+                Some(UIAction::PlayEpisode { .. })
+            ),
+            "F11 must trigger PlayEpisode after override"
+        );
+        // S-Enter must be unbound once the user overrides play_episode
+        assert_eq!(
+            handler.lookup(&KeyChord::shift(KeyCode::Enter)),
+            None,
+            "S-Enter must be unbound after play_episode is overridden to F11"
         );
     }
 }

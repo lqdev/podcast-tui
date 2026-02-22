@@ -4526,15 +4526,27 @@ impl UIApp {
                     match subscription_manager.storage.list_podcasts().await {
                         Ok(podcast_ids) => {
                             let storage = subscription_manager.storage.clone();
-                            let podcasts: Vec<_> = stream::iter(podcast_ids)
-                                .map(|id| {
-                                    let storage = storage.clone();
-                                    async move { storage.load_podcast(&id).await }
-                                })
-                                .buffer_unordered(16)
-                                .filter_map(|r| async { r.ok() })
-                                .collect()
-                                .await;
+                            let mut indexed: Vec<(usize, _)> =
+                                stream::iter(podcast_ids.into_iter().enumerate())
+                                    .map(|(idx, id)| {
+                                        let storage = storage.clone();
+                                        async move {
+                                            storage
+                                                .load_podcast(&id)
+                                                .await
+                                                .ok()
+                                                .map(|p| (idx, p))
+                                        }
+                                    })
+                                    .buffer_unordered(
+                                        ui_constants::REFRESH_IO_CONCURRENCY,
+                                    )
+                                    .filter_map(|r| async { r })
+                                    .collect()
+                                    .await;
+                            indexed.sort_unstable_by_key(|(idx, _)| *idx);
+                            let podcasts: Vec<_> =
+                                indexed.into_iter().map(|(_, p)| p).collect();
                             let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
                                 buffer_type: BufferRefreshType::PodcastList,
                                 data: BufferRefreshData::PodcastList { podcasts },
@@ -4561,24 +4573,26 @@ impl UIApp {
 
                     if let Ok(podcast_ids) = download_manager.storage().list_podcasts().await {
                         let dm = download_manager.clone();
-                        let podcast_pairs: Vec<_> = stream::iter(podcast_ids)
-                            .map(|podcast_id| {
-                                let dm = dm.clone();
-                                async move {
-                                    let podcast =
-                                        dm.storage().load_podcast(&podcast_id).await.ok()?;
-                                    let episodes =
-                                        dm.storage().load_episodes(&podcast_id).await.ok()?;
-                                    Some((podcast_id, podcast, episodes))
-                                }
-                            })
-                            .buffer_unordered(16)
-                            .filter_map(|r| async { r })
-                            .collect()
-                            .await;
+                        let mut podcast_pairs: Vec<_> =
+                            stream::iter(podcast_ids.into_iter().enumerate())
+                                .map(|(idx, podcast_id)| {
+                                    let dm = dm.clone();
+                                    async move {
+                                        let podcast =
+                                            dm.storage().load_podcast(&podcast_id).await.ok()?;
+                                        let episodes =
+                                            dm.storage().load_episodes(&podcast_id).await.ok()?;
+                                        Some((idx, podcast_id, podcast, episodes))
+                                    }
+                                })
+                                .buffer_unordered(ui_constants::REFRESH_IO_CONCURRENCY)
+                                .filter_map(|r| async { r })
+                                .collect()
+                                .await;
+                        podcast_pairs.sort_unstable_by_key(|(idx, ..)| *idx);
 
-                        // Process results (CPU only, no I/O)
-                        for (podcast_id, podcast, episodes) in podcast_pairs {
+                        // Process results and perform lightweight filesystem I/O (metadata lookups)
+                        for (_, podcast_id, podcast, episodes) in podcast_pairs {
                             for episode in episodes {
                                 if episode.is_downloaded()
                                     || matches!(
@@ -4649,7 +4663,7 @@ impl UIApp {
                                     Some((podcast_id, podcast, episodes))
                                 }
                             })
-                            .buffer_unordered(16)
+                            .buffer_unordered(ui_constants::REFRESH_IO_CONCURRENCY)
                             .filter_map(|r| async { r })
                             .collect()
                             .await;

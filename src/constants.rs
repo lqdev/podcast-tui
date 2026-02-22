@@ -93,6 +93,9 @@ pub mod ui {
 
     /// Minibuffer history size
     pub const MINIBUFFER_HISTORY_SIZE: usize = 100;
+
+    /// Maximum number of concurrent storage I/O operations during background buffer refresh
+    pub const REFRESH_IO_CONCURRENCY: usize = 16;
 }
 
 /// Storage-related constants

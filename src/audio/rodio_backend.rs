@@ -209,7 +209,7 @@ mod tests {
         bytes.extend_from_slice(&bits_per_sample.to_le_bytes());
         bytes.extend_from_slice(b"data");
         bytes.extend_from_slice(&data_size.to_le_bytes());
-        bytes.extend_from_slice(&vec![0u8; data_size as usize]);
+        bytes.resize(44 + data_size as usize, 0);
 
         std::fs::write(path, &bytes).unwrap();
     }
@@ -555,6 +555,50 @@ mod tests {
         );
     }
 
+    // ── Seek ──────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_rodio_backend_seek_updates_position() {
+        // Arrange
+        let mut backend = match try_create_backend() {
+            Some(b) => b,
+            None => {
+                eprintln!(
+                    "No audio device — skipping \
+                    test_rodio_backend_seek_updates_position"
+                );
+                return;
+            }
+        };
+        let dir = tempfile::TempDir::new().unwrap();
+        let wav_path = dir.path().join("test.wav");
+        write_test_wav(&wav_path, 5);
+
+        // Act — play, give the audio thread a tick, then seek to 2 s
+        backend.play(&wav_path).expect("play should succeed");
+        std::thread::sleep(Duration::from_millis(50));
+        backend
+            .seek(Duration::from_secs(2))
+            .expect("seek should succeed");
+        // Sleep 20 ms for the periodic_access callback to update get_pos()
+        std::thread::sleep(Duration::from_millis(20));
+
+        // Assert — position should be approximately 2 s (±500 ms tolerance)
+        let pos = backend
+            .position()
+            .expect("position should be Some after seek while playing");
+        let target = Duration::from_secs(2);
+        let diff = if pos > target {
+            pos - target
+        } else {
+            target - pos
+        };
+        assert!(
+            diff <= Duration::from_millis(500),
+            "position after seek {pos:?} not within 500 ms of target 2 s"
+        );
+    }
+
     // ── Duration ─────────────────────────────────────────────────────────────
 
     #[test]
@@ -621,21 +665,6 @@ mod tests {
         assert!(
             pos < Duration::from_millis(500),
             "position after second play should be near 0, got {pos:?}"
-        );
-    }
-
-    // ── Position math (device-independent) ───────────────────────────────────
-
-    #[test]
-    fn test_position_math_duration_arithmetic() {
-        // Verify that Duration arithmetic used internally produces correct values.
-        // Device-independent — does not require an audio output device.
-        let base = Duration::from_secs(30);
-        let elapsed = Duration::from_millis(500);
-        assert_eq!(base + elapsed, Duration::from_millis(30_500));
-        assert_eq!(
-            base.checked_sub(Duration::from_secs(5)),
-            Some(Duration::from_secs(25))
         );
     }
 }

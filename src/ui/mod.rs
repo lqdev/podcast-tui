@@ -349,6 +349,7 @@ impl UIAction {
                 "podcast-list" => "Switch to podcast list",
                 "downloads" => "Switch to downloads",
                 "sync" => "Switch to sync",
+                "now-playing" => "Switch to now playing",
                 _ => "Switch to buffer",
             },
             // Application

@@ -3,10 +3,13 @@
 // This module provides basic keybindings that work in most environments,
 // including VS Code terminal.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MediaKeyCode};
 use std::collections::HashMap;
+use std::path::PathBuf;
+use uuid::Uuid;
 
 use crate::config::{GlobalKeys, KeybindingConfig};
+use crate::storage::{EpisodeId, PodcastId};
 use crate::ui::key_parser::{key_to_notation, parse_key_notation};
 use crate::ui::UIAction;
 
@@ -237,11 +240,43 @@ impl KeyHandler {
 
         // Search and filter
         self.bind_key(KeyChord::none(KeyCode::Char('/')), UIAction::Search);
-        self.bind_key(KeyChord::none(KeyCode::F(6)), UIAction::ClearFilters);
 
-        // Tab cycling (for dry-run preview mode)
+        // F6 clears active filters; F9 opens the NowPlaying buffer
+        self.bind_key(KeyChord::none(KeyCode::F(6)), UIAction::ClearFilters);
+        self.bind_key(
+            KeyChord::none(KeyCode::F(9)),
+            UIAction::SwitchBuffer("now-playing".to_string()),
+        );
+
+        // Tab navigation within a buffer
         self.bind_key(KeyChord::none(KeyCode::Char('[')), UIAction::PreviousTab);
         self.bind_key(KeyChord::none(KeyCode::Char(']')), UIAction::NextTab);
+
+        // Audio playback seek (Ctrl+Left/Right — does not conflict with any existing binding)
+        self.bind_key(KeyChord::ctrl(KeyCode::Left), UIAction::SeekBackward);
+        self.bind_key(KeyChord::ctrl(KeyCode::Right), UIAction::SeekForward);
+
+        // Audio volume
+        self.bind_key(KeyChord::none(KeyCode::Char('+')), UIAction::VolumeUp);
+        // '=' shares a physical key with '+' on US keyboards — bind both
+        self.bind_key(KeyChord::none(KeyCode::Char('=')), UIAction::VolumeUp);
+        self.bind_key(KeyChord::none(KeyCode::Char('-')), UIAction::VolumeDown);
+
+        // Audio play/pause — 'P' (Shift+P) is mnemonic, free, and consistent with
+        // TUI media players like cmus/ncmpcpp. Lowercase 'p' is AddToPlaylist.
+        // Also honour the physical ⏯ media key for keyboards that have one.
+        self.bind_key(
+            KeyChord::shift(KeyCode::Char('P')),
+            UIAction::TogglePlayPause,
+        );
+        self.bind_key(
+            KeyChord::none(KeyCode::Media(MediaKeyCode::PlayPause)),
+            UIAction::TogglePlayPause,
+        );
+        self.bind_key(
+            KeyChord::none(KeyCode::Media(MediaKeyCode::Play)),
+            UIAction::TogglePlayPause,
+        );
     }
 
     /// Bind a key chord to an action, logging a conflict if the chord was
@@ -299,6 +334,20 @@ impl KeyHandler {
 
         // Apply explicit user overrides on top of the preset.
         handler.apply_global_overrides(&config.global);
+
+        // Always re-bind media keys after all config processing.
+        // rebind_action() in apply_global_overrides() removes ALL bindings for an action,
+        // including these hardcoded ones, because key-parser has no notation for media keys.
+        // Re-adding them here ensures they are always present regardless of config.
+        handler.bind_key(
+            KeyChord::none(KeyCode::Media(MediaKeyCode::PlayPause)),
+            UIAction::TogglePlayPause,
+        );
+        handler.bind_key(
+            KeyChord::none(KeyCode::Media(MediaKeyCode::Play)),
+            UIAction::TogglePlayPause,
+        );
+
         handler
     }
 
@@ -417,6 +466,35 @@ impl KeyHandler {
         // Tab navigation
         self.override_binding(&keys.prev_tab, UIAction::PreviousTab);
         self.override_binding(&keys.next_tab, UIAction::NextTab);
+
+        // Audio playback
+        self.override_binding(&keys.toggle_play_pause, UIAction::TogglePlayPause);
+        // play_episode: data-carrying variant; dummy nil IDs replaced by the buffer
+        if !keys.play_episode.is_empty() {
+            let chords = Self::parse_notations(&keys.play_episode);
+            if !chords.is_empty() {
+                self.bindings
+                    .retain(|_, v| !matches!(v, UIAction::PlayEpisode { .. }));
+                for chord in chords {
+                    self.bind_key(
+                        chord,
+                        UIAction::PlayEpisode {
+                            podcast_id: PodcastId(Uuid::nil()),
+                            episode_id: EpisodeId(Uuid::nil()),
+                            path: PathBuf::new(),
+                        },
+                    );
+                }
+            }
+        }
+        self.override_binding(&keys.seek_backward, UIAction::SeekBackward);
+        self.override_binding(&keys.seek_forward, UIAction::SeekForward);
+        self.override_binding(&keys.volume_up, UIAction::VolumeUp);
+        self.override_binding(&keys.volume_down, UIAction::VolumeDown);
+        self.override_binding(
+            &keys.open_now_playing,
+            UIAction::SwitchBuffer("now-playing".to_string()),
+        );
     }
 
     /// Generate human-readable help text from the currently active keybindings.
@@ -1075,6 +1153,162 @@ mod tests {
             quit_entry.unwrap().0.contains("C-q"),
             "Custom C-q should appear in quit entry, got: {:?}",
             quit_entry
+        );
+    }
+
+    // ── Playback keybinding tests ─────────────────────────────────────────────
+
+    #[test]
+    fn test_default_bindings_shift_p_toggles_play_pause() {
+        // Arrange
+        let handler = KeyHandler::new();
+
+        // Act + Assert — S-P (capital P) toggles play/pause
+        assert_eq!(
+            handler.lookup(&KeyChord::shift(KeyCode::Char('P'))),
+            Some(&UIAction::TogglePlayPause)
+        );
+        // Space must still select items — it was never displaced
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char(' '))),
+            Some(&UIAction::SelectItem)
+        );
+    }
+
+    #[test]
+    fn test_from_config_media_keys_survive_preset_application() {
+        // Arrange — default config triggers default_preset application in from_config(),
+        // which calls rebind_action(TogglePlayPause) and would wipe media key bindings
+        // unless from_config() explicitly re-adds them afterwards.
+        let config = KeybindingConfig::default();
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — media keys must still be bound after preset override pass
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Media(MediaKeyCode::PlayPause))),
+            Some(&UIAction::TogglePlayPause),
+            "⏯ media key must survive from_config() preset application"
+        );
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Media(MediaKeyCode::Play))),
+            Some(&UIAction::TogglePlayPause),
+            "⏵ media Play key must survive from_config() preset application"
+        );
+        // S-P must also still be present
+        assert_eq!(
+            handler.lookup(&KeyChord::shift(KeyCode::Char('P'))),
+            Some(&UIAction::TogglePlayPause),
+            "S-P must remain after from_config()"
+        );
+    }
+
+    #[test]
+    fn test_default_bindings_include_seek_keys() {
+        // Arrange
+        let handler = KeyHandler::new();
+
+        // Act + Assert — C-Left/C-Right are the non-displacing seek defaults
+        assert_eq!(
+            handler.lookup(&KeyChord::ctrl(KeyCode::Left)),
+            Some(&UIAction::SeekBackward),
+            "C-Left must seek backward"
+        );
+        assert_eq!(
+            handler.lookup(&KeyChord::ctrl(KeyCode::Right)),
+            Some(&UIAction::SeekForward),
+            "C-Right must seek forward"
+        );
+        // Ensure [ and ] still navigate tabs (not displaced)
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char('['))),
+            Some(&UIAction::PreviousTab),
+            "[ must remain PreviousTab"
+        );
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char(']'))),
+            Some(&UIAction::NextTab),
+            "] must remain NextTab"
+        );
+    }
+
+    #[test]
+    fn test_default_bindings_include_volume_keys() {
+        // Arrange
+        let handler = KeyHandler::new();
+
+        // Act + Assert
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char('+'))),
+            Some(&UIAction::VolumeUp),
+            "+ must raise volume"
+        );
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char('='))),
+            Some(&UIAction::VolumeUp),
+            "= must raise volume (US keyboard alias)"
+        );
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char('-'))),
+            Some(&UIAction::VolumeDown),
+            "- must lower volume"
+        );
+    }
+
+    #[test]
+    fn test_config_overrides_toggle_play_pause() {
+        // Arrange — re-bind TogglePlayPause from default S-P to C-Space
+        let mut config = KeybindingConfig::default();
+        config.global.toggle_play_pause = vec!["S-P".to_string(), "C-Space".to_string()];
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — both keys trigger TogglePlayPause
+        assert_eq!(
+            handler.lookup(&KeyChord::shift(KeyCode::Char('P'))),
+            Some(&UIAction::TogglePlayPause)
+        );
+        assert_eq!(
+            handler.lookup(&KeyChord::ctrl(KeyCode::Char(' '))),
+            Some(&UIAction::TogglePlayPause),
+            "C-Space should also trigger TogglePlayPause when configured"
+        );
+        // Space must still select items — never displaced
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char(' '))),
+            Some(&UIAction::SelectItem),
+            "Space must remain SelectItem regardless of toggle_play_pause config"
+        );
+    }
+
+    #[test]
+    fn test_config_overrides_play_episode() {
+        // Arrange — bind PlayEpisode (unbound by default) to F11
+        let mut config = KeybindingConfig::default();
+        config.global.play_episode = vec!["F11".to_string()];
+
+        // Act
+        let handler = KeyHandler::from_config(&config);
+
+        // Assert — F11 triggers PlayEpisode with stable nil IDs
+        match handler.lookup(&KeyChord::none(KeyCode::F(11))) {
+            Some(UIAction::PlayEpisode {
+                podcast_id,
+                episode_id,
+                ..
+            }) => {
+                assert_eq!(podcast_id, &PodcastId(Uuid::nil()));
+                assert_eq!(episode_id, &EpisodeId(Uuid::nil()));
+            }
+            other => panic!("Expected F11 → PlayEpisode with nil IDs, got {:?}", other),
+        }
+        // 'p' (AddToPlaylist) must not be displaced by the play_episode override
+        assert_eq!(
+            handler.lookup(&KeyChord::none(KeyCode::Char('p'))),
+            Some(&UIAction::AddToPlaylist),
+            "'p' must remain AddToPlaylist after configuring play_episode"
         );
     }
 }

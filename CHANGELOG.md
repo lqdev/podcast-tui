@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Playback keybindings** — wires playback `UIAction` variants to keyboard shortcuts and makes them fully user-configurable. Closes [#139](https://github.com/lqdev/podcast-tui/issues/139). Part of [#137](https://github.com/lqdev/podcast-tui/issues/137).
+  - Default bindings (no existing key displaced): `S-P` (Shift+P) → TogglePlayPause, `C-Left` → SeekBackward, `C-Right` → SeekForward, `+`/`=` → VolumeUp, `-` → VolumeDown, `F9` → SwitchBuffer("now-playing")
+  - `PlayEpisode` is intentionally unbound by default (`p` is AddToPlaylist); configure via `play_episode` in `config.json`
+  - 7 new configurable `GlobalKeys` fields in `src/config.rs`: `toggle_play_pause`, `play_episode`, `seek_backward`, `seek_forward`, `volume_up`, `volume_down`, `open_now_playing`
+  - 6 unit tests: `test_default_bindings_shift_p_toggles_play_pause`, `test_from_config_media_keys_survive_preset_application`, `test_default_bindings_include_seek_keys`, `test_default_bindings_include_volume_keys`, `test_config_overrides_toggle_play_pause`, `test_config_overrides_play_episode`
+
 - **Playback UIActions and AppEvents** — adds the full vocabulary for playback interactions between the UI layer, keybindings, and audio backend. Closes [#138](https://github.com/lqdev/podcast-tui/issues/138). Part of [#137](https://github.com/lqdev/podcast-tui/issues/137).
   - 7 new `UIAction` variants in `src/ui/mod.rs`: `PlayEpisode { podcast_id, episode_id, path }`, `TogglePlayPause`, `StopPlayback`, `SeekForward`, `SeekBackward`, `VolumeUp`, `VolumeDown`
   - `PlayEpisode` guard in `src/ui/buffers/episode_list.rs`: only fires when `episode.local_path.is_some()`; shows `ShowError` for episodes that are not yet downloaded

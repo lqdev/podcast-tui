@@ -86,6 +86,10 @@ impl Buffer for PlaylistPickerBuffer {
         self
     }
 
+    fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "Playlist Picker Commands:".to_string(),

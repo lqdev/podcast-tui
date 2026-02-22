@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`:theme` command now visually updates all open buffers and the minibuffer** — February 2026
+  - Previously `:theme <name>` only updated the status bar and `self.theme`; all open buffers (podcast list, episode list, downloads, etc.) and the minibuffer kept the old theme's colours until the user restarted the app.
+  - Fixed by calling `BufferManager::set_theme_all()` and `Minibuffer::set_theme()` from `set_theme_direct()`.
+  - Six buffers (podcast list, episode list, episode detail, What's New, help, now playing) had inherent `set_theme()` methods but did not override the `Buffer` trait's `set_theme()`, so theme changes through `dyn Buffer` hit the no-op default. Added trait overrides for all six.
+  - Closes [#167](https://github.com/lqdev/podcast-tui/issues/167).
+
 - **`PlayEpisode` now has a default keybinding: `S-Enter` (Shift+Enter)** — audio playback was completely unreachable with default config — February 2026
   - `PlayEpisode` had no default keybinding (`play_episode: vec![]` in both `default_preset()` and `Config::default()`), making it literally impossible to start playing an episode without editing `config.json`. `Enter` opens the episode detail buffer; `p` adds to playlist; `S-P` only toggles between playing/paused (no effect when stopped). No `:play` minibuffer command exists.
   - Fixed by binding `S-Enter` (Shift+Enter) to `PlayEpisode` in `setup_default_bindings()` and setting `play_episode: ["S-Enter"]` in `default_preset()`. `Enter` (plain) is unaffected and still opens episode detail.

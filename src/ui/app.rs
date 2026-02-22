@@ -2770,6 +2770,8 @@ impl UIApp {
         match self.theme_registry.get(theme_name).cloned() {
             Some(new_theme) => {
                 self.theme = new_theme.clone();
+                self.buffer_manager.set_theme_all(&new_theme);
+                self.minibuffer.set_theme(new_theme.clone());
                 self.status_bar.set_theme(new_theme);
                 self.show_message(format!("Theme changed to: {}", theme_name));
                 Ok(true)
@@ -5505,6 +5507,8 @@ mod tests {
         let result = app.set_theme_direct("light");
         assert!(result.is_ok());
         assert!(result.unwrap());
+        // Verify theme propagated to app
+        assert_eq!(app.theme.name, "Light");
 
         let result = app.set_theme_direct("invalid-theme");
         assert!(result.is_ok());

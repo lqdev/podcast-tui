@@ -349,6 +349,10 @@ impl Buffer for EpisodeListBuffer {
         self
     }
 
+    fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+
     fn can_close(&self) -> bool {
         true
     }

@@ -21,7 +21,7 @@ use ratatui::layout::Rect;
 use std::any::Any;
 use std::collections::HashMap;
 
-use crate::ui::{UIAction, UIComponent, UIError, UIResult};
+use crate::ui::{themes::Theme, UIAction, UIComponent, UIError, UIResult};
 use crate::{
     download::DownloadManager,
     playlist::{manager::PlaylistManager, PlaylistId, PlaylistType},
@@ -58,6 +58,14 @@ pub trait Buffer: UIComponent + Any {
     /// Called when the buffer is deactivated (loses focus)  
     fn on_deactivate(&mut self) {}
 
+    /// Update the theme used by this buffer.
+    ///
+    /// Called whenever the user changes the active theme (`:theme <name>`) and at
+    /// buffer-creation time so buffers always start with the current theme.
+    /// The default implementation is a deliberate no-op so that lightweight
+    /// overlay buffers that don't store a theme field are not forced to implement it.
+    fn set_theme(&mut self, _theme: Theme) {}
+
     /// Get help text for this buffer's keybindings
     fn help_text(&self) -> Vec<String> {
         vec![
@@ -72,6 +80,8 @@ pub struct BufferManager {
     buffers: HashMap<BufferId, Box<dyn Buffer>>,
     active_buffer: Option<BufferId>,
     buffer_order: Vec<BufferId>,
+    /// The theme that all open buffers and any newly created buffers should use.
+    current_theme: Theme,
 }
 
 impl BufferManager {
@@ -81,11 +91,12 @@ impl BufferManager {
             buffers: HashMap::new(),
             active_buffer: None,
             buffer_order: Vec::new(),
+            current_theme: Theme::default(),
         }
     }
 
     /// Add a buffer to the manager
-    pub fn add_buffer(&mut self, buffer: Box<dyn Buffer>) -> UIResult<()> {
+    pub fn add_buffer(&mut self, mut buffer: Box<dyn Buffer>) -> UIResult<()> {
         let id = buffer.id();
         let name = buffer.name();
 
@@ -96,6 +107,9 @@ impl BufferManager {
             )));
         }
 
+        // Apply the current theme so every buffer always starts with the right colours.
+        buffer.set_theme(self.current_theme.clone());
+
         self.buffer_order.push(id.clone());
         self.buffers.insert(id.clone(), buffer);
 
@@ -105,6 +119,18 @@ impl BufferManager {
         }
 
         Ok(())
+    }
+
+    /// Propagate a theme change to all open buffers and remember it for future buffers.
+    ///
+    /// Call this whenever the user changes the active theme (`:theme <name>`).  New
+    /// buffers added via [`add_buffer`] will automatically receive the stored theme,
+    /// so this only needs to be called once per theme-change event.
+    pub fn set_theme_all(&mut self, theme: &Theme) {
+        self.current_theme = theme.clone();
+        for buffer in self.buffers.values_mut() {
+            buffer.set_theme(theme.clone());
+        }
     }
 
     /// Remove a buffer from the manager
@@ -673,5 +699,91 @@ mod tests {
         // Test previous buffer (should go back)
         manager.previous_buffer().unwrap();
         assert_eq!(manager.active_buffer_id(), initial_id.as_ref());
+    }
+
+    #[test]
+    fn test_set_theme_all_propagates_to_all_buffers() {
+        use crate::ui::themes::Theme;
+        use std::any::Any;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        // Arrange — a lightweight buffer whose set_theme we can observe
+        struct ThemeTracker {
+            id: String,
+            call_count: Arc<AtomicUsize>,
+            last_theme_name: String,
+        }
+
+        impl UIComponent for ThemeTracker {
+            fn handle_action(&mut self, _action: UIAction) -> UIAction {
+                UIAction::None
+            }
+            fn render(&mut self, _frame: &mut ratatui::Frame, _area: ratatui::layout::Rect) {}
+            fn title(&self) -> String {
+                self.id.clone()
+            }
+            fn has_focus(&self) -> bool {
+                false
+            }
+            fn set_focus(&mut self, _focused: bool) {}
+        }
+
+        impl Buffer for ThemeTracker {
+            fn id(&self) -> BufferId {
+                self.id.clone()
+            }
+            fn name(&self) -> String {
+                self.id.clone()
+            }
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+            fn as_any_mut(&mut self) -> &mut dyn Any {
+                self
+            }
+            fn set_theme(&mut self, theme: Theme) {
+                self.call_count.fetch_add(1, Ordering::SeqCst);
+                self.last_theme_name = theme.name.clone();
+            }
+        }
+
+        let counter_a = Arc::new(AtomicUsize::new(0));
+        let counter_b = Arc::new(AtomicUsize::new(0));
+
+        let buf_a = ThemeTracker {
+            id: "tracker-a".into(),
+            call_count: counter_a.clone(),
+            last_theme_name: String::new(),
+        };
+        let buf_b = ThemeTracker {
+            id: "tracker-b".into(),
+            call_count: counter_b.clone(),
+            last_theme_name: String::new(),
+        };
+
+        let mut manager = BufferManager::new();
+        manager.add_buffer(Box::new(buf_a)).unwrap();
+        manager.add_buffer(Box::new(buf_b)).unwrap();
+
+        // add_buffer calls set_theme once per buffer (applies current_theme)
+        assert_eq!(counter_a.load(Ordering::SeqCst), 1);
+        assert_eq!(counter_b.load(Ordering::SeqCst), 1);
+
+        // Act
+        let light = Theme::light();
+        manager.set_theme_all(&light);
+
+        // Assert — each buffer received exactly one more set_theme call
+        assert_eq!(counter_a.load(Ordering::SeqCst), 2);
+        assert_eq!(counter_b.load(Ordering::SeqCst), 2);
+
+        // The manager remembers the new theme
+        assert_eq!(manager.current_theme.name, "Light");
+
+        // Downcast to verify the buffer stored the theme name
+        let buf = manager.buffers.get("tracker-a").unwrap();
+        let tracker = buf.as_any().downcast_ref::<ThemeTracker>().unwrap();
+        assert_eq!(tracker.last_theme_name, "Light");
     }
 }

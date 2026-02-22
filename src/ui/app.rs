@@ -11,6 +11,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use futures_util::stream::{self, StreamExt};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -4524,14 +4525,16 @@ impl UIApp {
                 tokio::spawn(async move {
                     match subscription_manager.storage.list_podcasts().await {
                         Ok(podcast_ids) => {
-                            let mut podcasts = Vec::new();
-                            for podcast_id in podcast_ids {
-                                if let Ok(podcast) =
-                                    subscription_manager.storage.load_podcast(&podcast_id).await
-                                {
-                                    podcasts.push(podcast);
-                                }
-                            }
+                            let storage = subscription_manager.storage.clone();
+                            let podcasts: Vec<_> = stream::iter(podcast_ids)
+                                .map(|id| {
+                                    let storage = storage.clone();
+                                    async move { storage.load_podcast(&id).await }
+                                })
+                                .buffer_unordered(16)
+                                .filter_map(|r| async { r.ok() })
+                                .collect()
+                                .await;
                             let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
                                 buffer_type: BufferRefreshType::PodcastList,
                                 data: BufferRefreshData::PodcastList { podcasts },
@@ -4553,57 +4556,68 @@ impl UIApp {
                 let app_event_tx = self.app_event_tx.clone();
 
                 tokio::spawn(async move {
-                    // Load download data in background
+                    // Load all (podcast, episodes) pairs concurrently
                     let mut downloads = Vec::new();
 
-                    // Get all podcasts and their episodes to build download list
                     if let Ok(podcast_ids) = download_manager.storage().list_podcasts().await {
-                        for podcast_id in podcast_ids {
-                            if let Ok(podcast) =
-                                download_manager.storage().load_podcast(&podcast_id).await
-                            {
-                                if let Ok(episodes) =
-                                    download_manager.storage().load_episodes(&podcast_id).await
+                        let dm = download_manager.clone();
+                        let podcast_pairs: Vec<_> = stream::iter(podcast_ids)
+                            .map(|podcast_id| {
+                                let dm = dm.clone();
+                                async move {
+                                    let podcast =
+                                        dm.storage().load_podcast(&podcast_id).await.ok()?;
+                                    let episodes =
+                                        dm.storage().load_episodes(&podcast_id).await.ok()?;
+                                    Some((podcast_id, podcast, episodes))
+                                }
+                            })
+                            .buffer_unordered(16)
+                            .filter_map(|r| async { r })
+                            .collect()
+                            .await;
+
+                        // Process results (CPU only, no I/O)
+                        for (podcast_id, podcast, episodes) in podcast_pairs {
+                            for episode in episodes {
+                                if episode.is_downloaded()
+                                    || matches!(
+                                        episode.status,
+                                        crate::podcast::EpisodeStatus::Downloading
+                                    )
                                 {
-                                    for episode in episodes {
-                                        if episode.is_downloaded()
-                                            || matches!(
-                                                episode.status,
-                                                crate::podcast::EpisodeStatus::Downloading
-                                            )
-                                        {
-                                            let status = match episode.status {
-                                                crate::podcast::EpisodeStatus::Downloaded => {
-                                                    crate::download::DownloadStatus::Completed
-                                                }
-                                                crate::podcast::EpisodeStatus::Downloading => {
-                                                    crate::download::DownloadStatus::InProgress
-                                                }
-                                                crate::podcast::EpisodeStatus::DownloadFailed => {
-                                                    crate::download::DownloadStatus::Failed(
-                                                        "Download failed".to_string(),
-                                                    )
-                                                }
-                                                _ => continue,
-                                            };
-
-                                            let file_size = episode
-                                                .local_path
-                                                .as_ref()
-                                                .and_then(|path| std::fs::metadata(path).ok())
-                                                .map(|metadata| metadata.len());
-
-                                            downloads.push(DownloadEntry {
-                                                podcast_id: podcast_id.clone(),
-                                                episode_id: episode.id.clone(),
-                                                podcast_name: podcast.title.clone(),
-                                                episode_title: episode.title.clone(),
-                                                status,
-                                                file_path: episode.local_path.clone(),
-                                                file_size,
-                                            });
+                                    let status = match episode.status {
+                                        crate::podcast::EpisodeStatus::Downloaded => {
+                                            crate::download::DownloadStatus::Completed
                                         }
-                                    }
+                                        crate::podcast::EpisodeStatus::Downloading => {
+                                            crate::download::DownloadStatus::InProgress
+                                        }
+                                        crate::podcast::EpisodeStatus::DownloadFailed => {
+                                            crate::download::DownloadStatus::Failed(
+                                                "Download failed".to_string(),
+                                            )
+                                        }
+                                        _ => continue,
+                                    };
+
+                                    // Fix #182: use tokio::fs::metadata instead of std::fs::metadata
+                                    let file_size = match episode.local_path.as_ref() {
+                                        Some(path) => {
+                                            tokio::fs::metadata(path).await.ok().map(|m| m.len())
+                                        }
+                                        None => None,
+                                    };
+
+                                    downloads.push(DownloadEntry {
+                                        podcast_id: podcast_id.clone(),
+                                        episode_id: episode.id.clone(),
+                                        podcast_name: podcast.title.clone(),
+                                        episode_title: episode.title.clone(),
+                                        status,
+                                        file_path: episode.local_path.clone(),
+                                        file_size,
+                                    });
                                 }
                             }
                         }
@@ -4625,30 +4639,36 @@ impl UIApp {
                     let mut all_episodes = Vec::new();
 
                     if let Ok(podcast_ids) = subscription_manager.storage.list_podcasts().await {
-                        for podcast_id in podcast_ids {
-                            if let Ok(podcast) =
-                                subscription_manager.storage.load_podcast(&podcast_id).await
-                            {
-                                if let Ok(episodes) = subscription_manager
-                                    .storage
-                                    .load_episodes(&podcast_id)
-                                    .await
+                        let storage = subscription_manager.storage.clone();
+                        let podcast_pairs: Vec<_> = stream::iter(podcast_ids)
+                            .map(|podcast_id| {
+                                let storage = storage.clone();
+                                async move {
+                                    let podcast = storage.load_podcast(&podcast_id).await.ok()?;
+                                    let episodes = storage.load_episodes(&podcast_id).await.ok()?;
+                                    Some((podcast_id, podcast, episodes))
+                                }
+                            })
+                            .buffer_unordered(16)
+                            .filter_map(|r| async { r })
+                            .collect()
+                            .await;
+
+                        // Process results (CPU only, no I/O)
+                        for (podcast_id, podcast, episodes) in podcast_pairs {
+                            for episode in episodes {
+                                // Only show episodes that aren't downloaded or downloading
+                                if !episode.is_downloaded()
+                                    && !matches!(
+                                        episode.status,
+                                        crate::podcast::EpisodeStatus::Downloading
+                                    )
                                 {
-                                    for episode in episodes {
-                                        // Only show episodes that aren't downloaded or downloading
-                                        if !episode.is_downloaded()
-                                            && !matches!(
-                                                episode.status,
-                                                crate::podcast::EpisodeStatus::Downloading
-                                            )
-                                        {
-                                            all_episodes.push(AggregatedEpisode {
-                                                podcast_id: podcast_id.clone(),
-                                                podcast_title: podcast.title.clone(),
-                                                episode,
-                                            });
-                                        }
-                                    }
+                                    all_episodes.push(AggregatedEpisode {
+                                        podcast_id: podcast_id.clone(),
+                                        podcast_title: podcast.title.clone(),
+                                        episode,
+                                    });
                                 }
                             }
                         }

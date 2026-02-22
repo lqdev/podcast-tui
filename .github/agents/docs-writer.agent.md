@@ -51,7 +51,6 @@ You are a specialist documentation writer for the **podcast-tui** project — a 
 4. Check `src/constants.rs` for any threshold/limit values to document
 
 ### What NOT to document
-- Audio playback (rodio is linked but NOT wired up — `src/download/manager.rs` handles downloads only)
 - Episode notes (not implemented)
 - Statistics tracking (not implemented)
 - Duration-based filtering (deferred — see `docs/rfcs/RFC-001-search-and-filter.md` Design Decision #13)

@@ -22,7 +22,7 @@ tokio = { version = "1.0", features = ["full"] }
 reqwest = { version = "0.12", features = ["rustls-tls", "stream", "json"] }
 feed-rs = "2.0"
 
-# Audio (linked, playback not yet wired)
+# Audio playback (rodio backend + external player fallback)
 rodio = "0.21"
 
 # Serialization
@@ -308,11 +308,11 @@ The following were shipped between the original sprint plan and the current stat
 
 ### Current / Upcoming Work
 
-#### ⏳ Audio Playback
-- [ ] Wire up `rodio` for playback (dependency already present)
-- [ ] Playback controls (play/pause/stop/seek)
-- [ ] Volume control
-- [ ] Progress display for currently playing episode
+#### ✅ Audio Playback
+- [x] Wire up `rodio` for playback (rodio backend + external player fallback)
+- [x] Playback controls (play/pause/stop/seek)
+- [x] Volume control
+- [x] Progress display for currently playing episode (NowPlaying buffer, F9)
 - [ ] Resume from last position
 
 #### ⏳ Episode Notes
@@ -397,8 +397,8 @@ The following were shipped between the original sprint plan and the current stat
 - ✅ **Sprint 2**: RSS and Podcasts - Subscriptions, OPML, feeds
 - ✅ **Sprint 3**: Episodes and Downloads - Download manager, file organization
 
-### Current Sprint
-- 🚧 **Sprint 4**: Audio Playback (Next Up)
+### Completed
+- ✅ **Sprint 4**: Audio Playback
 
 ### Upcoming Sprints
 - ⏳ **Sprint 5**: Enhanced Features (Playlists, notes, search)

@@ -61,7 +61,7 @@ Current podcast management solutions are either:
 - [x] Cross-platform compatibility (Windows/Linux) ✅ **COMPLETE** (Sprint 0-3, build scripts)
 
 ### Should Have (P1)
-- [ ] Basic audio playback (play/pause/stop/seek) ⏳ **PENDING**
+- [x] Basic audio playback (play/pause/stop/seek) ✅ **COMPLETE** (rodio backend + external player fallback)
 - [ ] Episode notes functionality ⏳ **PENDING**
 - [x] Simple playlist creation and management ✅ **COMPLETE** (user playlists + Today auto-playlist)
 - [x] Episode filtering (status, date, text search) ✅ **COMPLETE** (duration deferred pending RSS data)
@@ -73,7 +73,7 @@ Current podcast management solutions are either:
 ### Could Have (P2)
 - [ ] Transcript display (when available) ⏳ **PENDING**
 - [x] Basic metadata management (ID3 tags) ✅ **COMPLETE** (embed_id3_metadata, artwork, track numbers)
-- [ ] External player integration ⏳ **PENDING**
+- [x] External player integration ✅ **COMPLETE** (mpv/vlc/ffplay auto-detection + config override)
 - [x] Episode artwork embedding ✅ **COMPLETE**
 
 ### Won't Have (This Version)

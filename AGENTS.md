@@ -606,7 +606,7 @@ git diff --name-only | xargs -I {} cargo clippy --quiet -- -D warnings
 - `tokio` (full) - Async runtime
 - `reqwest 0.12` (rustls-tls, stream, json) - HTTP client
 - `feed-rs 2.0` - RSS/Atom feed parsing
-- `rodio 0.21` - Audio playback (linked but not yet wired up)
+- `rodio 0.21` - Audio playback (rodio backend + external player fallback)
 - `serde` / `serde_json` - Serialization
 - `quick-xml 0.31` - XML parsing (OPML)
 - `regex 1.10` - Pattern matching
@@ -661,9 +661,9 @@ cargo add dependency-name --features feature1,feature2
 - ✅ Theme system (dark/light/high-contrast/solarized)
 - ✅ What's New buffer (rolling recent episodes across all podcasts)
 - ✅ Winget publishing (Windows Package Manager)
+- ✅ Audio playback (rodio backend + external player fallback)
 
 ### Not Yet Implemented
-- ⏳ Audio playback (rodio is linked, playback not yet wired up)
 - ⏳ Episode notes
 - ⏳ Statistics tracking
 - ⏳ Duration filter (deferred — see `docs/SEARCH_AND_FILTER.md` Design Decision #13)

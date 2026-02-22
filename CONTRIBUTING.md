@@ -268,7 +268,7 @@ A: Create a new module in `src/ui/buffers/` following the pattern in existing bu
 A: Use the DevContainer for Linux testing. For Windows, test in Windows Terminal and PowerShell. See [docs/BUILD_SYSTEM.md](docs/BUILD_SYSTEM.md) for platform-specific build instructions.
 
 **Q: What's the current feature set?**
-A: See the [README](../README.md) for the current feature list. As of v1.6.0: subscriptions, downloads, device sync, playlists, search & filter are all complete. Audio playback is not yet implemented.
+A: See the [README](../README.md) for the current feature list. As of v1.6.0: subscriptions, downloads, device sync, playlists, search & filter, and audio playback are all complete.
 
 **Q: Where are magic numbers defined?**
 A: All configuration defaults are centralized in `src/constants.rs` organized by category (network, downloads, ui, storage, audio, etc.). Never use hard-coded values.

@@ -475,7 +475,7 @@ async fn main() -> Result<()> {
     // Wait for status monitor to finish
     let _ = status_monitor.await;
 
-    // Show final status briefly
+    // Render final status once before clearing the splash screen
     update_splash_status(InitStatus::Complete.message())?;
 
     // Clear splash screen and show cursor

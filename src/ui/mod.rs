@@ -404,6 +404,93 @@ impl UIAction {
             _ => "",
         }
     }
+
+    /// Returns the functional category for grouping in the keybinding help buffer.
+    /// Returns an empty string for internal/trigger actions that should not appear in help.
+    ///
+    /// Category names are ALL-CAPS strings used as section headers in `keybindings_help()`.
+    /// The display order of categories is controlled by the `category_order` array in
+    /// `HelpBuffer::keybindings_help()`, not by this method.
+    ///
+    /// **Invariant**: every variant where `description()` is non-empty must also have a
+    /// non-empty `category()`.  A test enforces this.
+    pub fn category(&self) -> &str {
+        match self {
+            // Navigation
+            UIAction::MoveUp
+            | UIAction::MoveDown
+            | UIAction::MoveLeft
+            | UIAction::MoveRight
+            | UIAction::PageUp
+            | UIAction::PageDown
+            | UIAction::MoveToTop
+            | UIAction::MoveToBottom => "NAVIGATION",
+
+            // Buffer management
+            UIAction::NextBuffer
+            | UIAction::PreviousBuffer
+            | UIAction::CloseCurrentBuffer
+            | UIAction::SwitchBuffer(_) => "BUFFER MANAGEMENT",
+
+            // Application
+            UIAction::Quit
+            | UIAction::ShowHelp
+            | UIAction::Refresh
+            | UIAction::PromptCommand
+            | UIAction::SelectItem
+            | UIAction::HideMinibuffer
+            | UIAction::Search
+            | UIAction::ClearFilters => "APPLICATION",
+
+            // Podcast management
+            UIAction::AddPodcast
+            | UIAction::DeletePodcast
+            | UIAction::RefreshPodcast
+            | UIAction::RefreshAll
+            | UIAction::HardRefreshPodcast
+            | UIAction::DownloadEpisode
+            | UIAction::DeleteDownloadedEpisode
+            | UIAction::DeleteAllDownloads => "PODCAST MANAGEMENT",
+
+            // Episode status & sorting
+            UIAction::MarkPlayed
+            | UIAction::MarkUnplayed
+            | UIAction::ToggleFavorite
+            | UIAction::CycleSortField
+            | UIAction::ToggleSortDirection
+            | UIAction::MoveEpisodeUp
+            | UIAction::MoveEpisodeDown => "EPISODE STATUS & SORTING",
+
+            // Playlists
+            UIAction::OpenPlaylistList | UIAction::CreatePlaylist | UIAction::AddToPlaylist => {
+                "PLAYLISTS"
+            }
+
+            // OPML
+            UIAction::ImportOpml | UIAction::ExportOpml => "OPML IMPORT/EXPORT",
+
+            // Sync & tabs
+            UIAction::SyncToDevice | UIAction::PreviousTab | UIAction::NextTab => "DEVICE SYNC",
+
+            // Audio playback
+            UIAction::PlayEpisode { .. }
+            | UIAction::TogglePlayPause
+            | UIAction::StopPlayback
+            | UIAction::SeekForward
+            | UIAction::SeekBackward
+            | UIAction::VolumeUp
+            | UIAction::VolumeDown => "AUDIO PLAYBACK",
+
+            // ExecuteCommand — categorize by the command name
+            UIAction::ExecuteCommand(cmd) => match cmd.as_str() {
+                "switch-to-buffer" | "list-buffers" => "BUFFER MANAGEMENT",
+                _ => "",
+            },
+
+            // Internal / trigger actions — not shown in help
+            _ => "",
+        }
+    }
 }
 
 /// Trait for UI components that can handle events and render themselves
@@ -422,4 +509,27 @@ pub trait UIComponent {
 
     /// Set focus state for this component
     fn set_focus(&mut self, focused: bool);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_category_covers_all_visible_actions() {
+        // Arrange — use the default keybinding handler to enumerate all bound actions
+        let handler = crate::ui::keybindings::KeyHandler::new();
+        let help = handler.generate_help_text();
+
+        // Assert — every entry that has a description also has a non-empty category
+        for (cat, keys, desc) in &help {
+            assert!(
+                !cat.is_empty(),
+                "Action '{}' (keys: '{}') has a description but no category. \
+                 Add it to UIAction::category().",
+                desc,
+                keys,
+            );
+        }
+    }
 }

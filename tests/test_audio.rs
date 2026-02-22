@@ -420,10 +420,7 @@ async fn test_full_playback_position_advances_and_resets() {
         &mut status_rx,
         STATUS_CHANGE_TIMEOUT,
         "position advanced past 200 ms",
-        |s| {
-            s.position
-                .is_some_and(|p| p >= Duration::from_millis(200))
-        },
+        |s| s.position.is_some_and(|p| p >= Duration::from_millis(200)),
     )
     .await;
 

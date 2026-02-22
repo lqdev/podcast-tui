@@ -512,31 +512,33 @@ impl KeyHandler {
 
     /// Generate human-readable help text from the currently active keybindings.
     ///
-    /// Returns a list of `(key_notation, description)` pairs. Multiple keys that map
-    /// to the same action are merged into a single entry with keys joined by `" / "`.
-    /// Internal and trigger actions (those whose `description()` is empty) are excluded.
-    /// Entries are sorted alphabetically by description.
-    pub fn generate_help_text(&self) -> Vec<(String, String)> {
+    /// Returns a list of `(category, key_notation, description)` triples.  Multiple keys
+    /// that map to the same action are merged into a single entry with keys joined by
+    /// `" / "`.  Internal and trigger actions (those whose `description()` or `category()`
+    /// is empty) are excluded.  Entries are sorted by (category, description).
+    pub fn generate_help_text(&self) -> Vec<(String, String, String)> {
         use std::collections::BTreeMap;
 
-        // Group key notations by their action description.
-        let mut by_desc: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        // Group key notations by (category, description).
+        // BTreeMap gives natural sort by (category, description).
+        let mut grouped: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
         for (chord, action) in &self.bindings {
             let desc = action.description();
-            if !desc.is_empty() {
-                by_desc
-                    .entry(desc.to_string())
+            let cat = action.category();
+            if !desc.is_empty() && !cat.is_empty() {
+                grouped
+                    .entry((cat.to_string(), desc.to_string()))
                     .or_default()
                     .push(key_to_notation(chord));
             }
         }
 
-        // Sort keys within each group and produce (keys, description) pairs.
-        by_desc
+        // Sort keys within each group and produce (category, keys, description) triples.
+        grouped
             .into_iter()
-            .map(|(desc, mut keys)| {
+            .map(|((cat, desc), mut keys)| {
                 keys.sort();
-                (keys.join(" / "), desc)
+                (cat, keys.join(" / "), desc)
             })
             .collect()
     }
@@ -1109,8 +1111,8 @@ mod tests {
         let help = handler.generate_help_text();
 
         // Assert — common user-facing actions are present
-        let has_quit = help.iter().any(|(_, desc)| desc == "Quit application");
-        let has_help = help.iter().any(|(_, desc)| desc == "Show help");
+        let has_quit = help.iter().any(|(_, _, desc)| desc == "Quit application");
+        let has_help = help.iter().any(|(_, _, desc)| desc == "Show help");
         assert!(has_quit, "Help text should include Quit application");
         assert!(has_help, "Help text should include Show help");
     }
@@ -1123,9 +1125,14 @@ mod tests {
         // Act
         let help = handler.generate_help_text();
 
-        // Assert — no empty descriptions in the output
-        for (_, desc) in &help {
+        // Assert — no empty descriptions or categories in the output
+        for (cat, _, desc) in &help {
             assert!(!desc.is_empty(), "Empty description found in help text");
+            assert!(
+                !cat.is_empty(),
+                "Empty category found in help text for action: {}",
+                desc
+            );
         }
     }
 
@@ -1140,10 +1147,10 @@ mod tests {
         let help = vim_handler.generate_help_text();
 
         // Assert — "Move left" entry should contain "h"
-        let move_left_entry = help.iter().find(|(_, desc)| desc == "Move left");
+        let move_left_entry = help.iter().find(|(_, _, desc)| desc == "Move left");
         assert!(move_left_entry.is_some(), "Move left not in help text");
         assert!(
-            move_left_entry.unwrap().0.contains('h'),
+            move_left_entry.unwrap().1.contains('h'),
             "Vim preset: h should appear in Move left keys, got: {:?}",
             move_left_entry
         );
@@ -1160,10 +1167,10 @@ mod tests {
         let help = handler.generate_help_text();
 
         // Assert — quit entry shows the custom binding
-        let quit_entry = help.iter().find(|(_, desc)| desc == "Quit application");
+        let quit_entry = help.iter().find(|(_, _, desc)| desc == "Quit application");
         assert!(quit_entry.is_some());
         assert!(
-            quit_entry.unwrap().0.contains("C-q"),
+            quit_entry.unwrap().1.contains("C-q"),
             "Custom C-q should appear in quit entry, got: {:?}",
             quit_entry
         );
@@ -1400,6 +1407,63 @@ mod tests {
             handler.lookup(&KeyChord::shift(KeyCode::Enter)),
             None,
             "S-Enter must be unbound after play_episode is overridden to F11"
+        );
+    }
+
+    // ── Help text category tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_generate_help_text_includes_categories() {
+        // Arrange
+        let handler = KeyHandler::new();
+
+        // Act
+        let help = handler.generate_help_text();
+
+        // Assert — spot-check that all expected categories are present
+        let categories: std::collections::HashSet<&str> =
+            help.iter().map(|(cat, _, _)| cat.as_str()).collect();
+        assert!(
+            categories.contains("NAVIGATION"),
+            "Missing NAVIGATION category"
+        );
+        assert!(
+            categories.contains("AUDIO PLAYBACK"),
+            "Missing AUDIO PLAYBACK category"
+        );
+        assert!(
+            categories.contains("APPLICATION"),
+            "Missing APPLICATION category"
+        );
+        assert!(
+            categories.contains("BUFFER MANAGEMENT"),
+            "Missing BUFFER MANAGEMENT category"
+        );
+    }
+
+    #[test]
+    fn test_custom_bindings_preserve_category() {
+        // Arrange — remap quit from q/F10 to C-q; category should still be APPLICATION
+        let mut config = KeybindingConfig::default();
+        config.global.quit = vec!["C-q".to_string()];
+        let handler = KeyHandler::from_config(&config);
+
+        // Act
+        let help = handler.generate_help_text();
+
+        // Assert — quit still in APPLICATION category with the custom key
+        let quit_entry = help
+            .iter()
+            .find(|(_, _, desc)| desc == "Quit application")
+            .expect("Quit application not found in help");
+        assert_eq!(
+            quit_entry.0, "APPLICATION",
+            "Quit should be in APPLICATION category regardless of key binding"
+        );
+        assert!(
+            quit_entry.1.contains("C-q"),
+            "Custom C-q binding should appear in keys, got: {}",
+            quit_entry.1,
         );
     }
 }

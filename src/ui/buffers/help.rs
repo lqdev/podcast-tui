@@ -26,9 +26,18 @@ pub struct HelpBuffer {
 }
 
 impl HelpBuffer {
-    /// Create a new help buffer with default content
+    /// Create a new help buffer with minimal fallback content.
+    /// In practice, `keybindings_help()` is always used for the F1 buffer.
     pub fn new() -> Self {
-        Self::with_content("*Help*".to_string(), Self::default_help_content())
+        Self::with_content(
+            "*Help*".to_string(),
+            vec![
+                "PODCAST TUI - HELP".to_string(),
+                "================".to_string(),
+                "".to_string(),
+                "Press F1 or ? to view the full keybinding reference.".to_string(),
+            ],
+        )
     }
 
     /// Create a help buffer with custom content
@@ -47,7 +56,10 @@ impl HelpBuffer {
     ///
     /// `entries` comes from `KeyHandler::generate_help_text()` and reflects the
     /// *actual active bindings*, so the displayed help can never go stale.
-    pub fn keybindings_help(entries: Vec<(String, String)>) -> Self {
+    /// Entries are grouped by category with section headers in a logical order.
+    pub fn keybindings_help(entries: Vec<(String, String, String)>) -> Self {
+        use std::collections::HashMap;
+
         let mut content = vec![
             "KEYBINDING REFERENCE".to_string(),
             "===================".to_string(),
@@ -55,11 +67,50 @@ impl HelpBuffer {
             "".to_string(),
         ];
 
-        for (keys, desc) in entries {
-            content.push(format!("  {:<24} {}", keys, desc));
+        // Defines the display order for category sections.
+        // Categories not in this list appear at the end in alphabetical order
+        // (future-proofing: new categories appear without requiring changes here).
+        let category_order: &[&str] = &[
+            "NAVIGATION",
+            "BUFFER MANAGEMENT",
+            "APPLICATION",
+            "PODCAST MANAGEMENT",
+            "EPISODE STATUS & SORTING",
+            "PLAYLISTS",
+            "OPML IMPORT/EXPORT",
+            "DEVICE SYNC",
+            "AUDIO PLAYBACK",
+        ];
+
+        // Group entries by category, preserving (keys, desc) pairs.
+        let mut by_category: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        for (cat, keys, desc) in entries {
+            by_category.entry(cat).or_default().push((keys, desc));
         }
 
-        content.push("".to_string());
+        // Render categories in the defined order.
+        for &category in category_order {
+            if let Some(bindings) = by_category.remove(category) {
+                content.push(format!("{}:", category));
+                for (keys, desc) in &bindings {
+                    content.push(format!("  {:<24} {}", keys, desc));
+                }
+                content.push("".to_string());
+            }
+        }
+
+        // Render any remaining categories not in the predefined order (alphabetically).
+        let mut remaining: Vec<_> = by_category.into_iter().collect();
+        remaining.sort_by(|(a, _), (b, _)| a.cmp(b));
+        for (category, bindings) in remaining {
+            content.push(format!("{}:", category));
+            for (keys, desc) in &bindings {
+                content.push(format!("  {:<24} {}", keys, desc));
+            }
+            content.push("".to_string());
+        }
+
+        // Static supplementary section (not auto-generated from keybindings).
         content.push("NOW PLAYING BUFFER (F9):".to_string());
         content.push(
             "  Shows episode title, podcast name, progress bar, volume, and playback state."
@@ -71,227 +122,6 @@ impl HelpBuffer {
         );
 
         Self::with_content("*Help: Keybindings*".to_string(), content)
-    }
-
-    /// Get default help content
-    fn default_help_content() -> Vec<String> {
-        vec![
-            "PODCAST TUI - HELP".to_string(),
-            "================".to_string(),
-            "".to_string(),
-            "This is a terminal user interface for managing podcasts.".to_string(),
-            "It uses simple keybindings that work in any environment.".to_string(),
-            "".to_string(),
-            "BASIC NAVIGATION:".to_string(),
-            "  ↑ / k          Move up".to_string(),
-            "  ↓ / j          Move down".to_string(),
-            "  ← →            Move left/right".to_string(),
-            "  Page Up/Down   Page navigation".to_string(),
-            "  Home / g       Move to top".to_string(),
-            "  End / G        Move to bottom".to_string(),
-            "  C-n / C-p      Move down / up (Emacs-style)".to_string(),
-            "".to_string(),
-            "BUFFER MANAGEMENT:".to_string(),
-            "  Tab/S-Tab     Switch between buffers".to_string(),
-            "  F2            Switch to podcast list".to_string(),
-            "  F4            Switch to downloads".to_string(),
-            "  F7            Switch to playlists".to_string(),
-            "  F8            Switch to sync buffer".to_string(),
-            "  C-b           Switch to buffer (by name)".to_string(),
-            "  C-l           List all buffers".to_string(),
-            "".to_string(),
-            "COMMANDS (type ':' to enter):".to_string(),
-            "  buffer <name>        Switch to buffer by name".to_string(),
-            "  switch-to-buffer     Interactive buffer switch".to_string(),
-            "  list-buffers         Show all available buffers".to_string(),
-            "  import-opml <path>   Import podcasts from OPML file or URL".to_string(),
-            "  export-opml <path>   Export podcasts to OPML file".to_string(),
-            "  quit                 Exit application".to_string(),
-            "".to_string(),
-            "APPLICATION COMMANDS:".to_string(),
-            "  q, F10        Quit application".to_string(),
-            "  Esc           Cancel current operation".to_string(),
-            "  F5            Refresh current buffer".to_string(),
-            "  :             Execute command".to_string(),
-            "  h, ?, F1      Show help".to_string(),
-            "".to_string(),
-            "SORT (Episode lists):".to_string(),
-            "  o             Cycle sort field: Date → Title → Duration → Status".to_string(),
-            "  O (Shift-O)   Toggle sort direction (↑ Asc / ↓ Desc)".to_string(),
-            "  :sort <field> Set sort field: date, title, duration, downloaded".to_string(),
-            "  :sort-asc     Set ascending sort order".to_string(),
-            "  :sort-desc    Set descending sort order".to_string(),
-            "".to_string(),
-            "CONTENT INTERACTION:".to_string(),
-            "  Enter, Space  Select/activate item".to_string(),
-            "".to_string(),
-            "PODCAST MANAGEMENT:".to_string(),
-            "  a             Add podcast subscription".to_string(),
-            "  d             Delete podcast subscription".to_string(),
-            "  r             Refresh selected podcast".to_string(),
-            "  C-r           Hard refresh (re-parse all episodes)".to_string(),
-            "  R             Refresh all podcasts".to_string(),
-            "  A (Shift-A)   Import podcasts from OPML file or URL".to_string(),
-            "  E (Shift-E)   Export podcasts to OPML file".to_string(),
-            "".to_string(),
-            "PODCAST TAGS:".to_string(),
-            "  :tag <name>        Add a tag to the selected podcast".to_string(),
-            "  :untag <name>      Remove a tag from the selected podcast".to_string(),
-            "  :tags              List all tags used across podcasts".to_string(),
-            "  :filter-tag <tag>  Show only podcasts with a given tag".to_string(),
-            "".to_string(),
-            "EPISODE MANAGEMENT (in episode list):".to_string(),
-            "  Enter         View episode details".to_string(),
-            "  D             Download selected episode".to_string(),
-            "  m             Mark episode as played".to_string(),
-            "  u             Mark episode as unplayed".to_string(),
-            "  *             Toggle episode favorite (★)".to_string(),
-            "  o             Cycle sort field (Date → Title → Duration → Status)".to_string(),
-            "  O (Shift-O)   Toggle sort direction (↑ ascending / ↓ descending)".to_string(),
-            "  p             Add selected episode to a playlist".to_string(),
-            "  X             Delete downloaded episode file".to_string(),
-            "  / F3          Search episodes".to_string(),
-            "  F6            Clear filters".to_string(),
-            "".to_string(),
-            "EPISODE DETAIL (in episode detail buffer):".to_string(),
-            "  D             Download episode".to_string(),
-            "  p             Add this episode to a playlist".to_string(),
-            "  ↑ ↓           Scroll content".to_string(),
-            "  Page Up/Down  Page navigation".to_string(),
-            "  Home/End      Jump to top/bottom".to_string(),
-            "".to_string(),
-            "DOWNLOADS BUFFER (F4):".to_string(),
-            "  r             Refresh downloads list".to_string(),
-            "  X             Delete selected download".to_string(),
-            "  Enter         View download details".to_string(),
-            "".to_string(),
-            "WHAT'S NEW BUFFER:".to_string(),
-            "  ↑ ↓           Navigate episodes".to_string(),
-            "  Enter         View episode details".to_string(),
-            "  D             Download selected episode".to_string(),
-            "  m             Mark episode as played".to_string(),
-            "  u             Mark episode as unplayed".to_string(),
-            "  *             Toggle episode favorite (★)".to_string(),
-            "  p             Add selected episode to a playlist".to_string(),
-            "  / F3          Search episodes".to_string(),
-            "  F5            Refresh episode list".to_string(),
-            "  F6            Clear filters".to_string(),
-            "".to_string(),
-            "PLAYLISTS LIST (F7):".to_string(),
-            "  F7            Switch to playlists buffer".to_string(),
-            "  Enter         Open selected playlist".to_string(),
-            "  c             Create playlist".to_string(),
-            "  d             Delete selected playlist (with confirmation)".to_string(),
-            "  r             Refresh Today playlist".to_string(),
-            "  :playlist-create <name>              Create user playlist".to_string(),
-            "  :smart-playlist <name> [opts]        Create smart (dynamic) playlist".to_string(),
-            "    --filter <spec>  Filter episodes (can repeat for AND logic)".to_string(),
-            "      downloaded  favorited  played  unplayed".to_string(),
-            "      tag:<name>  podcast:<id>  newer-than:<days>".to_string(),
-            "    --sort <field>  date-desc | date-asc | title-asc | title-desc | duration-asc | duration-desc".to_string(),
-            "    --limit <n>    Maximum number of episodes".to_string(),
-            "  ⚡ prefix marks smart playlists in the list".to_string(),
-            "".to_string(),
-            "PLAYLIST DETAIL (in playlist detail buffer):".to_string(),
-            "  Enter         View episode details".to_string(),
-            "  X             Remove episode from playlist (user playlists only)".to_string(),
-            "  Ctrl+↑/Ctrl+↓ Reorder episodes in playlist (user playlists only)".to_string(),
-            "  r             Rebuild user playlist files".to_string(),
-            "".to_string(),
-            "DEVICE SYNC:".to_string(),
-            "  F8                   Switch to sync buffer".to_string(),
-            "  s                    Sync to active target (no prompt if target set)".to_string(),
-            "  D (Shift-D)          Dry-run preview (sync buffer only)".to_string(),
-            "  p                    Open directory picker (sync buffer only)".to_string(),
-            "  r                    Refresh sync view (sync buffer only)".to_string(),
-            "  Enter                Activate selected saved target (sync buffer only)".to_string(),
-            "Dry-Run Preview (after pressing D):".to_string(),
-            "  [/]                  Cycle between tabs: To Copy, To Delete, Skipped, Errors"
-                .to_string(),
-            "  ↑↓                   Scroll file list".to_string(),
-            "  Enter/s              Confirm and start real sync".to_string(),
-            "  Esc                  Cancel preview, return to overview".to_string(),
-            "Progress View (during active sync):".to_string(),
-            "  (read-only)          Byte-based progress bar + live counters + elapsed time"
-                .to_string(),
-            "                       View auto-transitions to Overview when sync completes"
-                .to_string(),
-            "  :sync <path>         Sync podcasts and playlists to device".to_string(),
-            "  :sync --hard <path>  Wipe managed device dirs, then fresh copy".to_string(),
-            "  :sync-dry-run <path> Preview sync changes without applying".to_string(),
-            "  :buffer sync         Switch to sync buffer".to_string(),
-            "  Note: Sync compares files by name and size (metadata-only)".to_string(),
-            "        Use --hard to clear Podcasts/Playlists before copying".to_string(),
-            "        Use dry-run to preview changes before actual sync".to_string(),
-            "        Config: sync_device_path, sync_delete_orphans, sync_preview_before_sync,"
-                .to_string(),
-            "                sync_filter_removable_only in config.json".to_string(),
-            "".to_string(),
-            "DOWNLOAD CLEANUP:".to_string(),
-            "  :delete-all-downloads    Delete ALL downloaded episodes".to_string(),
-            "  :clean-downloads         Alias for delete-all-downloads".to_string(),
-            "  :clean-older-than <dur>  Delete downloads older than duration".to_string(),
-            "  :cleanup <dur>           Alias for clean-older-than".to_string(),
-            "                           Formats: 12h, 7d, 2w, 1m".to_string(),
-            "  Auto-cleanup:            Runs on startup if cleanup_after_days".to_string(),
-            "                           is set in config (default: 30 days)".to_string(),
-            "".to_string(),
-            "SEARCH & FILTER (Episode lists):".to_string(),
-            "  / :search          Search episodes by title".to_string(),
-            "  :filter-status <s>  Filter by status: new, downloaded, played, favorited"
-                .to_string(),
-            "  :filter-date <d>    Filter by age: today, 12h, 7d, 2w, 1m".to_string(),
-            "  :clear-filters      Remove all active filters".to_string(),
-            "  :widen              Alias for clear-filters".to_string(),
-            "".to_string(),
-            "OPML IMPORT/EXPORT:".to_string(),
-            "  Shift-A       Import subscriptions from OPML file or URL".to_string(),
-            "  Shift-E       Export subscriptions to OPML file".to_string(),
-            "  :import-opml  Import via command (supports local files and URLs)".to_string(),
-            "  :export-opml  Export via command (timestamped filename)".to_string(),
-            "  Note: Import is non-destructive and skips existing subscriptions".to_string(),
-            "".to_string(),
-            "DOWNLOAD LOCATION:".to_string(),
-            "  Default: ~/Downloads/Podcasts/".to_string(),
-            "  Config:  ~/.config/podcast-tui/config.json".to_string(),
-            "".to_string(),
-            "PODCAST DISCOVERY (PodcastIndex API):".to_string(),
-            "  :discover <query>    Search PodcastIndex for podcasts by keyword".to_string(),
-            "  :trending            Show trending podcasts".to_string(),
-            "  Enter (in results)   Subscribe to selected podcast".to_string(),
-            "  Note: Requires free API credentials at https://api.podcastindex.org/".to_string(),
-            "  Config: discovery.podcastindex_api_key and discovery.podcastindex_api_secret".to_string(),
-            "".to_string(),
-            "PLAYBACK CONTROLS (work from any buffer):".to_string(),
-            "  S-P           Toggle play / pause".to_string(),
-            "  ⏯ (media key) Toggle play / pause".to_string(),
-            "  ⏵ (media key) Toggle play / pause (Play key treated as toggle)".to_string(),
-            "  C-←           Seek backward 10s".to_string(),
-            "  C-→           Seek forward 10s".to_string(),
-            "  + / =         Volume up".to_string(),
-            "  -             Volume down".to_string(),
-            "  F9            Switch to now playing buffer".to_string(),
-            "".to_string(),
-            "NOW PLAYING BUFFER (F9):".to_string(),
-            "  Shows episode title, podcast name, progress bar, volume".to_string(),
-            "  and playback state. Updates in real-time from AudioManager.".to_string(),
-            "  All playback keys work from here (and from any other buffer).".to_string(),
-            "".to_string(),
-            "FUNCTION KEYS (Work everywhere):".to_string(),
-            "  F1            Show help".to_string(),
-            "  F2            Switch to podcast list".to_string(),
-            "  F3            Search episodes".to_string(),
-            "  F4            Switch to downloads buffer".to_string(),
-            "  F5            Refresh current buffer".to_string(),
-            "  F7            Switch to playlists buffer".to_string(),
-            "  F8            Switch to sync buffer".to_string(),
-            "  F9            Switch to now playing buffer".to_string(),
-            "  F10           Quit application".to_string(),
-            "".to_string(),
-            "Note: These keybindings work in VS Code and other environments.".to_string(),
-            "      Downloaded episodes are saved to ~/Downloads/Podcasts/ by default.".to_string(),
-            "      OPML imports preserve existing subscriptions.".to_string(),
-        ]
     }
 
     /// Scroll the help content
@@ -482,12 +312,153 @@ mod tests {
     #[test]
     fn test_keybindings_help() {
         let entries = vec![
-            ("q".to_string(), "Quit application".to_string()),
-            ("F1".to_string(), "Show help".to_string()),
+            (
+                "APPLICATION".to_string(),
+                "q".to_string(),
+                "Quit application".to_string(),
+            ),
+            (
+                "APPLICATION".to_string(),
+                "F1".to_string(),
+                "Show help".to_string(),
+            ),
         ];
         let buffer = HelpBuffer::keybindings_help(entries);
         assert_eq!(buffer.name(), "*Help: Keybindings*");
         assert!(!buffer.content.is_empty());
+    }
+
+    #[test]
+    fn test_keybindings_help_has_section_headers() {
+        // Arrange
+        let entries = vec![
+            (
+                "NAVIGATION".to_string(),
+                "↑ / k".to_string(),
+                "Move up".to_string(),
+            ),
+            (
+                "NAVIGATION".to_string(),
+                "↓ / j".to_string(),
+                "Move down".to_string(),
+            ),
+            (
+                "APPLICATION".to_string(),
+                "q".to_string(),
+                "Quit application".to_string(),
+            ),
+            (
+                "AUDIO PLAYBACK".to_string(),
+                "S-P".to_string(),
+                "Toggle play / pause".to_string(),
+            ),
+        ];
+
+        // Act
+        let buffer = HelpBuffer::keybindings_help(entries);
+
+        // Assert — section headers present in content
+        assert!(
+            buffer.content.iter().any(|line| line == "NAVIGATION:"),
+            "Missing NAVIGATION section header"
+        );
+        assert!(
+            buffer.content.iter().any(|line| line == "APPLICATION:"),
+            "Missing APPLICATION section header"
+        );
+        assert!(
+            buffer.content.iter().any(|line| line == "AUDIO PLAYBACK:"),
+            "Missing AUDIO PLAYBACK section header"
+        );
+    }
+
+    #[test]
+    fn test_keybindings_help_groups_related_actions() {
+        // Arrange — two audio actions and one non-audio action
+        let entries = vec![
+            (
+                "AUDIO PLAYBACK".to_string(),
+                "S-P".to_string(),
+                "Toggle play / pause".to_string(),
+            ),
+            (
+                "NAVIGATION".to_string(),
+                "↑".to_string(),
+                "Move up".to_string(),
+            ),
+            (
+                "AUDIO PLAYBACK".to_string(),
+                "+".to_string(),
+                "Volume up".to_string(),
+            ),
+        ];
+
+        // Act
+        let buffer = HelpBuffer::keybindings_help(entries);
+
+        // Assert — both audio entries appear consecutively after "AUDIO PLAYBACK:" header
+        let audio_header_idx = buffer
+            .content
+            .iter()
+            .position(|line| line == "AUDIO PLAYBACK:")
+            .expect("AUDIO PLAYBACK header not found");
+
+        let audio_section: Vec<&String> = buffer.content[audio_header_idx + 1..]
+            .iter()
+            .take_while(|line| !line.is_empty())
+            .collect();
+
+        assert_eq!(
+            audio_section.len(),
+            2,
+            "Expected 2 audio bindings in section"
+        );
+        assert!(
+            audio_section
+                .iter()
+                .any(|l| l.contains("Toggle play / pause")),
+            "Missing Toggle play/pause in audio section"
+        );
+        assert!(
+            audio_section.iter().any(|l| l.contains("Volume up")),
+            "Missing Volume up in audio section"
+        );
+    }
+
+    #[test]
+    fn test_keybindings_help_section_order() {
+        // Arrange — supply AUDIO PLAYBACK and NAVIGATION; NAVIGATION must appear first
+        let entries = vec![
+            (
+                "AUDIO PLAYBACK".to_string(),
+                "S-P".to_string(),
+                "Toggle play / pause".to_string(),
+            ),
+            (
+                "NAVIGATION".to_string(),
+                "↑".to_string(),
+                "Move up".to_string(),
+            ),
+        ];
+
+        // Act
+        let buffer = HelpBuffer::keybindings_help(entries);
+
+        // Assert — NAVIGATION header appears before AUDIO PLAYBACK header
+        let nav_idx = buffer
+            .content
+            .iter()
+            .position(|line| line == "NAVIGATION:")
+            .expect("NAVIGATION header not found");
+        let audio_idx = buffer
+            .content
+            .iter()
+            .position(|line| line == "AUDIO PLAYBACK:")
+            .expect("AUDIO PLAYBACK header not found");
+        assert!(
+            nav_idx < audio_idx,
+            "NAVIGATION should appear before AUDIO PLAYBACK"
+        );
     }
 
     #[test]

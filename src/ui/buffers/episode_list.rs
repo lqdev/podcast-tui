@@ -459,6 +459,21 @@ impl UIComponent for EpisodeListBuffer {
                     UIAction::ShowMessage("No episode selected".to_string())
                 }
             }
+            UIAction::PlayEpisode { .. } => {
+                if let Some(episode) = self.selected_episode() {
+                    if let Some(ref path) = episode.local_path {
+                        UIAction::PlayEpisode {
+                            podcast_id: episode.podcast_id.clone(),
+                            episode_id: episode.id.clone(),
+                            path: path.clone(),
+                        }
+                    } else {
+                        UIAction::ShowError("Episode must be downloaded before playing".into())
+                    }
+                } else {
+                    UIAction::ShowError("No episode selected".into())
+                }
+            }
             UIAction::MarkPlayed => {
                 let result = self
                     .selected_index
@@ -1596,5 +1611,76 @@ mod tests {
             titles,
             vec!["Alpha Episode", "Beta Episode", "Zeta Episode"]
         );
+    }
+
+    // ── PlayEpisode guard ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_play_episode_action_requires_local_path() {
+        // Arrange: episode without a local_path (not downloaded)
+        let podcast_id = PodcastId::new();
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), podcast_id.clone());
+        let episode = Episode::new(
+            podcast_id,
+            "Not Downloaded".to_string(),
+            "http://example.com/audio.mp3".to_string(),
+            chrono::Utc::now(),
+        );
+        // Confirm local_path is None
+        assert!(episode.local_path.is_none());
+        buffer.set_episodes(vec![episode]);
+
+        // Act
+        let action = buffer.handle_action(UIAction::PlayEpisode {
+            podcast_id: crate::storage::PodcastId::new(),
+            episode_id: crate::storage::EpisodeId::new(),
+            path: std::path::PathBuf::new(),
+        });
+
+        // Assert — must return ShowError, not PlayEpisode
+        assert!(
+            matches!(action, UIAction::ShowError(_)),
+            "Expected ShowError for undownloaded episode, got {:?}",
+            action
+        );
+    }
+
+    #[test]
+    fn test_play_episode_action_contains_correct_path() {
+        // Arrange: episode with a local_path (downloaded)
+        let podcast_id = PodcastId::new();
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), podcast_id.clone());
+        let mut episode = Episode::new(
+            podcast_id.clone(),
+            "Downloaded".to_string(),
+            "http://example.com/audio.mp3".to_string(),
+            chrono::Utc::now(),
+        );
+        let expected_path = std::path::PathBuf::from("/podcasts/episode.mp3");
+        episode.local_path = Some(expected_path.clone());
+        episode.status = crate::podcast::EpisodeStatus::Downloaded;
+        let expected_episode_id = episode.id.clone();
+        buffer.set_episodes(vec![episode]);
+
+        // Act
+        let action = buffer.handle_action(UIAction::PlayEpisode {
+            podcast_id: crate::storage::PodcastId::new(),
+            episode_id: crate::storage::EpisodeId::new(),
+            path: std::path::PathBuf::new(),
+        });
+
+        // Assert — returned PlayEpisode must carry the correct IDs and path
+        match action {
+            UIAction::PlayEpisode {
+                podcast_id: pid,
+                episode_id: eid,
+                path,
+            } => {
+                assert_eq!(pid, podcast_id, "podcast_id mismatch");
+                assert_eq!(eid, expected_episode_id, "episode_id mismatch");
+                assert_eq!(path, expected_path, "path mismatch");
+            }
+            other => panic!("Expected PlayEpisode, got {:?}", other),
+        }
     }
 }

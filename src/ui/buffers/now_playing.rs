@@ -75,6 +75,16 @@ impl NowPlayingBuffer {
         self.podcast_name = podcast_name;
     }
 
+    /// Returns the episode title currently shown in this buffer, if any.
+    pub fn episode_title(&self) -> Option<&str> {
+        self.episode_title.as_deref()
+    }
+
+    /// Returns the podcast name currently shown in this buffer, if any.
+    pub fn podcast_name(&self) -> Option<&str> {
+        self.podcast_name.as_deref()
+    }
+
     /// Set the theme for this buffer.
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;

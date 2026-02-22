@@ -1,5 +1,6 @@
 use crate::ui::UIApp;
 use crate::{
+    audio::manager::AudioManager,
     download::DownloadManager,
     podcast::subscription::SubscriptionManager,
     storage::{JsonStorage, Storage},
@@ -87,6 +88,21 @@ impl App {
         // Create app event channel for async communication
         let (app_event_tx, app_event_rx) = mpsc::unbounded_channel();
 
+        // Create AudioManager with graceful fallback when audio init fails
+        let audio_manager = match AudioManager::new(&self.config.audio, app_event_tx.clone()) {
+            Ok(mgr) => {
+                eprintln!("[audio] AudioManager initialized");
+                Some(mgr)
+            }
+            Err(e) => {
+                eprintln!("[audio] Audio init failed: {e}. Playback disabled.");
+                None
+            }
+        };
+
+        let audio_command_tx = audio_manager.as_ref().map(|m| m.command_tx());
+        let playback_status_rx = audio_manager.as_ref().map(|m| m.subscribe());
+
         // Recreate UI with the new app event sender
         self.ui = UIApp::new(
             self.config.clone(),
@@ -97,9 +113,18 @@ impl App {
         )
         .map_err(|e| anyhow::anyhow!("Failed to initialize UI: {e}"))?;
 
+        // Wire the audio command sender into the UI (None when audio disabled)
+        if let Some(tx) = audio_command_tx {
+            self.ui.set_audio_command_tx(tx);
+        }
+
+        // audio_manager lives until here; the audio thread continues via the
+        // command_tx clone stored in UIApp (keeps the channel alive).
+        drop(audio_manager);
+
         // Run the UI application with the app event receiver
         self.ui
-            .run(app_event_rx)
+            .run(app_event_rx, playback_status_rx)
             .await
             .map_err(|e| anyhow::anyhow!("UI error: {e}"))
     }

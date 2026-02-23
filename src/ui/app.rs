@@ -4598,6 +4598,7 @@ impl UIApp {
                                     || matches!(
                                         episode.status,
                                         crate::podcast::EpisodeStatus::Downloading
+                                            | crate::podcast::EpisodeStatus::DownloadFailed
                                     )
                                 {
                                     candidates.push((

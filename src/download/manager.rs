@@ -194,7 +194,7 @@ impl<S: Storage> DownloadManager<S> {
                 if matches!(episode.status, EpisodeStatus::Downloading) {
                     // Check if the file actually exists and is complete
                     let should_reset = if let Some(ref local_path) = episode.local_path {
-                        !local_path.exists()
+                        !tokio::fs::try_exists(local_path).await.unwrap_or(false)
                     } else {
                         true // No local path means definitely not downloaded
                     };
@@ -585,7 +585,7 @@ impl<S: Storage> DownloadManager<S> {
                     continue;
                 }
                 if let Some(ref local_path) = episode.local_path {
-                    if local_path.exists() {
+                    if tokio::fs::try_exists(local_path).await.unwrap_or(false) {
                         if let Ok(metadata) = fs::metadata(local_path).await {
                             if let Ok(modified) = metadata.modified() {
                                 if modified < cutoff {

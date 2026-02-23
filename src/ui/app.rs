@@ -4531,22 +4531,15 @@ impl UIApp {
                                     .map(|(idx, id)| {
                                         let storage = storage.clone();
                                         async move {
-                                            storage
-                                                .load_podcast(&id)
-                                                .await
-                                                .ok()
-                                                .map(|p| (idx, p))
+                                            storage.load_podcast(&id).await.ok().map(|p| (idx, p))
                                         }
                                     })
-                                    .buffer_unordered(
-                                        ui_constants::REFRESH_IO_CONCURRENCY,
-                                    )
+                                    .buffer_unordered(ui_constants::REFRESH_IO_CONCURRENCY)
                                     .filter_map(|r| async { r })
                                     .collect()
                                     .await;
                             indexed.sort_unstable_by_key(|(idx, _)| *idx);
-                            let podcasts: Vec<_> =
-                                indexed.into_iter().map(|(_, p)| p).collect();
+                            let podcasts: Vec<_> = indexed.into_iter().map(|(_, p)| p).collect();
                             let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
                                 buffer_type: BufferRefreshType::PodcastList,
                                 data: BufferRefreshData::PodcastList { podcasts },
@@ -4569,9 +4562,9 @@ impl UIApp {
 
                 tokio::spawn(async move {
                     // Load all (podcast, episodes) pairs concurrently
-                    let mut downloads = Vec::new();
-
-                    if let Ok(podcast_ids) = download_manager.storage().list_podcasts().await {
+                    let downloads = if let Ok(podcast_ids) =
+                        download_manager.storage().list_podcasts().await
+                    {
                         let dm = download_manager.clone();
                         let mut podcast_pairs: Vec<_> =
                             stream::iter(podcast_ids.into_iter().enumerate())
@@ -4591,51 +4584,79 @@ impl UIApp {
                                 .await;
                         podcast_pairs.sort_unstable_by_key(|(idx, ..)| *idx);
 
-                        // Process results and perform lightweight filesystem I/O (metadata lookups)
+                        // Collect candidates (filter without I/O), then fetch metadata concurrently
+                        let mut candidates: Vec<(
+                            usize,
+                            crate::storage::PodcastId,
+                            crate::podcast::Podcast,
+                            crate::podcast::Episode,
+                        )> = Vec::new();
+                        let mut candidate_idx = 0usize;
                         for (_, podcast_id, podcast, episodes) in podcast_pairs {
                             for episode in episodes {
                                 if episode.is_downloaded()
                                     || matches!(
                                         episode.status,
                                         crate::podcast::EpisodeStatus::Downloading
+                                            | crate::podcast::EpisodeStatus::DownloadFailed
                                     )
                                 {
-                                    let status = match episode.status {
-                                        crate::podcast::EpisodeStatus::Downloaded => {
-                                            crate::download::DownloadStatus::Completed
-                                        }
-                                        crate::podcast::EpisodeStatus::Downloading => {
-                                            crate::download::DownloadStatus::InProgress
-                                        }
-                                        crate::podcast::EpisodeStatus::DownloadFailed => {
-                                            crate::download::DownloadStatus::Failed(
-                                                "Download failed".to_string(),
-                                            )
-                                        }
-                                        _ => continue,
-                                    };
+                                    candidates.push((
+                                        candidate_idx,
+                                        podcast_id.clone(),
+                                        podcast.clone(),
+                                        episode,
+                                    ));
+                                    candidate_idx += 1;
+                                }
+                            }
+                        }
 
-                                    // Fix #182: use tokio::fs::metadata instead of std::fs::metadata
-                                    let file_size = match episode.local_path.as_ref() {
-                                        Some(path) => {
-                                            tokio::fs::metadata(path).await.ok().map(|m| m.len())
-                                        }
-                                        None => None,
-                                    };
-
-                                    downloads.push(DownloadEntry {
-                                        podcast_id: podcast_id.clone(),
+                        // Fetch file sizes concurrently with bounded concurrency; sort to restore order
+                        let mut indexed: Vec<(usize, DownloadEntry)> = stream::iter(candidates)
+                            .map(|(idx, podcast_id, podcast, episode)| async move {
+                                let status = match episode.status {
+                                    crate::podcast::EpisodeStatus::Downloaded => {
+                                        crate::download::DownloadStatus::Completed
+                                    }
+                                    crate::podcast::EpisodeStatus::Downloading => {
+                                        crate::download::DownloadStatus::InProgress
+                                    }
+                                    crate::podcast::EpisodeStatus::DownloadFailed => {
+                                        crate::download::DownloadStatus::Failed(
+                                            "Download failed".to_string(),
+                                        )
+                                    }
+                                    _ => return None,
+                                };
+                                let file_size = match episode.local_path.as_ref() {
+                                    Some(path) => {
+                                        tokio::fs::metadata(path).await.ok().map(|m| m.len())
+                                    }
+                                    None => None,
+                                };
+                                Some((
+                                    idx,
+                                    DownloadEntry {
+                                        podcast_id,
                                         episode_id: episode.id.clone(),
                                         podcast_name: podcast.title.clone(),
                                         episode_title: episode.title.clone(),
                                         status,
                                         file_path: episode.local_path.clone(),
                                         file_size,
-                                    });
-                                }
-                            }
-                        }
-                    }
+                                    },
+                                ))
+                            })
+                            .buffer_unordered(ui_constants::REFRESH_IO_CONCURRENCY)
+                            .filter_map(|r| async { r })
+                            .collect()
+                            .await;
+                        indexed.sort_unstable_by_key(|(idx, _)| *idx);
+                        indexed.into_iter().map(|(_, entry)| entry).collect()
+                    } else {
+                        Vec::new()
+                    };
 
                     let _ = app_event_tx.send(AppEvent::BufferDataRefreshed {
                         buffer_type: BufferRefreshType::Downloads,

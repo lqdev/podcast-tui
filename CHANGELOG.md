@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.11.0] - 2026-02-23
+
 ### Performance
 
 - **Removed artificial sleep delays from startup path** — cuts ~1.1 s of dead wait time on every launch.
@@ -34,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The Downloads arm of `trigger_background_refresh` loaded podcast/episode pairs concurrently but still performed N sequential `tokio::fs::metadata` calls (one per downloaded episode) to retrieve file sizes.
   - Refactored to collect candidate episodes first (no I/O), then fetch all file sizes concurrently using `stream::iter` + `buffer_unordered(REFRESH_IO_CONCURRENCY)`. Original display order is preserved via index-based sorting.
   - Closes [#191](https://github.com/lqdev/podcast-tui/issues/191). Closes [#181](https://github.com/lqdev/podcast-tui/issues/181).
+
+---
 
 ## [1.10.0] - 2026-02-22
 

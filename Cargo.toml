@@ -1,6 +1,6 @@
 [package]
 name = "podcast-tui"
-version = "1.10.0"
+version = "1.11.0"
 edition = "2021"
 authors = ["lqdev"]
 description = "A cross-platform terminal user interface for podcast management"

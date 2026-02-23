@@ -25,6 +25,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Both operations now run in a `tokio::spawn` background task in the pre-loaded path, so the first render is not gated on I/O and happens immediately.
   - Closes [#184](https://github.com/lqdev/podcast-tui/issues/184). Part of [#181](https://github.com/lqdev/podcast-tui/issues/181).
 
+- **Replace blocking `Path::exists()` with `tokio::fs::try_exists()` in download cleanup** — February 2026
+  - `cleanup_stuck_downloads()` and `cleanup_old_downloads_hours()` in `src/download/manager.rs` used synchronous `Path::exists()` calls inside `async fn` bodies. Since these methods are called from a `tokio::spawn` background task (since PR #190), the blocking stat syscalls could stall a Tokio worker thread on large libraries or slow disks.
+  - Both calls replaced with `tokio::fs::try_exists().await.unwrap_or(false)`, making the methods fully non-blocking.
+  - Closes [#192](https://github.com/lqdev/podcast-tui/issues/192). Part of [#181](https://github.com/lqdev/podcast-tui/issues/181).
+
+- **Parallelize `tokio::fs::metadata` calls in Downloads buffer refresh** — February 2026
+  - The Downloads arm of `trigger_background_refresh` loaded podcast/episode pairs concurrently but still performed N sequential `tokio::fs::metadata` calls (one per downloaded episode) to retrieve file sizes.
+  - Refactored to collect candidate episodes first (no I/O), then fetch all file sizes concurrently using `stream::iter` + `buffer_unordered(REFRESH_IO_CONCURRENCY)`. Original display order is preserved via index-based sorting.
+  - Closes [#191](https://github.com/lqdev/podcast-tui/issues/191). Closes [#181](https://github.com/lqdev/podcast-tui/issues/181).
+  - Closes [#186](https://github.com/lqdev/podcast-tui/issues/186). Part of [#181](https://github.com/lqdev/podcast-tui/issues/181).
+
+- **Eliminate redundant UIApp recreation during startup** — February 2026
+  - `App::run()` previously discarded the fully-initialised `UIApp` built during the splash screen and rebuilt an empty one just to pass a new `app_event_tx`. A new `UIApp::set_app_event_tx()` method now wires the channel into the existing instance instead, eliminating the redundant reconstruction.
+  - UIApp is now constructed exactly once; the pre-loaded buffer path in `UIApp::run()` is the path taken on every startup, and `initialize()` is no longer called on every run.
+  - Closes [#185](https://github.com/lqdev/podcast-tui/issues/185). Part of [#181](https://github.com/lqdev/podcast-tui/issues/181).
+
+- **Defer download cleanup to background task on startup** — February 2026
+  - `cleanup_stuck_downloads()` and `cleanup_old_downloads()` previously ran synchronously before the first UI render (in `initialize()`), blocking startup on slow disks or large libraries.
+  - Both operations now run in a `tokio::spawn` background task in the pre-loaded path, so the first render is not gated on I/O and happens immediately.
+  - Closes [#184](https://github.com/lqdev/podcast-tui/issues/184). Part of [#181](https://github.com/lqdev/podcast-tui/issues/181).
+
 ## [1.10.0] - 2026-02-22
 
 ### Added

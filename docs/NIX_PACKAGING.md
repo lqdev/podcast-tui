@@ -43,12 +43,14 @@ Add podcast-tui as a flake input in your system `flake.nix`:
 {
   inputs.podcast-tui.url = "github:lqdev/podcast-tui";
 
-  outputs = { nixpkgs, podcast-tui, ... }: {
+  outputs = { nixpkgs, podcast-tui, ... }:
+  let system = "x86_64-linux"; # or "aarch64-linux"
+  in {
     nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
+      inherit system;
       modules = [{
         environment.systemPackages = [
-          podcast-tui.packages.x86_64-linux.default
+          podcast-tui.packages.${system}.default
         ];
       }];
     };
@@ -62,7 +64,7 @@ Apply with `nixos-rebuild switch`.
 
 ```nix
 home.packages = [
-  inputs.podcast-tui.packages.x86_64-linux.default
+  inputs.podcast-tui.packages.${pkgs.system}.default
 ];
 ```
 
@@ -105,7 +107,7 @@ For automatic environment activation when entering the project directory:
 
 1. Install [direnv](https://direnv.net/) and [nix-direnv](https://github.com/nix-community/nix-direnv)
 2. Create `.envrc` in the project root:
-   ```
+   ```bash
    use flake
    ```
 3. Run `direnv allow`
@@ -199,7 +201,7 @@ podcast-tui uses rodio (via cpal → ALSA) for audio playback. On NixOS:
 - **PulseAudio users**: PulseAudio also provides ALSA compatibility. Audio works transparently.
 - **Direct ALSA users**: Audio works directly.
 
-The flake includes `alsa-lib` as a build dependency, which is sufficient for all three scenarios. No additional audio configuration is needed.
+The flake includes `alsa-lib` as a runtime dependency (in `buildInputs`), which is sufficient for all three scenarios. No additional audio configuration is needed.
 
 If built-in audio fails (e.g., in a headless environment), podcast-tui automatically falls back to an external player (mpv, vlc, or ffplay). You can also force external player usage via the `external_player` config option.
 

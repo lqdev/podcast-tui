@@ -94,7 +94,7 @@ nix profile install github:lqdev/podcast-tui
 
 # Or add to your NixOS configuration (flake-based):
 # inputs.podcast-tui.url = "github:lqdev/podcast-tui";
-# environment.systemPackages = [ podcast-tui.packages.x86_64-linux.default ];
+# environment.systemPackages = [ podcast-tui.packages.${system}.default ];
 ```
 
 > 📖 See [docs/NIX_PACKAGING.md](docs/NIX_PACKAGING.md) for declarative config, Home Manager, development shell, and more.

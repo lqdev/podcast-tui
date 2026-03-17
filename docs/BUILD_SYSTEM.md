@@ -220,11 +220,33 @@ cargo build --target x86_64-unknown-linux-gnu
 
 Published or planned:
 - **winget** (Windows): `winget install lqdev.PodcastTUI` — see [WINGET_PUBLISHING.md](WINGET_PUBLISHING.md)
+- **Nix** (NixOS/Linux): `nix profile install github:lqdev/podcast-tui` — see [NIX_PACKAGING.md](NIX_PACKAGING.md)
 - **crates.io**: `cargo install podcast-tui`
 - **Homebrew** (macOS/Linux): Custom tap
 - **Chocolatey** (Windows): Submit package
 - **Snap** (Linux): Create snapcraft.yaml
 - **Flatpak** (Linux): Create flatpak manifest
+
+### NixOS Development Environment
+
+NixOS users can use the Nix flake for a reproducible development environment:
+
+```bash
+# Enter the dev shell (all dependencies pre-installed)
+nix develop
+
+# Build and test
+cargo build
+cargo test
+cargo clippy
+
+# Run checks (clippy + fmt)
+nix flake check
+```
+
+The dev shell includes cargo, rustfmt, clippy, rust-analyzer, cargo-watch, pkg-config, and alsa-lib — everything needed to build and test podcast-tui.
+
+See [NIX_PACKAGING.md](NIX_PACKAGING.md) for full documentation including direnv integration.
 
 ### Direct Downloads
 

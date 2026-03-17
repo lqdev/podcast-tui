@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-**NixOS Packaging — March 2026**
+**NixOS Packaging**
 - **Nix flake for NixOS installation**: Crane-based `flake.nix` enabling `nix run`, `nix profile install`, and declarative NixOS/Home Manager integration
   - Full rodio audio support (pause, seek, volume, position tracking) — no feature loss vs building from source
   - Development shell with cargo, rust-analyzer, clippy, cargo-watch, and native dependencies pre-configured

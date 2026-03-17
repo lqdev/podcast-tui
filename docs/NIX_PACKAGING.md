@@ -32,7 +32,7 @@ podcast-tui  # Now available on PATH
 Update later:
 
 ```bash
-nix profile upgrade podcast-tui
+nix profile upgrade github:lqdev/podcast-tui
 ```
 
 ### NixOS System Configuration (declarative)

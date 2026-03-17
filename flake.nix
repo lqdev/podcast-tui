@@ -8,12 +8,13 @@
   };
 
   outputs = { self, nixpkgs, crane, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+    flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         craneLib = crane.mkLib pkgs;
 
-        # Filter source to only Rust/Cargo-relevant files
+        # Filter source to only Rust/Cargo-relevant files.
+        # If build.rs or src/ ever needs non-Rust assets, replace with a custom filter.
         src = craneLib.cleanCargoSource ./.;
 
         commonArgs = {

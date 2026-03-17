@@ -46,6 +46,13 @@ cargo build --release
 ./target/release/podcast-tui
 ```
 
+**NixOS:**
+```bash
+nix run github:lqdev/podcast-tui                        # Try it
+nix profile install github:lqdev/podcast-tui             # Install it
+# See docs/NIX_PACKAGING.md for declarative config
+```
+
 ### Essential Keys to Know
 - `F1` or `?` → Help
 - `:` → Command prompt

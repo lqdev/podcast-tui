@@ -84,6 +84,21 @@ The application is currently **in active development** with core RSS/download fe
 winget install lqdev.PodcastTUI
 ```
 
+#### NixOS / Nix
+```bash
+# Try it (zero commitment)
+nix run github:lqdev/podcast-tui
+
+# Install to profile
+nix profile install github:lqdev/podcast-tui
+
+# Or add to your NixOS configuration (flake-based):
+# inputs.podcast-tui.url = "github:lqdev/podcast-tui";
+# environment.systemPackages = [ podcast-tui.packages.${system}.default ];
+```
+
+> 📖 See [docs/NIX_PACKAGING.md](docs/NIX_PACKAGING.md) for declarative config, Home Manager, development shell, and more.
+
 #### Pre-built Binaries
 Download the latest release for your platform from the [releases page](https://github.com/lqdev/podcast-tui/releases).
 

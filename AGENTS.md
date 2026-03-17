@@ -51,6 +51,18 @@ cargo build
 - Requires MSVC Build Tools (see [scripts/INSTALL-MSVC-TOOLS.md](scripts/INSTALL-MSVC-TOOLS.md))
 - For ARM64: Requires LLVM/Clang (see [scripts/INSTALL-LLVM.md](scripts/INSTALL-LLVM.md))
 
+**NixOS:**
+```bash
+# Enter the dev shell (all dependencies pre-installed)
+nix develop
+
+# Or just build and run directly
+nix build && ./result/bin/podcast-tui
+```
+- `Cargo.lock` is tracked in git — always commit changes to it
+- `flake.lock` must be regenerated on a Nix-capable system when `flake.nix` inputs change (`nix flake lock`)
+- See [docs/NIX_PACKAGING.md](docs/NIX_PACKAGING.md) for full details
+
 **DevContainer (Recommended):**
 - Install [Docker](https://docker.com) and [VS Code](https://code.visualstudio.com)
 - Install [Remote-Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**NixOS Packaging**
+- **Nix flake for NixOS installation**: Crane-based `flake.nix` enabling `nix run`, `nix profile install`, and declarative NixOS/Home Manager integration
+  - Full rodio audio support (pause, seek, volume, position tracking) — no feature loss vs building from source
+  - Development shell with cargo, rust-analyzer, clippy, cargo-watch, and native dependencies pre-configured
+  - Checks output running clippy and rustfmt validation
+  - Docs: `docs/NIX_PACKAGING.md` comprehensive guide, `docs/adr/ADR-004-nix-packaging.md`
+
+### Changed
+
+- **`Cargo.lock` now tracked in git** — enables reproducible builds and fixes broken CI cache keys (`hashFiles('**/Cargo.lock')` previously returned empty hash)
+
 ---
 
 ## [1.11.0] - 2026-02-23

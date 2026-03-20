@@ -945,8 +945,10 @@ mod tests {
     #[test]
     fn test_vim_preset_binds_hjkl_navigation() {
         // Arrange
-        let mut config = KeybindingConfig::default();
-        config.preset = "vim".to_string();
+        let config = KeybindingConfig {
+            preset: "vim".to_string(),
+            ..Default::default()
+        };
 
         // Act
         let handler = KeyHandler::from_config(&config);
@@ -973,8 +975,10 @@ mod tests {
     #[test]
     fn test_vim_preset_removes_emacs_cn_cp_aliases() {
         // Arrange
-        let mut config = KeybindingConfig::default();
-        config.preset = "vim".to_string();
+        let config = KeybindingConfig {
+            preset: "vim".to_string(),
+            ..Default::default()
+        };
 
         // Act
         let handler = KeyHandler::from_config(&config);
@@ -987,8 +991,10 @@ mod tests {
     #[test]
     fn test_emacs_preset_binds_cn_cp_navigation() {
         // Arrange
-        let mut config = KeybindingConfig::default();
-        config.preset = "emacs".to_string();
+        let config = KeybindingConfig {
+            preset: "emacs".to_string(),
+            ..Default::default()
+        };
 
         // Act
         let handler = KeyHandler::from_config(&config);
@@ -1007,8 +1013,10 @@ mod tests {
     #[test]
     fn test_emacs_preset_removes_vim_jk_aliases() {
         // Arrange
-        let mut config = KeybindingConfig::default();
-        config.preset = "emacs".to_string();
+        let config = KeybindingConfig {
+            preset: "emacs".to_string(),
+            ..Default::default()
+        };
 
         // Act
         let handler = KeyHandler::from_config(&config);
@@ -1021,9 +1029,14 @@ mod tests {
     #[test]
     fn test_preset_plus_user_override_applies_override_on_top() {
         // Arrange — vim preset with custom quit key
-        let mut config = KeybindingConfig::default();
-        config.preset = "vim".to_string();
-        config.global.quit = vec!["C-q".to_string()];
+        let config = KeybindingConfig {
+            preset: "vim".to_string(),
+            global: GlobalKeys {
+                quit: vec!["C-q".to_string()],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         // Act
         let handler = KeyHandler::from_config(&config);
@@ -1045,8 +1058,10 @@ mod tests {
     #[test]
     fn test_unknown_preset_falls_back_to_default() {
         // Arrange — unknown preset name
-        let mut config = KeybindingConfig::default();
-        config.preset = "dvorak".to_string();
+        let config = KeybindingConfig {
+            preset: "dvorak".to_string(),
+            ..Default::default()
+        };
 
         // Act
         let handler = KeyHandler::from_config(&config);
@@ -1065,8 +1080,10 @@ mod tests {
     #[test]
     fn test_vim_preset_produces_no_conflicts() {
         // Arrange
-        let mut config = KeybindingConfig::default();
-        config.preset = "vim".to_string();
+        let config = KeybindingConfig {
+            preset: "vim".to_string(),
+            ..Default::default()
+        };
 
         // Act
         let handler = KeyHandler::from_config(&config);
@@ -1084,8 +1101,10 @@ mod tests {
     #[test]
     fn test_emacs_preset_produces_no_conflicts() {
         // Arrange
-        let mut config = KeybindingConfig::default();
-        config.preset = "emacs".to_string();
+        let config = KeybindingConfig {
+            preset: "emacs".to_string(),
+            ..Default::default()
+        };
 
         // Act
         let handler = KeyHandler::from_config(&config);
@@ -1139,8 +1158,10 @@ mod tests {
     #[test]
     fn test_generate_help_text_reflects_active_preset() {
         // Arrange — vim preset: h is bound to MoveLeft
-        let mut config = KeybindingConfig::default();
-        config.preset = "vim".to_string();
+        let config = KeybindingConfig {
+            preset: "vim".to_string(),
+            ..Default::default()
+        };
         let vim_handler = KeyHandler::from_config(&config);
 
         // Act

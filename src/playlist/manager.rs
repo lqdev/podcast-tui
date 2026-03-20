@@ -538,8 +538,10 @@ mod tests {
             .await
             .expect("Failed to initialize storage");
 
-        let mut download_config = DownloadConfig::default();
-        download_config.directory = downloads_dir.to_string_lossy().to_string();
+        let download_config = DownloadConfig {
+            directory: downloads_dir.to_string_lossy().to_string(),
+            ..Default::default()
+        };
         let download_manager = Arc::new(
             DownloadManager::new(storage.clone(), downloads_dir, download_config)
                 .expect("Failed to create download manager"),

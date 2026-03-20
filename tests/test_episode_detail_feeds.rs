@@ -8,7 +8,7 @@ use podcast_tui::*;
 #[tokio::test]
 async fn test_episode_detail_with_real_feeds() {
     // Test with mock episodes that represent various podcast feed formats
-    let test_scenarios = vec![
+    let test_scenarios = [
         ("Podcasting 2.0 - Full metadata", true, true, true, true, Some("This is a podcast about podcasting with the latest news and developments in the podcasting 2.0 namespace.".to_string())),
         ("Megaphone - Rich description", true, false, false, false, Some("A long description with multiple paragraphs.\n\nThis podcast explores various topics in depth with expert guests and thoughtful discussions.".to_string())),
         ("Generation Why - Minimal metadata", true, false, false, false, Some("True crime podcast investigating mysteries.".to_string())),
@@ -89,15 +89,12 @@ async fn test_episode_detail_with_real_feeds() {
             println!("   - Description preview: {}", preview);
         }
 
-        if episode.season.is_some() {
-            detail_fields.push(format!("Season: {}", episode.season.unwrap()));
+        if let Some(season) = episode.season {
+            detail_fields.push(format!("Season: {}", season));
         }
 
-        if episode.episode_number.is_some() {
-            detail_fields.push(format!(
-                "Episode number: {}",
-                episode.episode_number.unwrap()
-            ));
+        if let Some(ep_num) = episode.episode_number {
+            detail_fields.push(format!("Episode number: {}", ep_num));
         }
 
         if episode.transcript.is_some() {

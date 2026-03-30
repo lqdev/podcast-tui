@@ -5,6 +5,7 @@ pub mod constants;
 pub mod download;
 pub mod playlist;
 pub mod podcast;
+pub mod scrobbling;
 pub mod storage;
 pub mod ui;
 pub mod utils;

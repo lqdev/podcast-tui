@@ -17,6 +17,8 @@ pub struct Config {
     pub playlist: PlaylistConfig,
     #[serde(default)]
     pub discovery: DiscoveryConfig,
+    #[serde(default)]
+    pub scrobbling: ScrobblingConfig,
 }
 
 impl Config {
@@ -242,6 +244,53 @@ pub struct DiscoveryConfig {
     pub podcastindex_api_key: String,
     /// PodcastIndex API secret
     pub podcastindex_api_secret: String,
+}
+
+/// Scrobbling configuration for ListenBrainz-compatible server.
+///
+/// When `enabled` is `false` (the default), a no-op scrobbler is used and no
+/// network traffic is generated. Existing `config.json` files without a
+/// `"scrobbling"` key will deserialize without error thanks to `#[serde(default)]`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrobblingConfig {
+    /// Whether scrobbling is enabled
+    pub enabled: bool,
+    /// Server endpoint URL (e.g., "http://localhost:5000")
+    pub endpoint: Option<String>,
+    /// Authentication token (matches server's SCROBBLER_TOKEN env var)
+    pub token: Option<String>,
+    /// Logical username label for queue file naming (not sent to the server; default: "default")
+    pub username: String,
+    /// Minimum % of episode to listen before scrobbling (both thresholds must be met)
+    pub min_listen_percent: u8,
+    /// Minimum seconds to listen before scrobbling (both thresholds must be met)
+    pub min_listen_seconds: u32,
+    /// Whether to send playing_now events when playback starts
+    pub submit_playing_now: bool,
+    /// HTTP timeout in seconds (must never block playback)
+    pub timeout_secs: u64,
+    /// Maximum pending scrobbles in retry queue
+    pub max_retry_queue_size: usize,
+    /// Days to keep pending scrobbles before expiring
+    pub retry_queue_ttl_days: u32,
+}
+
+impl Default for ScrobblingConfig {
+    fn default() -> Self {
+        use crate::constants::scrobbling;
+        Self {
+            enabled: false,
+            endpoint: None,
+            token: None,
+            username: "default".to_string(),
+            min_listen_percent: scrobbling::DEFAULT_MIN_LISTEN_PERCENT,
+            min_listen_seconds: scrobbling::DEFAULT_MIN_LISTEN_SECONDS,
+            submit_playing_now: true,
+            timeout_secs: scrobbling::SCROBBLE_TIMEOUT.as_secs(),
+            max_retry_queue_size: scrobbling::MAX_RETRY_QUEUE_SIZE,
+            retry_queue_ttl_days: scrobbling::RETRY_QUEUE_TTL_DAYS,
+        }
+    }
 }
 
 /// Global keybindings — apply in all buffers unless overridden by a context section.

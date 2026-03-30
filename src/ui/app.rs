@@ -499,6 +499,19 @@ impl UIApp {
         execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(UIError::Terminal)?;
         terminal.show_cursor().map_err(UIError::Terminal)?;
 
+        // Scrobble the currently-playing episode on quit (if thresholds are met)
+        if let Some((pid, eid, position_ms)) = self.last_playing.take() {
+            if let Some(event) =
+                scrobbling::build_scrobble_event(&*self._storage, &pid, &eid, position_ms).await
+            {
+                if scrobbling::meets_scrobble_threshold(&event, &self.config.scrobbling) {
+                    if let Err(e) = self.scrobbler.scrobble(&event).await {
+                        eprintln!("[scrobbling] scrobble on quit failed (queued for retry): {e}");
+                    }
+                }
+            }
+        }
+
         // Flush any pending scrobbles before exiting (terminal is already restored)
         if let Err(e) = self.scrobbler.flush_pending().await {
             eprintln!("[scrobbling] Flush on shutdown failed: {e}");

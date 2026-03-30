@@ -190,6 +190,11 @@ fn process_command(
             episode_id,
             podcast_id,
         } => {
+            // If something was playing, fire PlaybackStopped so scrobbling can
+            // record the listen for the *previous* episode before we start the new one.
+            if current_episode.is_some() && backend.is_playing() {
+                let _ = app_event_tx.send(AppEvent::PlaybackStopped);
+            }
             backend.stop();
             match backend.play(&path) {
                 Ok(()) => {
@@ -790,5 +795,48 @@ mod tests {
                 eprintln!("No audio backend available (expected in headless CI): {e}");
             }
         }
+    }
+
+    #[test]
+    fn test_play_fires_playback_stopped_when_replacing_episode() {
+        // Arrange — backend already playing episode A
+        let mut backend = MockBackend::new();
+        backend.playing = true;
+        let (tx, mut rx) = make_app_channels();
+        let (ep_id_a, pod_id_a) = test_ids();
+        let mut current_episode: Option<(EpisodeId, PodcastId)> =
+            Some((ep_id_a, pod_id_a));
+        let mut volume = crate::constants::audio::DEFAULT_VOLUME;
+        let (ep_id_b, pod_id_b) = test_ids();
+
+        // Act — play a new episode while one is already playing
+        process_command(
+            AudioCommand::Play {
+                path: "/tmp/ep-b.mp3".into(),
+                episode_id: ep_id_b.clone(),
+                podcast_id: pod_id_b.clone(),
+            },
+            &mut backend,
+            &tx,
+            &mut current_episode,
+            &mut volume,
+        );
+
+        // Assert — first event should be PlaybackStopped (for episode A)
+        let event1 = rx.try_recv().expect("PlaybackStopped event expected");
+        assert!(
+            matches!(event1, AppEvent::PlaybackStopped),
+            "Expected PlaybackStopped for prior episode, got {event1:?}"
+        );
+        // Assert — second event should be PlaybackStarted (for episode B)
+        let event2 = rx.try_recv().expect("PlaybackStarted event expected");
+        assert!(
+            matches!(event2, AppEvent::PlaybackStarted { .. }),
+            "Expected PlaybackStarted for new episode, got {event2:?}"
+        );
+        // Assert — current_episode is now episode B
+        let (eid, pid) = current_episode.unwrap();
+        assert_eq!(eid, ep_id_b);
+        assert_eq!(pid, pod_id_b);
     }
 }

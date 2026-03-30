@@ -259,7 +259,7 @@ pub struct ScrobblingConfig {
     pub endpoint: Option<String>,
     /// Authentication token (matches server's SCROBBLER_TOKEN env var)
     pub token: Option<String>,
-    /// Username sent to the server (default: "default")
+    /// Logical username label for queue file naming (not sent to the server; default: "default")
     pub username: String,
     /// Minimum % of episode to listen before scrobbling (both thresholds must be met)
     pub min_listen_percent: u8,

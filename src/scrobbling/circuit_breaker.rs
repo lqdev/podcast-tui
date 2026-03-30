@@ -43,7 +43,7 @@ impl CircuitBreaker {
 
     /// Check if a request is allowed through. Transitions Open → HalfOpen if cooldown elapsed.
     pub fn allow_request(&self) -> bool {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         match *state {
             InternalState::Closed => true,
             InternalState::Open { opened_at } => {
@@ -61,14 +61,14 @@ impl CircuitBreaker {
     /// Record a successful request. Resets failure count, transitions to Closed.
     pub fn record_success(&self) {
         self.consecutive_failures.store(0, Ordering::Relaxed);
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         *state = InternalState::Closed;
     }
 
     /// Record a failed request. Increments failure count, may transition to Open.
     pub fn record_failure(&self) {
         let failures = self.consecutive_failures.fetch_add(1, Ordering::Relaxed) + 1;
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         if failures >= scrobbling::CIRCUIT_BREAKER_FAILURE_THRESHOLD {
             *state = InternalState::Open {
                 opened_at: Instant::now(),
@@ -77,7 +77,7 @@ impl CircuitBreaker {
     }
 
     pub fn state(&self) -> CircuitState {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         match *state {
             InternalState::Closed => CircuitState::Closed,
             InternalState::Open { .. } => CircuitState::Open,

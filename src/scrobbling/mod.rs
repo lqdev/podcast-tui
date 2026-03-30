@@ -101,14 +101,12 @@ pub fn create_scrobbler(
 /// Build a [`ScrobbleEvent`] from podcast/episode metadata.
 ///
 /// Returns `None` if either the podcast or episode cannot be loaded.
-pub async fn build_scrobble_event(
-    storage: &crate::storage::json::JsonStorage,
+pub async fn build_scrobble_event<S: crate::storage::Storage>(
+    storage: &S,
     podcast_id: &crate::storage::PodcastId,
     episode_id: &crate::storage::EpisodeId,
     position_ms: u64,
 ) -> Option<ScrobbleEvent> {
-    use crate::storage::Storage;
-
     let podcast = storage.load_podcast(podcast_id).await.ok()?;
     let episode = storage.load_episode(podcast_id, episode_id).await.ok()?;
     Some(ScrobbleEvent {

@@ -494,15 +494,15 @@ impl UIApp {
             }
         };
 
-        // Flush any pending scrobbles before exiting
-        if let Err(e) = self.scrobbler.flush_pending().await {
-            eprintln!("[scrobbling] Flush on shutdown failed: {e}");
-        }
-
-        // Cleanup terminal
+        // Cleanup terminal first so the UI isn't stuck in raw mode during flush
         disable_raw_mode().map_err(UIError::Terminal)?;
         execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(UIError::Terminal)?;
         terminal.show_cursor().map_err(UIError::Terminal)?;
+
+        // Flush any pending scrobbles before exiting (terminal is already restored)
+        if let Err(e) = self.scrobbler.flush_pending().await {
+            eprintln!("[scrobbling] Flush on shutdown failed: {e}");
+        }
 
         result
     }
@@ -2255,7 +2255,7 @@ impl UIApp {
                     let eid = episode_id.clone();
                     tokio::spawn(async move {
                         if let Some(event) =
-                            scrobbling::build_scrobble_event(&storage, &pid, &eid, 0).await
+                            scrobbling::build_scrobble_event(&*storage, &pid, &eid, 0).await
                         {
                             if let Err(e) = scrobbler.playing_now(&event).await {
                                 eprintln!("[scrobbling] playing_now failed: {e}");
@@ -2272,7 +2272,7 @@ impl UIApp {
                     let config = self.config.scrobbling.clone();
                     tokio::spawn(async move {
                         if let Some(event) =
-                            scrobbling::build_scrobble_event(&storage, &pid, &eid, position_ms)
+                            scrobbling::build_scrobble_event(&*storage, &pid, &eid, position_ms)
                                 .await
                         {
                             if scrobbling::meets_scrobble_threshold(&event, &config) {
@@ -2316,16 +2316,21 @@ impl UIApp {
                 self.show_message("Finished playing episode".to_string());
 
                 // Fire-and-forget: scrobble the completed episode
-                let position_ms = self.last_playing.take().map(|(_, _, pos)| pos).unwrap_or(0);
+                // Use duration as position for completed episodes (last_playing can be stale)
+                let last_position = self.last_playing.take().map(|(_, _, pos)| pos).unwrap_or(0);
                 let storage = self._storage.clone();
                 let scrobbler = self.scrobbler.clone();
                 let config = self.config.scrobbling.clone();
                 let pid = podcast_id.clone();
                 let eid = episode_id.clone();
                 tokio::spawn(async move {
-                    if let Some(event) =
-                        scrobbling::build_scrobble_event(&storage, &pid, &eid, position_ms).await
+                    if let Some(mut event) =
+                        scrobbling::build_scrobble_event(&*storage, &pid, &eid, last_position).await
                     {
+                        // Episode completed: use full duration as position if available
+                        if let Some(duration_ms) = event.duration_ms {
+                            event.position_ms = duration_ms;
+                        }
                         if scrobbling::meets_scrobble_threshold(&event, &config) {
                             if let Err(e) = scrobbler.scrobble(&event).await {
                                 eprintln!("[scrobbling] scrobble failed (queued for retry): {e}");

@@ -37,7 +37,7 @@ impl PersistentRetryQueue {
 
     /// Push an event onto the queue. Evicts oldest if at capacity.
     pub fn push(&self, event: ScrobbleEvent) {
-        let mut events = self.events.lock().unwrap();
+        let mut events = self.events.lock().unwrap_or_else(|p| p.into_inner());
         if events.len() >= self.max_size {
             events.remove(0); // FIFO eviction
         }
@@ -45,21 +45,25 @@ impl PersistentRetryQueue {
             queued_at: chrono::Utc::now().timestamp(),
             event,
         });
-        let _ = Self::save_to_disk(&self.path, &events);
+        if let Err(e) = Self::save_to_disk(&self.path, &events) {
+            eprintln!("[scrobbling] Failed to persist retry queue: {e}");
+        }
     }
 
     /// Take all events out of the queue (drains it).
     pub fn drain(&self) -> Vec<ScrobbleEvent> {
-        let mut events = self.events.lock().unwrap();
+        let mut events = self.events.lock().unwrap_or_else(|p| p.into_inner());
         let drained: Vec<ScrobbleEvent> = events.iter().map(|e| e.event.clone()).collect();
         events.clear();
-        let _ = Self::save_to_disk(&self.path, &events);
+        if let Err(e) = Self::save_to_disk(&self.path, &events) {
+            eprintln!("[scrobbling] Failed to persist retry queue after drain: {e}");
+        }
         drained
     }
 
     /// Re-enqueue events that failed to send (prepend to front).
     pub fn requeue(&self, failed: Vec<ScrobbleEvent>) {
-        let mut events = self.events.lock().unwrap();
+        let mut events = self.events.lock().unwrap_or_else(|p| p.into_inner());
         let mut requeued: Vec<TimestampedEvent> = failed
             .into_iter()
             .map(|event| TimestampedEvent {
@@ -73,11 +77,13 @@ impl PersistentRetryQueue {
             requeued.remove(0);
         }
         *events = requeued;
-        let _ = Self::save_to_disk(&self.path, &events);
+        if let Err(e) = Self::save_to_disk(&self.path, &events) {
+            eprintln!("[scrobbling] Failed to persist retry queue after requeue: {e}");
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.events.lock().unwrap().len()
+        self.events.lock().unwrap_or_else(|p| p.into_inner()).len()
     }
 
     pub fn is_empty(&self) -> bool {

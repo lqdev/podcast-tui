@@ -804,8 +804,7 @@ mod tests {
         backend.playing = true;
         let (tx, mut rx) = make_app_channels();
         let (ep_id_a, pod_id_a) = test_ids();
-        let mut current_episode: Option<(EpisodeId, PodcastId)> =
-            Some((ep_id_a, pod_id_a));
+        let mut current_episode: Option<(EpisodeId, PodcastId)> = Some((ep_id_a, pod_id_a));
         let mut volume = crate::constants::audio::DEFAULT_VOLUME;
         let (ep_id_b, pod_id_b) = test_ids();
 

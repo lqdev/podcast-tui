@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.12.0] - 2026-03-30
+
+### Fixed
+
+- **Scrobbling: listen events now fire on episode switch** — switching to a new episode without explicitly stopping previously skipped the scrobble for the prior episode. `AudioManager` now sends `PlaybackStopped` before starting the replacement.
+- **Scrobbling: listen event fires on app quit** — quitting with `q` while an episode was playing no longer silently drops the listen. The current episode is scrobbled (if thresholds are met) during the shutdown sequence.
+- **Scrobbling: correct `podcast_feed_url` field name** — `additional_info` was serialized as `podcast_url` instead of the ListenBrainz-standard `podcast_feed_url`, causing server-side feed lookups to miss the value.
+
 ### Added
 
 **ListenBrainz Scrobbling Client**

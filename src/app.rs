@@ -109,9 +109,10 @@ impl App {
 
         // Initialize scrobbler (NoopScrobbler when disabled or misconfigured)
         let data_dir = self.ui.storage_data_dir();
-        let scrobbler: Arc<dyn scrobbling::Scrobbler> = Arc::from(
-            scrobbling::create_scrobbler(&self.config.scrobbling, &data_dir),
-        );
+        let scrobbler: Arc<dyn scrobbling::Scrobbler> = Arc::from(scrobbling::create_scrobbler(
+            &self.config.scrobbling,
+            &data_dir,
+        ));
 
         // Spawn background drain task that retries pending scrobbles periodically
         if self.config.scrobbling.enabled {

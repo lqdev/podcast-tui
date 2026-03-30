@@ -104,8 +104,7 @@ impl PersistentRetryQueue {
         path: &std::path::Path,
         events: &[TimestampedEvent],
     ) -> Result<(), std::io::Error> {
-        let json = serde_json::to_string_pretty(events)
-            .map_err(std::io::Error::other)?;
+        let json = serde_json::to_string_pretty(events).map_err(std::io::Error::other)?;
         let tmp = path.with_extension("json.tmp");
         std::fs::write(&tmp, json)?;
         std::fs::rename(tmp, path)?;

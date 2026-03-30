@@ -2316,11 +2316,7 @@ impl UIApp {
                 self.show_message("Finished playing episode".to_string());
 
                 // Fire-and-forget: scrobble the completed episode
-                let position_ms = self
-                    .last_playing
-                    .take()
-                    .map(|(_, _, pos)| pos)
-                    .unwrap_or(0);
+                let position_ms = self.last_playing.take().map(|(_, _, pos)| pos).unwrap_or(0);
                 let storage = self._storage.clone();
                 let scrobbler = self.scrobbler.clone();
                 let config = self.config.scrobbling.clone();

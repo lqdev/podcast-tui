@@ -27,6 +27,7 @@ use crate::{
     download::DownloadManager,
     playlist::{auto_generator::TodayGenerator, manager::PlaylistManager},
     podcast::subscription::SubscriptionManager,
+    scrobbling::{self, Scrobbler},
     storage::{JsonStorage, Storage},
     ui::{
         buffers::BufferManager,
@@ -105,6 +106,12 @@ pub struct UIApp {
 
     /// Sender for dispatching audio playback commands (None when audio init failed).
     audio_command_tx: Option<mpsc::UnboundedSender<AudioCommand>>,
+
+    /// Scrobbler for sending listen events (NoopScrobbler when disabled).
+    scrobbler: Arc<dyn Scrobbler>,
+
+    /// Last-playing episode info for scrobble-on-stop (updated from PlaybackStatus ticks).
+    last_playing: Option<(crate::storage::PodcastId, crate::storage::EpisodeId, u64)>,
 
     /// Last render time for performance tracking
     last_render: Instant,
@@ -190,6 +197,8 @@ impl UIApp {
             app_event_tx,
             should_quit: false,
             audio_command_tx: None,
+            scrobbler: Arc::new(scrobbling::NoopScrobbler),
+            last_playing: None,
             last_render: Instant::now(),
             frame_count: 0,
             pending_deletion: None,
@@ -299,6 +308,8 @@ impl UIApp {
             app_event_tx,
             should_quit: false,
             audio_command_tx: None,
+            scrobbler: Arc::new(scrobbling::NoopScrobbler),
+            last_playing: None,
             last_render: Instant::now(),
             frame_count: 0,
             pending_deletion: None,
@@ -319,6 +330,16 @@ impl UIApp {
     /// Replace the app event sender after construction (used when wiring AudioManager).
     pub fn set_app_event_tx(&mut self, tx: mpsc::UnboundedSender<AppEvent>) {
         self.app_event_tx = tx;
+    }
+
+    /// Wire the scrobbler into the app (called from `App::run()`).
+    pub fn set_scrobbler(&mut self, scrobbler: Arc<dyn Scrobbler>) {
+        self.scrobbler = scrobbler;
+    }
+
+    /// Return the storage data directory path (used for scrobbler queue file).
+    pub fn storage_data_dir(&self) -> std::path::PathBuf {
+        self._storage.data_dir.clone()
     }
 
     /// Run the UI application
@@ -434,13 +455,23 @@ impl UIApp {
                 }
                 // Playback status changed — NowPlaying buffer reads from its own
                 // watch::Receiver in render(); this branch just triggers a re-render.
+                // Also track last-playing info for scrobble-on-stop.
                 _ = async {
                     match playback_status_rx.as_mut() {
                         Some(rx) => { let _ = rx.changed().await; }
                         None => std::future::pending::<()>().await,
                     }
                 } => {
-                    // Status updated; fall through to render below.
+                    // Update last_playing for scrobble-on-stop
+                    if let Some(ref rx) = playback_status_rx {
+                        let status = rx.borrow();
+                        if status.state == crate::audio::PlaybackState::Playing {
+                            if let (Some(pid), Some(eid)) = (&status.podcast_id, &status.episode_id) {
+                                let pos_ms = status.position.map(|d| d.as_millis() as u64).unwrap_or(0);
+                                self.last_playing = Some((pid.clone(), eid.clone(), pos_ms));
+                            }
+                        }
+                    }
                 }
                 // Render timeout
                 _ = tokio::time::sleep(Duration::from_millis(16)) => {
@@ -462,6 +493,11 @@ impl UIApp {
                 Err(e) => break Err(UIError::Render(e.to_string())),
             }
         };
+
+        // Flush any pending scrobbles before exiting
+        if let Err(e) = self.scrobbler.flush_pending().await {
+            eprintln!("[scrobbling] Flush on shutdown failed: {e}");
+        }
 
         // Cleanup terminal
         disable_raw_mode().map_err(UIError::Terminal)?;
@@ -2210,8 +2246,45 @@ impl UIApp {
                 self.buffer_manager
                     .set_now_playing_info(episode_title, podcast_name);
                 self.show_message("Now playing…".to_string());
+
+                // Fire-and-forget: send playing_now scrobble
+                if self.config.scrobbling.submit_playing_now {
+                    let storage = self._storage.clone();
+                    let scrobbler = self.scrobbler.clone();
+                    let pid = podcast_id.clone();
+                    let eid = episode_id.clone();
+                    tokio::spawn(async move {
+                        if let Some(event) =
+                            scrobbling::build_scrobble_event(&storage, &pid, &eid, 0).await
+                        {
+                            if let Err(e) = scrobbler.playing_now(&event).await {
+                                eprintln!("[scrobbling] playing_now failed: {e}");
+                            }
+                        }
+                    });
+                }
             }
             AppEvent::PlaybackStopped => {
+                // Fire-and-forget: scrobble on user-initiated stop if threshold met
+                if let Some((pid, eid, position_ms)) = self.last_playing.take() {
+                    let storage = self._storage.clone();
+                    let scrobbler = self.scrobbler.clone();
+                    let config = self.config.scrobbling.clone();
+                    tokio::spawn(async move {
+                        if let Some(event) =
+                            scrobbling::build_scrobble_event(&storage, &pid, &eid, position_ms)
+                                .await
+                        {
+                            if scrobbling::meets_scrobble_threshold(&event, &config) {
+                                if let Err(e) = scrobbler.scrobble(&event).await {
+                                    eprintln!(
+                                        "[scrobbling] scrobble failed (queued for retry): {e}"
+                                    );
+                                }
+                            }
+                        }
+                    });
+                }
                 self.show_message("Playback stopped".to_string());
             }
             AppEvent::TrackEnded {
@@ -2241,6 +2314,29 @@ impl UIApp {
                     }
                 }
                 self.show_message("Finished playing episode".to_string());
+
+                // Fire-and-forget: scrobble the completed episode
+                let position_ms = self
+                    .last_playing
+                    .take()
+                    .map(|(_, _, pos)| pos)
+                    .unwrap_or(0);
+                let storage = self._storage.clone();
+                let scrobbler = self.scrobbler.clone();
+                let config = self.config.scrobbling.clone();
+                let pid = podcast_id.clone();
+                let eid = episode_id.clone();
+                tokio::spawn(async move {
+                    if let Some(event) =
+                        scrobbling::build_scrobble_event(&storage, &pid, &eid, position_ms).await
+                    {
+                        if scrobbling::meets_scrobble_threshold(&event, &config) {
+                            if let Err(e) = scrobbler.scrobble(&event).await {
+                                eprintln!("[scrobbling] scrobble failed (queued for retry): {e}");
+                            }
+                        }
+                    }
+                });
             }
             AppEvent::PlaybackError { error } => {
                 self.show_error(format!("Playback error: {}", error));

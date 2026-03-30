@@ -3,6 +3,7 @@ use crate::{
     audio::manager::AudioManager,
     download::DownloadManager,
     podcast::subscription::SubscriptionManager,
+    scrobbling,
     storage::{JsonStorage, Storage},
     Config,
 };
@@ -105,6 +106,40 @@ impl App {
         // audio_manager lives until here; the audio thread continues via the
         // command_tx clone stored in UIApp (keeps the channel alive).
         drop(audio_manager);
+
+        // Initialize scrobbler (NoopScrobbler when disabled or misconfigured)
+        let data_dir = self.ui.storage_data_dir();
+        let scrobbler: Arc<dyn scrobbling::Scrobbler> = Arc::from(
+            scrobbling::create_scrobbler(&self.config.scrobbling, &data_dir),
+        );
+
+        // Spawn background drain task that retries pending scrobbles periodically
+        if self.config.scrobbling.enabled {
+            let drain_scrobbler = scrobbler.clone();
+            tokio::spawn(async move {
+                let mut interval = crate::constants::scrobbling::DRAIN_INTERVAL_BASE;
+                loop {
+                    tokio::time::sleep(interval).await;
+                    match drain_scrobbler.flush_pending().await {
+                        Ok(n) if n > 0 => {
+                            eprintln!("[scrobbling] Drained {n} pending scrobbles");
+                            interval = crate::constants::scrobbling::DRAIN_INTERVAL_BASE;
+                        }
+                        Ok(_) => {} // nothing to drain
+                        Err(e) => {
+                            eprintln!("[scrobbling] Drain failed: {e}");
+                            interval = std::cmp::min(
+                                interval * 2,
+                                crate::constants::scrobbling::DRAIN_INTERVAL_MAX,
+                            );
+                        }
+                    }
+                }
+            });
+        }
+
+        // Wire scrobbler into the UI so it can react to playback events
+        self.ui.set_scrobbler(scrobbler);
 
         // Run the UI application with the app event receiver
         self.ui

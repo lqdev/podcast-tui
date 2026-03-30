@@ -191,6 +191,38 @@ pub mod discovery {
     pub const MAX_SEARCH_RESULTS: usize = 50;
 }
 
+/// Scrobbling (ListenBrainz-compatible) constants
+pub mod scrobbling {
+    use super::*;
+
+    /// Minimum percentage of episode that must be listened to before scrobbling
+    pub const DEFAULT_MIN_LISTEN_PERCENT: u8 = 25;
+
+    /// Minimum number of seconds that must be listened to before scrobbling
+    pub const DEFAULT_MIN_LISTEN_SECONDS: u32 = 300; // 5 minutes
+
+    /// HTTP request timeout for scrobble API calls
+    pub const SCROBBLE_TIMEOUT: Duration = Duration::from_secs(5);
+
+    /// Maximum number of pending scrobbles in the retry queue
+    pub const MAX_RETRY_QUEUE_SIZE: usize = 500;
+
+    /// Number of days to keep pending scrobbles before expiring them
+    pub const RETRY_QUEUE_TTL_DAYS: u32 = 30;
+
+    /// Number of consecutive failures before circuit breaker opens
+    pub const CIRCUIT_BREAKER_FAILURE_THRESHOLD: u32 = 5;
+
+    /// Seconds to wait before allowing a half-open probe
+    pub const CIRCUIT_BREAKER_RESET: Duration = Duration::from_secs(60);
+
+    /// Base interval for the background drain task
+    pub const DRAIN_INTERVAL_BASE: Duration = Duration::from_secs(30);
+
+    /// Maximum interval for the background drain task (exponential backoff cap)
+    pub const DRAIN_INTERVAL_MAX: Duration = Duration::from_secs(300);
+}
+
 /// OPML import/export constants
 pub mod opml {
     use super::*;
@@ -212,7 +244,7 @@ pub mod opml {
 mod tests {
     #[test]
     fn test_constants_are_valid() {
-        use super::{audio, downloads, feed, network, opml, storage, ui};
+        use super::{audio, downloads, feed, network, opml, scrobbling, storage, ui};
         // Network constants
         assert!(network::HTTP_TIMEOUT.as_secs() > 0);
         assert!(network::DOWNLOAD_TIMEOUT > network::HTTP_TIMEOUT);
@@ -262,6 +294,17 @@ mod tests {
         assert!(super::playlist::MAX_PLAYLIST_NAME_LENGTH > 0);
         assert!(super::playlist::MAX_EPISODES_PER_PLAYLIST > 0);
         assert!(super::playlist::MAX_USER_PLAYLISTS > 0);
+
+        // Scrobbling constants
+        assert!(scrobbling::DEFAULT_MIN_LISTEN_PERCENT > 0);
+        assert!(scrobbling::DEFAULT_MIN_LISTEN_PERCENT <= 100);
+        assert!(scrobbling::DEFAULT_MIN_LISTEN_SECONDS > 0);
+        assert!(scrobbling::SCROBBLE_TIMEOUT.as_secs() > 0);
+        assert!(scrobbling::MAX_RETRY_QUEUE_SIZE > 0);
+        assert!(scrobbling::RETRY_QUEUE_TTL_DAYS > 0);
+        assert!(scrobbling::CIRCUIT_BREAKER_FAILURE_THRESHOLD > 0);
+        assert!(scrobbling::CIRCUIT_BREAKER_RESET.as_secs() > 0);
+        assert!(scrobbling::DRAIN_INTERVAL_BASE < scrobbling::DRAIN_INTERVAL_MAX);
     }
 
     #[test]

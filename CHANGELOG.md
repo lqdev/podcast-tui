@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**ListenBrainz Scrobbling Client — July 2025**
+- **Podcast listen scrobbling**: Send `playing_now` and `single` listen events to a ListenBrainz-compatible server (e.g., [podcast-scrobbler](https://github.com/lqdev/podcast-scrobbler))
+  - Dual scrobble threshold: both `min_listen_percent` (default 25%) AND `min_listen_seconds` (default 300s) must be met
+  - Resilient HTTP client with circuit breaker (Closed → Open after 5 failures → HalfOpen after 60s cooldown)
+  - Persistent retry queue (JSON-backed, max 500 events, 7-day TTL) with background drain task
+  - Graceful shutdown flushes pending scrobbles before exit
+  - Config fields added: `scrobbling.enabled` (default: `false`), `scrobbling.endpoint`, `scrobbling.user_token`, and 7 tuning knobs
+  - Disabled by default — zero behavior change for existing users; backward-compatible with existing config files
+  - Tests added: 31 unit tests covering circuit breaker, retry queue, threshold logic, serialization, and config compatibility
+
 **NixOS Packaging**
 - **Nix flake for NixOS installation**: Crane-based `flake.nix` enabling `nix run`, `nix profile install`, and declarative NixOS/Home Manager integration
   - Full rodio audio support (pause, seek, volume, position tracking) — no feature loss vs building from source

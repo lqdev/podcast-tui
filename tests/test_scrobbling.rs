@@ -345,7 +345,7 @@ fn test_playing_now_request_serialization() {
                 track_name: "Episode 42: Error Handling".to_string(),
                 additional_info: Some(AdditionalInfo {
                     media_player: "podcast-tui".to_string(),
-                    podcast_url: Some("https://example.com/feed.xml".to_string()),
+                    podcast_feed_url: Some("https://example.com/feed.xml".to_string()),
                     episode_guid: Some("abc-123".to_string()),
                     duration_ms: Some(3_600_000),
                     position_ms: Some(0),
@@ -391,7 +391,7 @@ fn test_single_listen_request_serialization() {
                 track_name: "Episode 42: Error Handling".to_string(),
                 additional_info: Some(AdditionalInfo {
                     media_player: "podcast-tui".to_string(),
-                    podcast_url: Some("https://example.com/feed.xml".to_string()),
+                    podcast_feed_url: Some("https://example.com/feed.xml".to_string()),
                     episode_guid: Some("abc-123".to_string()),
                     duration_ms: Some(3_600_000),
                     position_ms: Some(2_700_000),

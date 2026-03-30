@@ -105,7 +105,7 @@ impl ListenBrainzClient {
                     track_name: event.episode_title.clone(),
                     additional_info: Some(AdditionalInfo {
                         media_player: "podcast-tui".to_string(),
-                        podcast_url: event.feed_url.clone(),
+                        podcast_feed_url: event.feed_url.clone(),
                         episode_guid: event.episode_guid.clone(),
                         duration_ms: event.duration_ms,
                         position_ms: Some(event.position_ms),
@@ -127,7 +127,7 @@ impl ListenBrainzClient {
                     track_name: event.episode_title.clone(),
                     additional_info: Some(AdditionalInfo {
                         media_player: "podcast-tui".to_string(),
-                        podcast_url: event.feed_url.clone(),
+                        podcast_feed_url: event.feed_url.clone(),
                         episode_guid: event.episode_guid.clone(),
                         duration_ms: event.duration_ms,
                         position_ms: Some(event.position_ms),

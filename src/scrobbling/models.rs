@@ -43,7 +43,7 @@ pub struct TrackMetadata {
 pub struct AdditionalInfo {
     pub media_player: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub podcast_url: Option<String>,
+    pub podcast_feed_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub episode_guid: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

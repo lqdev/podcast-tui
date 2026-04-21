@@ -655,7 +655,7 @@ cargo add dependency-name --features feature1,feature2
 
 ## 📊 Current Development Status
 
-**Version**: 1.6.0  
+**Version**: 1.12.0  
 **Status**: Active Development (February 2026)
 
 ### Completed Features
@@ -666,19 +666,27 @@ cargo add dependency-name --features feature1,feature2
 - ✅ OPML import/export (non-destructive, local files + URLs)
 - ✅ Episode downloading with parallel progress tracking
 - ✅ MP3 metadata (ID3 tags, artwork embedding, track numbers, readable filenames)
-- ✅ Device sync to MP3 players/USB drives (metadata-based comparison, dry-run, orphan deletion)
+- ✅ Device sync to MP3 players/USB drives (F8 buffer with dry-run, directory picker, live progress)
 - ✅ Download cleanup (auto on startup + manual `:clean-older-than`)
 - ✅ Search & filter (text, status, date range — `src/ui/filters.rs`)
 - ✅ Playlists (user playlists + auto-generated `Today` rolling 24h playlist)
-- ✅ Theme system (dark/light/high-contrast/solarized)
+- ✅ Smart playlists (`:smart-playlist` command, `⚡` prefix in list)
+- ✅ Theme system (4 built-in + 5 community themes + user TOML themes with `extends`)
+- ✅ Keybinding presets (default, vim, emacs)
 - ✅ What's New buffer (rolling recent episodes across all podcasts)
 - ✅ Winget publishing (Windows Package Manager)
 - ✅ Audio playback (rodio backend + external player fallback)
+- ✅ NowPlaying buffer (F9 — live progress, volume, playback state)
+- ✅ Podcast discovery (`:discover <query>`, `:trending` via PodcastIndex API)
+- ✅ Favorites (`*`), mark played (`m`) / unplayed (`u`)
+- ✅ Podcast tagging (`:tag`, `:untag`, `:filter-tag`)
+- ✅ Optional ListenBrainz scrobbling (`src/scrobbling/` — disabled by default)
+- ✅ NixOS Nix flake packaging
 
 ### Not Yet Implemented
 - ⏳ Episode notes
 - ⏳ Statistics tracking
-- ⏳ Duration filter (deferred — see `docs/SEARCH_AND_FILTER.md` Design Decision #13)
+- ⏳ Duration filter (deferred — see `docs/rfcs/RFC-001-search-and-filter.md` Design Decision #13)
 
 ---
 
@@ -689,15 +697,22 @@ cargo add dependency-name --features feature1,feature2
 | Subscribe/Unsubscribe | `src/podcast/subscription.rs`, `src/ui/buffers/podcast_list.rs` | `a` add, `d` delete, `r` refresh, `R` refresh all, `Ctrl+r` hard refresh |
 | Episode List | `src/ui/buffers/episode_list.rs`, `src/ui/filters.rs` | Arrow keys navigate, `Enter` open detail |
 | Downloads | `src/download/manager.rs`, `src/ui/buffers/downloads.rs` | `Shift+D` download, `F4` downloads buffer |
-| Device Sync | `src/download/manager.rs` (sync methods) | `:sync [path]`, `:sync-dry-run [path]`, `F4`→sync buffer |
+| Device Sync | `src/download/manager.rs` (sync methods), `src/ui/buffers/sync.rs` | `F8` sync buffer, `s` sync, `d` dry-run, `p` directory picker |
 | Download Cleanup | `src/download/manager.rs` (`cleanup_old_downloads*`) | `:clean-older-than <dur>`, `:cleanup <dur>` |
-| Search & Filter | `src/ui/filters.rs`, `src/ui/buffers/episode_list.rs` | `/` search, `:filter-status`, `:filter-date`, `:clear-filters` |
+| Search & Filter | `src/ui/filters.rs`, `src/ui/buffers/episode_list.rs` | `/` search, `:filter-status`, `:filter-date`, `:clear-filters`, `F3`, `F6` |
 | Playlists | `src/playlist/` (5 files), `src/ui/buffers/playlist_*.rs` | `c` create, `F7` list, `p` add episode, `:playlist-*` commands |
+| Smart Playlists | `src/playlist/auto_generator.rs` | `:smart-playlist <name>`, `Today` auto-playlist |
 | OPML | `src/podcast/opml.rs` | `Shift+A` import, `Shift+E` export, `:import-opml`, `:export-opml` |
-| Themes | `src/ui/themes.rs` | `:theme <dark|light|high-contrast|solarized>` |
+| Themes | `src/ui/themes.rs`, `src/ui/theme_loader.rs` | `:theme <name>` (built-in + community + user TOML) |
+| Discovery | `src/podcast/discovery.rs`, `src/ui/buffers/discovery.rs` | `:discover <query>`, `:trending` |
+| Tagging | `src/podcast/` (tag methods) | `:tag <tag>`, `:untag <tag>`, `:filter-tag <tag>` |
+| Favorites | `src/podcast/models.rs` | `*` toggle favorite, `:filter-status favorited` |
+| Mark Played | `src/podcast/models.rs` | `m` mark played, `u` mark unplayed |
+| Audio Playback | `src/audio/`, `src/ui/buffers/now_playing.rs` | `Shift+Enter` play, `Shift+P` pause, `F9` now playing |
+| Scrobbling | `src/scrobbling/` | Configured in `config.json` `scrobbling` section |
 | Config | `src/config.rs` | `~/.config/podcast-tui/config.json` (Linux) |
 | Constants | `src/constants.rs` | All default values centralized here |
-| Buffer Mgmt | `src/ui/buffers/mod.rs` | `Tab`/`Shift+Tab`, `F2-F7`, `Ctrl+b` list, `Ctrl+k` close |
+| Buffer Mgmt | `src/ui/buffers/mod.rs` | `Tab`/`Shift+Tab`, `F2-F9`, `Ctrl+b` list, `Ctrl+k` close |
 
 ---
 
@@ -748,5 +763,5 @@ cargo add dependency-name --features feature1,feature2
 ---
 
 **Last Updated**: February 2026  
-**Version**: 1.6.0
+**Version**: 1.12.0
 **For Questions**: See [CONTRIBUTING.md](CONTRIBUTING.md) or open an issue on GitHub

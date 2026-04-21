@@ -8,21 +8,27 @@ This guide will help you get Podcast TUI running on your system, regardless of p
 
 ## TL;DR - 5 Minute Quick Start
 
-### What Works Right Now (v1.6.0)
+### What Works Right Now (v1.12.0)
 ✅ Subscribe to RSS podcast feeds  
 ✅ Browse episodes with full metadata  
 ✅ Download episodes (configurable concurrent)  
 ✅ Create/manage playlists and auto-generated `Today` playlist  
-✅ Sync to MP3 players/USB devices  
-✅ Search & filter episodes (text, status, date range)  
+✅ Smart playlists via `:smart-playlist`  
+✅ Sync to MP3 players/USB devices (interactive Sync buffer F8)  
+✅ Search & filter episodes (text, status, date range, favorites, tags)  
 ✅ OPML import/export  
 ✅ Audio playback (rodio backend + external player fallback)  
-✅ Intuitive keyboard shortcuts  
-✅ 4 color themes  
+✅ NowPlaying buffer (F9) — live progress, volume, playback state  
+✅ Podcast discovery via PodcastIndex API (`:discover`, `:trending`)  
+✅ Favorites (`*`), mark played (`m`) / unplayed (`u`)  
+✅ Podcast tagging (`:tag`, `:untag`, `:filter-tag`)  
+✅ 10+ themes: 4 built-in + 5 community + user TOML themes with `extends`  
+✅ Keybinding presets (default, vim, emacs)  
+✅ Optional ListenBrainz scrobbling (disabled by default)  
 
 ### Not Yet Working
 ❌ Episode notes  
-❌ Statistics  
+❌ Statistics
 
 ### Speed Run Installation
 
@@ -57,12 +63,18 @@ nix profile install github:lqdev/podcast-tui             # Install it
 - `F1` or `?` → Help
 - `:` → Command prompt
 - `a` → Add podcast
+- `F3` or `/` → Search episodes
+- `F6` → Clear all filters
 - `F7` → Open playlists buffer
+- `F8` → Open Sync buffer
+- `F9` → Open NowPlaying buffer
 - `↓`/`↑` → Navigate
 - `Enter` → Select
 - `Shift+D` → Download episode
 - `Shift+Enter` → Play downloaded episode
 - `Shift+P` → Toggle play/pause
+- `*` → Toggle episode favorite
+- `m` / `u` → Mark played / unplayed
 - `p` → Add selected episode to playlist
 - `q` or `F10` → Quit
 
@@ -70,18 +82,21 @@ nix profile install github:lqdev/podcast-tui             # Install it
 
 ## Current Development Status (February 2026)
 
-**✅ What Works (v1.6.0):**
+**✅ What Works (v1.12.0):**
 - Subscribe to podcast RSS feeds
 - Browse episode lists with metadata
 - Download episodes (configurable concurrent downloads)
-- Device sync to MP3 players/USB drives
-- Search & filter episodes (text, status, date range)
+- Device sync to MP3 players/USB drives (interactive Sync buffer, F8)
+- Search & filter episodes (text, status, date range, favorites, tags)
 - OPML import/export
-- Playlist management (user + auto-generated Today playlist)
-- Audio playback (rodio backend, external player fallback)
-- Intuitive keyboard navigation
-- Multiple color themes
-- Cross-platform builds (Windows/Linux)
+- Playlist management (user + auto-generated Today playlist + smart playlists)
+- Audio playback (rodio backend, NowPlaying buffer F9, external player fallback)
+- Podcast discovery via PodcastIndex API (`:discover`, `:trending`)
+- Favorites (`*`), mark played (`m`) / unplayed (`u`), podcast tagging
+- 10+ themes: 4 built-in + 5 community themes + user TOML themes with `extends`
+- Keybinding presets (default, vim, emacs)
+- Optional ListenBrainz scrobbling (disabled by default)
+- Cross-platform builds (Windows/Linux) + NixOS flake
 
 **🚧 What's Coming:**
 - Episode notes
@@ -270,9 +285,12 @@ If the built-in rodio backend is unavailable, Podcast TUI falls back to an exter
 - `Ctrl+k` - Close current buffer
 - `Ctrl+l` - List all buffers
 - `F2` - Podcast list
-- `F3` - Help
+- `F3` - Search (same as `/`)
 - `F4` - Downloads
+- `F6` - Clear all active filters
 - `F7` - Playlists
+- `F8` - Sync buffer
+- `F9` - NowPlaying buffer
 
 **Podcast Management:**
 - `a` - Add podcast subscription
@@ -284,16 +302,20 @@ If the built-in rodio backend is unavailable, Podcast TUI falls back to an exter
 **Episode Actions:**
 - `Shift+D` - Download episode
 - `Shift+X` or `X` - Delete downloaded file
+- `*` - Toggle episode as favorite
+- `m` - Mark episode as played
+- `u` - Mark episode as unplayed
 - `p` - Add selected episode to playlist
 - `Ctrl+x` - Delete ALL downloads
 - `:clean-older-than <dur>` - Delete downloads older than duration (e.g., `7d`, `2w`)
 - `:cleanup <dur>` - Alias for clean-older-than
 
 **Search & Filter:**
-- `/` - Open search (filter episodes by text)
-- `:filter-status <status>` - Filter by status (`new`, `downloaded`, `played`, `downloading`, `failed`)
-- `:filter-date <range>` - Filter by date (`today`, `7d`, `2w`, `1m`)
-- `:clear-filters` - Clear all active filters
+- `/` or `F3` - Open search (filter episodes by text)
+- `:filter-status <status>` - Filter by status (`new`, `downloaded`, `played`, `downloading`, `failed`, `favorited`)
+- `:filter-date <range>` - Filter by date (`today`, `12h`, `7d`, `2w`, `1m`)
+- `:filter-tag <tag>` - Filter podcasts by tag
+- `:clear-filters` or `F6` - Clear all active filters
 
 **Help:**
 - `F1` or `?` or `h` - Show help
@@ -349,9 +371,68 @@ The application will create configuration files on first run:
   },
   "storage": {
     "data_directory": null
+  },
+  "discovery": {
+    "podcastindex_api_key": "",
+    "podcastindex_api_secret": "",
+    "max_results": 20
+  },
+  "scrobbling": {
+    "enabled": false,
+    "server_url": "https://api.listenbrainz.org",
+    "token": ""
   }
 }
 ```
+
+### Themes
+
+Switch themes with `:theme <name>`. Available themes:
+
+| Category | Names |
+|----------|-------|
+| Built-in | `dark`, `light`, `high-contrast`, `solarized` |
+| Community | `catppuccin-mocha`, `dracula`, `nord`, `gruvbox-dark`, `tokyo-night` |
+| Custom | Any `.toml` file in `~/.config/podcast-tui/themes/` |
+
+You can create custom themes using a `themes/<name>.toml` file with optional `extends = "dark"` to inherit from a base theme.
+
+### Podcast Discovery
+
+Discover new podcasts via the PodcastIndex API. Get a free API key at [api.podcastindex.org](https://api.podcastindex.org/) and add it to your config:
+
+```json
+{
+  "discovery": {
+    "podcastindex_api_key": "YOUR_KEY_HERE",
+    "podcastindex_api_secret": "YOUR_SECRET_HERE"
+  }
+}
+```
+
+Then use:
+- `:discover <query>` — Search for podcasts by keyword
+- `:trending` — Browse currently trending podcasts
+
+Select a result and press `Enter` to subscribe.
+
+### ListenBrainz Scrobbling
+
+Podcast TUI can report your listen history to a ListenBrainz-compatible server. This is **disabled by default** — no existing behavior changes.
+
+To enable:
+
+```json
+{
+  "scrobbling": {
+    "enabled": true,
+    "server_url": "https://api.listenbrainz.org",
+    "token": "YOUR_LISTENBRAINZ_TOKEN"
+  }
+}
+```
+
+Get a token from [listenbrainz.org/profile](https://listenbrainz.org/profile/). Scrobbles are submitted when an episode completes (or at the 50% mark).
 
 ## Device Sync
 
@@ -481,13 +562,20 @@ sudo pacman -S openssl
 
 **Completed:**
 - ✅ Foundation (Storage, Models, Config)
-- ✅ Core UI (Emacs-style TUI, Buffers, Themes)
+- ✅ Core UI (Emacs-style TUI, Buffers, Themes, Keybinding presets)
 - ✅ RSS & Podcasts (Feed parsing, Subscriptions, OPML)
 - ✅ Downloads (Concurrent downloads, File management, Cleanup)
-- ✅ Device Sync (MP3 player sync, metadata-based comparison)
-- ✅ Search & Filter (Text, status, date range)
-- ✅ Playlists (User playlists + Today auto-playlist)
-- ✅ Audio Playback (rodio backend, external player fallback, now playing buffer)
+- ✅ Device Sync (Interactive Sync buffer F8 with dry-run and live progress)
+- ✅ Search & Filter (Text, status, date range, favorites, tag filter)
+- ✅ Playlists (User playlists, Today auto-playlist, smart playlists)
+- ✅ Audio Playback (rodio backend, NowPlaying buffer F9, external player fallback)
+- ✅ Podcast Discovery (PodcastIndex API, `:discover`, `:trending`)
+- ✅ Tagging (`:tag`, `:untag`, `:filter-tag`)
+- ✅ Favorites & Playback State (`*`, `m`, `u`)
+- ✅ Community Themes (catppuccin-mocha, dracula, nord, gruvbox-dark, tokyo-night)
+- ✅ User TOML Themes (custom themes with `extends` inheritance)
+- ✅ Optional Scrobbling (ListenBrainz, disabled by default)
+- ✅ NixOS Flake packaging
 
 **In Progress / Planned:**
 - 🚧 Episode Notes
@@ -496,5 +584,5 @@ sudo pacman -S openssl
 ---
 
 **Last Updated**: February 2026  
-**Version**: 1.6.0  
+**Version**: 1.12.0  
 **Status**: Active Development

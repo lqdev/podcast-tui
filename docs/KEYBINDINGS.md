@@ -151,7 +151,7 @@ Press `:` (or `Shift+:`) to open the command prompt. Press `Tab` to autocomplete
 
 - `quit` / `q` — Exit
 - `help` — Open keybindings help buffer
-- `theme <name>` — Change theme (`dark`, `light`, `high-contrast`, `solarized`)
+- `theme <name>` — Change theme. Built-in: `dark`, `light`, `high-contrast`, `solarized`. Community (bundled): `catppuccin-mocha`, `dracula`, `nord`, `gruvbox-dark`, `tokyo-night`. Also accepts any user TOML theme name.
 - `switch-to-buffer <name>` — Switch to a named buffer
 - `list-buffers` — Show buffer list
 - `close-buffer` — Close current buffer
@@ -184,6 +184,18 @@ Press `:` (or `Shift+:`) to open the command prompt. Press `Tab` to autocomplete
 - `playlist-create [name]` — Create playlist
 - `playlist-delete <name>` — Delete playlist
 - `playlist-refresh` — Refresh `Today` playlist
+- `smart-playlist <name>` — Create a smart playlist (auto-generated based on rules)
+
+### Discovery Commands
+
+- `discover <query>` — Search PodcastIndex for podcasts matching `query`
+- `trending` — Browse currently trending podcasts
+
+### Tagging Commands
+
+- `tag <tag>` — Tag the selected podcast
+- `untag <tag>` — Remove a tag from the selected podcast
+- `filter-tag <tag>` — Filter the podcast list to show only podcasts with this tag
 
 ## Minibuffer Input
 
@@ -210,4 +222,4 @@ Keybindings are designed to work reliably across terminals:
 Some terminals intercept certain key combinations. If a binding is unresponsive, use the alternate or remap via `config.json`.
 
 ---
-*Last Updated: February 2026 | Version: v1.10.0 | Maintainer: [@lqdev](https://github.com/lqdev)*
+*Last Updated: February 2026 | Version: v1.12.0 | Maintainer: [@lqdev](https://github.com/lqdev)*

@@ -1,7 +1,7 @@
 # Podcast TUI Architecture
 
 **Last Updated**: February 2026  
-**Version**: 1.6.0  
+**Version**: 1.12.0  
 **Status**: Active Development
 
 ## Overview
@@ -29,7 +29,10 @@ Podcast TUI is a cross-platform terminal user interface (TUI) application for po
 │  │   List      │  │ • Details   │  │   style      │           │
 │  │ • Episodes  │  │ • Minibuf   │  │ • Universal  │           │
 │  │ • Downloads │  │ • Status    │  │   Keys       │           │
-│  │ • Help      │  │ • Theme     │  │              │           │
+│  │ • Help      │  │ • Theme     │  │ • Presets    │           │
+│  │ • NowPlaying│  │             │  │              │           │
+│  │ • Discovery │  │             │  │              │           │
+│  │ • Sync      │  │             │  │              │           │
 │  └─────────────┘  └─────────────┘  └──────────────┘           │
 │                                                                 │
 ├─────────────────────────────────────────────────────────────────┤
@@ -57,6 +60,20 @@ Podcast TUI is a cross-platform terminal user interface (TUI) application for po
 │  │ • Refresh   │  │ • Download   │  │ • Atom       │          │
 │  │ • OPML      │  │ • Progress   │  │ • Podcast    │          │
 │  │ • Episodes  │  │ • Cleanup    │  │   Namespace  │          │
+│  └─────────────┘  └──────────────┘  └──────────────┘          │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                    Audio & Scrobbling Layer                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐          │
+│  │   Audio     │  │  Scrobbling  │  │  Discovery   │          │
+│  │   Manager   │  │   Client     │  │   Client     │          │
+│  │             │  │              │  │              │          │
+│  │ • rodio     │  │ • ListenBrz  │  │ • PodcastIdx │          │
+│  │   backend   │  │ • Circuit    │  │ • Trending   │          │
+│  │ • External  │  │   Breaker    │  │ • Search     │          │
+│  │   player    │  │ • Queue      │  │              │          │
 │  └─────────────┘  └──────────────┘  └──────────────┘          │
 │                                                                 │
 ├─────────────────────────────────────────────────────────────────┤
@@ -145,18 +162,20 @@ User Input → KeyEvent → App::handle_key() → State Update → UI Render
 
 **How**: Each view (podcast list, episode list, downloads, help) is a "buffer". Users switch between buffers with keyboard shortcuts.
 
-**Buffer Types** (12 total):
+**Buffer Types** (14 total):
 - **Podcast List** (`F2`): Main subscription list
 - **Episode List**: Episodes for selected podcast (with search/filter support via `src/ui/filters.rs`)
 - **Episode Detail**: Single episode view
 - **Downloads** (`F4`): Download queue and status
-- **Help** (`F1`, `?`): Keybinding reference
+- **Help** (`F1`, `?`): Keybinding reference (categorized by topic)
 - **Buffer List** (`Ctrl+b`): All open buffers overlay
 - **Playlist List** (`F7`): All playlists
 - **Playlist Detail**: Single playlist episodes
 - **Playlist Picker**: Add-to-playlist overlay
-- **Sync**: Device sync history
+- **Sync** (`F8`): Device sync UI with dry-run preview and live progress
 - **What's New**: Rolling new episodes across all podcasts
+- **NowPlaying** (`F9`): Live audio playback progress and controls
+- **Discovery**: PodcastIndex search and trending results
 
 **Benefits**:
 - ✅ Familiar workflow for Emacs users
@@ -175,6 +194,9 @@ User Input → KeyEvent → App::handle_key() → State Update → UI Render
 - Episode downloads (2-3 concurrent by default)
 - Storage operations (read/write JSON files)
 - OPML import/export
+- Audio playback (non-blocking via rodio async task)
+- Scrobble submissions (circuit-breaker-protected background task)
+- Podcast discovery API calls
 
 **Benefits**:
 - ✅ Responsive UI during network operations
@@ -201,11 +223,12 @@ User Input → KeyEvent → App::handle_key() → State Update → UI Render
 
 **Key Files**:
 - `app.rs`: UI application wrapper and main event loop
-- `buffers/`: 12 buffer implementations (see `.github/instructions/ui-buffers.instructions.md`)
+- `buffers/`: 14 buffer implementations (see `.github/instructions/ui-buffers.instructions.md`)
 - `components/`: Reusable UI components (lists, status bar, minibuffer)
 - `events.rs`: Event types and handling
-- `keybindings.rs`: Key mapping and command dispatch
+- `keybindings.rs`: Key mapping and command dispatch with preset support (default/vim/emacs)
 - `themes.rs`: Color schemes (dark, light, high-contrast, solarized)
+- `theme_loader.rs`: Loads user TOML themes and bundled community themes
 - `filters.rs`: Episode filtering (`EpisodeFilter`, `EpisodeStatus`, `DateRange`)
 
 **Dependencies**: `ratatui`, `crossterm`
@@ -218,8 +241,33 @@ User Input → KeyEvent → App::handle_key() → State Update → UI Render
 - `feed.rs`: RSS/Atom feed parsing
 - `subscription.rs`: Subscription management
 - `opml.rs`: OPML import/export
+- `discovery.rs`: PodcastIndex API client for `:discover` / `:trending`
 
 **Dependencies**: `feed-rs`, `reqwest`
+
+#### `src/audio/`
+**Purpose**: Audio playback abstraction
+
+**Key Files**:
+- `manager.rs`: `AudioManager` — coordinates playback state and routing
+- `rodio_backend.rs`: Built-in rodio playback engine
+- `external.rs`: External player (mpv/vlc/ffplay) fallback
+- `mod.rs`: Public API
+
+**Dependencies**: `rodio`, `tokio`
+
+#### `src/scrobbling/`
+**Purpose**: Optional ListenBrainz-compatible listen tracking
+
+**Key Files**:
+- `client.rs`: HTTP scrobble submission to a ListenBrainz-compatible server
+- `models.rs`: Scrobble event data structures
+- `circuit_breaker.rs`: Prevents network errors from blocking the UI
+- `queue.rs`: Offline-buffered scrobble queue
+- `noop.rs`: No-op implementation used when scrobbling is disabled
+- `mod.rs`: Public API
+
+**Dependencies**: `reqwest`, `tokio`
 
 #### `src/storage/`
 **Purpose**: Data persistence abstraction

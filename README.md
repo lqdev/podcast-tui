@@ -5,34 +5,37 @@ A cross-platform terminal user interface for podcast management built with Rust.
 ![Build Status](https://github.com/lqdev/podcast-tui/workflows/CI/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Rust Version](https://img.shields.io/badge/rust-1.75+-red.svg)
-![Version](https://img.shields.io/badge/version-1.10.0-green)
+![Version](https://img.shields.io/badge/version-1.12.0-green)
 ![Development Status](https://img.shields.io/badge/status-Active%20Development-blue)
 
 > 📚 **Documentation:** For comprehensive architecture and design patterns, see [**ARCHITECTURE.md**](docs/ARCHITECTURE.md)
 
 ## 📊 Current Status (February 2026)
 
-**v1.6.0** — The application has a fully working feature set for podcast subscription management, downloading, device sync, playlist management, and audio playback.
+**v1.12.0** — The application has a fully working feature set for podcast subscription management, downloading, device sync, playlist management, audio playback, discovery, tagging, and optional scrobbling.
 
 ✅ **Working Features:**
 - RSS feed subscription management with OPML import/export
 - Episode browsing with comprehensive metadata
 - Parallel episode downloads (configurable concurrent, default 3)
 - MP3 metadata embedding (ID3 tags, artwork, track numbers, readable filenames)
-- Device sync to MP3 players/USB drives with metadata-based comparison
-- Playlist management (user playlists + auto-generated "Today" playlist)
-- Search & filter by text, status, date range
+- Device sync via interactive Sync buffer (F8) with dry-run preview and live progress
+- Playlist management (user playlists, `Today` auto-playlist, smart playlists)
+- Search & filter by text, status, date range, favorites, and tags
 - Download cleanup (auto on startup + manual `:clean-older-than`)
-- Audio playback with rodio backend and external player fallback
-- Intuitive keyboard navigation and buffer management
-- Multi-theme support (dark, light, high-contrast, solarized)
-- Cross-platform builds (Windows x64/ARM64, Linux x64/ARM64)
+- Audio playback with NowPlaying buffer (F9), rodio backend, external player fallback
+- Podcast discovery via PodcastIndex API (`:discover`, `:trending`)
+- Favorites (`*`), mark played (`m`) / unplayed (`u`), podcast tagging
+- 10+ themes: 4 built-in + 5 community bundled + user TOML themes with `extends`
+- Keybinding presets (default, vim, emacs)
+- Optional ListenBrainz scrobbling (disabled by default)
+- Cross-platform builds (Windows x64/ARM64, Linux x64/ARM64) + NixOS flake
 
 ⏳ **Not Yet Implemented:**
 - Episode notes
 - Statistics tracking
 
-**⚠️ Episode notes and statistics tracking are not yet implemented.** The current release is suitable for managing subscriptions, downloading episodes, playing audio, syncing to devices, and managing playlists.
+**⚠️ Episode notes and statistics tracking are not yet implemented.** The current release is suitable for managing subscriptions, downloading episodes, playing audio, syncing to devices, managing playlists, and discovering new podcasts.
 
 ## 🎧 Features
 
@@ -44,15 +47,19 @@ A cross-platform terminal user interface for podcast management built with Rust.
 - ✅ **Episode Management** - Browse and manage episodes
 - ✅ **Download System** - Parallel episode downloads with progress tracking and bulk cleanup
 - ✅ **MP3 Metadata** - ID3 tags, artwork embedding, track numbers, readable folder names
-- ✅ **Device Sync** - Sync downloads to MP3 players with metadata-based comparison
-- ✅ **Keyboard Navigation** - Intuitive keybindings for efficient navigation
+- ✅ **Device Sync** - Sync downloads to MP3 players via interactive Sync buffer (F8) with dry-run preview and live progress
+- ✅ **Keyboard Navigation** - Intuitive keybindings for efficient navigation (default/vim/emacs presets)
 - ✅ **Command Auto-completion** - Intelligent command completion in minibuffer
 - ✅ **Buffer Management** - Multiple buffers for different views
-- ✅ **Playlist Support** - User playlists plus auto-generated `Today` (last 24h) playlist
-- ✅ **Search & Filter** - Text search, status filter, date range filter
-- ✅ **Theme System** - Multiple themes (dark, light, high-contrast, solarized)
-- ✅ **Cross-platform Build** - Windows and Linux build support
-- ✅ **Audio Playback** - Play downloaded episodes with rodio backend or external player
+- ✅ **Playlist Support** - User playlists, auto-generated `Today` (last 24h) playlist, and smart playlists
+- ✅ **Search & Filter** - Text search, status filter (including favorites), date range filter, tag filter
+- ✅ **Theme System** - 4 built-in themes + 5 community themes (catppuccin-mocha, dracula, nord, gruvbox-dark, tokyo-night) + user TOML themes
+- ✅ **Cross-platform Build** - Windows and Linux build support + NixOS flake
+- ✅ **Audio Playback** - Play downloaded episodes with NowPlaying buffer (F9), rodio backend or external player
+- ✅ **Podcast Discovery** - Search and browse podcasts via PodcastIndex API (`:discover`, `:trending`)
+- ✅ **Tagging** - Organize podcasts with tags (`:tag`, `:untag`, `:filter-tag`)
+- ✅ **Favorites & Playback State** - Favorite episodes (`*`), mark played/unplayed (`m`/`u`)
+- ✅ **Optional Scrobbling** - ListenBrainz scrobbling support (disabled by default)
 
 **⏳ In Progress / Planned:**
 - ⏳ **Episode Notes** - Add personal notes to episodes (not yet implemented)
@@ -200,6 +207,9 @@ See [assets/README.md](assets/README.md) for more details about the icon design 
 - `Shift+D` - Download episode (works in episode list and episode detail)
 - `Shift+X` or `X` - Delete downloaded file for selected episode
 - `p` - Add selected episode to a playlist
+- `*` - Toggle episode as favorite
+- `m` - Mark episode as played
+- `u` - Mark episode as unplayed
 - `Ctrl+x` - Delete ALL downloaded episodes and clean up
 - `:clean-older-than <duration>` - Delete downloads older than duration (e.g., `7d`, `2w`, `1m`)
 - `:cleanup <duration>` - Alias for clean-older-than
@@ -210,22 +220,42 @@ See [assets/README.md](assets/README.md) for more details about the icon design 
 - `:playlist-delete <name>` - Delete playlist
 - `:playlist-refresh` - Refresh `Today` auto-playlist
 - `:playlist-sync` - Sync podcasts + playlists to device
+- `:smart-playlist <name>` - Create a smart playlist with auto-generated rules (`⚡` prefix)
+
+### Podcast Discovery
+- `:discover <query>` - Search for new podcasts via PodcastIndex API
+- `:trending` - Browse trending podcasts
+
+### Tagging
+- `:tag <tag>` - Add a tag to the selected podcast
+- `:untag <tag>` - Remove a tag from the selected podcast
+- `:filter-tag <tag>` - Filter podcast list by tag
+
+### Themes
+- `:theme <name>` - Switch theme
+  - Built-in: `dark`, `light`, `high-contrast`, `solarized`
+  - Community: `catppuccin-mocha`, `dracula`, `nord`, `gruvbox-dark`, `tokyo-night`
+  - Custom: any name from `~/.config/podcast-tui/themes/<name>.toml`
 
 ### Buffer Management
 - `F2` - Switch to podcast list
-- `F3` - Switch to help
+- `F3` - Search (same as `/`)
 - `F4` - Switch to downloads
 - `F5` - Refresh current buffer
+- `F6` - Clear all active filters
 - `F7` - Switch to playlists
+- `F8` - Switch to sync buffer
+- `F9` - Open NowPlaying buffer
 - `Ctrl+b` - Show buffer list / Switch buffer
 - `Ctrl+k` - Close current buffer
 - `Ctrl+l` - List all buffers
 
 ### Search & Filter Commands
-- `/` - Open search (filter by text, matches title + description)
-- `:filter-status <new|downloaded|played|downloading|failed>` - Filter by status
-- `:filter-date <today|7d|2w|1m>` - Filter by date range
-- `:clear-filters` - Clear all active filters
+- `/` or `F3` - Open search (filter by text, matches title + description)
+- `:filter-status <new|downloaded|played|downloading|failed|favorited>` - Filter by status
+- `:filter-date <today|12h|7d|2w|1m>` - Filter by date range
+- `:filter-tag <tag>` - Filter podcasts by tag
+- `:clear-filters` or `F6` - Clear all active filters
 
 ### Application
 - `F1` - Show help
@@ -270,7 +300,7 @@ Configuration is stored in JSON format at:
     "download_artwork": true,
     "include_episode_numbers": true,
     "include_dates": false,
-    "max_filename_length": 100
+    "max_filename_length": 150
   },
   "playlist": {
     "today_refresh_policy": "daily",
@@ -288,36 +318,38 @@ Configuration is stored in JSON format at:
     "theme": "dark",
     "show_progress_bar": true,
     "whats_new_episode_limit": 50
+  },
+  "discovery": {
+    "podcastindex_api_key": "",
+    "podcastindex_api_secret": "",
+    "max_results": 20
+  },
+  "scrobbling": {
+    "enabled": false,
+    "server_url": "https://api.listenbrainz.org",
+    "token": ""
   }
 }
 ```
 
 ### Device Sync Configuration
 
-The device sync feature allows you to sync downloaded episodes and playlists to external MP3 players or USB devices:
+The device sync feature allows you to sync downloaded episodes and playlists to external MP3 players or USB devices via the interactive **Sync buffer** (`F8`):
 
-- `sync_device_path`: Default path to your device (can be overridden at runtime)
+- `sync_device_path`: Default path to your device (can be overridden at runtime via `p` in the Sync buffer)
 - `sync_delete_orphans`: Remove files on device that aren't on PC (default: true)
 - `sync_preserve_structure`: Keep podcast folder structure on device (default: true)  
 - `sync_dry_run`: Preview changes without applying them (default: false)
 - `sync_include_playlists`: Include playlists in sync (default: true)
 
-**Usage:**
-```bash
-# Sync to device (prompts for path or uses config default)
-:sync
+**Usage (via Sync buffer — `F8`):**
 
-# Sync to specific parent path (creates Podcasts/ and Playlists/)
-:sync /mnt/usb/Music
+Press `F8` to open the Sync buffer, then:
+- `s` - Start sync to configured device path
+- `d` - Run a dry-run preview (shows what would change)
+- `p` - Open directory picker to choose a different target path
 
-# Preview changes without applying
-:sync-dry-run /mnt/usb/Music
-
-# View sync history
-:buffer sync
-```
-
-See [configuration documentation](docs/CONFIGURATION.md) for all options.
+The Sync buffer shows live progress during sync and a history of past sync operations.
 
 ## 📁 Data Storage
 
@@ -339,7 +371,8 @@ Podcast TUI uses JSON files for data storage:
 │   ├── Today/
 │   │   ├── playlist.json
 │   │   └── audio/
-└── stats.json                  # Usage statistics
+└── themes/                     # Optional user TOML theme files
+    └── my-theme.toml
 ```
 
 This design allows for:
@@ -398,7 +431,8 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 - [x] **Storage Layer** - JSON-based storage with abstraction trait
 - [x] **Data Models** - Podcast, Episode, and configuration models
 - [x] **Core UI Framework** - TUI with Emacs-style buffers and keybindings
-- [x] **Theme System** - Multiple themes with dynamic switching
+- [x] **Theme System** - 4 built-in + 5 community themes + user TOML themes with `extends`
+- [x] **Keybinding Presets** - Default, vim, and emacs preset support
 - [x] **RSS Subscription Management** - Subscribe to podcasts via RSS feeds
 - [x] **OPML Import/Export** - Non-destructive import and export of subscriptions
 - [x] **Episode Parsing** - RSS feed parsing and episode extraction
@@ -406,12 +440,18 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 - [x] **Episode Management UI** - Browse and manage episodes
 - [x] **Download Cleanup** - Auto-cleanup on startup + manual `:clean-older-than`
 - [x] **Application Icon** - Custom cassette+RSS icon, embedded in Windows exe
-- [x] **Device Sync** - Metadata-based sync to MP3 players/USB devices
+- [x] **Device Sync** - Interactive Sync buffer (F8) with dry-run, directory picker, live progress
 - [x] **MP3 Metadata** - ID3 tags, artwork, track numbers, readable filenames
-- [x] **Search & Filter** - Text search, status filter, date range filter
-- [x] **Playlist Management** - User playlists + auto-generated "Today" playlist
+- [x] **Search & Filter** - Text search, status filter (including favorites), date range filter, tag filter
+- [x] **Playlist Management** - User playlists + auto-generated `Today` playlist
+- [x] **Smart Playlists** - Rule-based playlists via `:smart-playlist`
 - [x] **Winget Publishing** - Available on Windows Package Manager
-- [x] **Audio Playback** - Rodio backend with external player fallback
+- [x] **Audio Playback** - Rodio backend with NowPlaying buffer (F9) and external player fallback
+- [x] **Podcast Discovery** - Search and browse via PodcastIndex API (`:discover`, `:trending`)
+- [x] **Tagging** - Organize podcasts with custom tags
+- [x] **Favorites & Playback State** - Mark favorites (`*`), played (`m`) / unplayed (`u`)
+- [x] **ListenBrainz Scrobbling** - Optional listen tracking (disabled by default)
+- [x] **NixOS Flake** - Nix packaging for NixOS and nix-based systems
 
 ### In Progress / Planned
 
@@ -421,7 +461,6 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 
 ### Post-MVP (v2.0+)
 - [ ] SQLite storage backend option
-- [ ] Advanced smart playlists
 - [ ] Plugin architecture
 - [ ] Cloud synchronization (optional)
 
@@ -456,6 +495,6 @@ Licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
-**Status**: 🚀 Active Development (v1.10.0)  
+**Status**: 🚀 Active Development (v1.12.0)  
 **Maintainer**: [@lqdev](https://github.com/lqdev)  
-**Version**: 1.10.0
+**Version**: 1.12.0

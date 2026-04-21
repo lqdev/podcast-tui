@@ -1,6 +1,6 @@
 # RFC-002: ListenBrainz-Compatible Scrobbling
 
-**Status**: Draft
+**Status**: ✅ Implemented (v1.12.0)
 **Date**: 2026-02-21
 **Author**: @lqdev
 
@@ -262,4 +262,4 @@ scrobbler.flush_pending().await;
 
 ---
 
-*Last Updated: February 2026 | Version: v1.10.0 | Maintainer: [@lqdev](https://github.com/lqdev)*
+*Last Updated: February 2026 | Version: v1.12.0 | Maintainer: [@lqdev](https://github.com/lqdev)*

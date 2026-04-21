@@ -1,7 +1,7 @@
 # Search & Filter — Design Document
 
 **Created**: February 16, 2026  
-**Status**: Design Phase  
+**Status**: ✅ Implemented (v1.6.0)  
 **Sprint**: 5 (Enhanced Features)  
 **Priority**: P1 (Episode filtering), P2 (Text search)  
 **Branch**: `feat/search-and-filter`  

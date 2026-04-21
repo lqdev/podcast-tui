@@ -391,24 +391,31 @@ The following were shipped between the original sprint plan and the current stat
 
 ## Progress Summary
 
-### Completed Sprints (3/8 = 37.5%)
-- ✅ **Sprint 0**: Project Setup - Foundation, storage, constants
-- ✅ **Sprint 1**: Core UI Framework - Buffers, themes, navigation
-- ✅ **Sprint 2**: RSS and Podcasts - Subscriptions, OPML, feeds
-- ✅ **Sprint 3**: Episodes and Downloads - Download manager, file organization
+### Delivered (as of v1.12.0)
+- ✅ **Sprint 0**: Project Setup — Foundation, storage, constants
+- ✅ **Sprint 1**: Core UI Framework — Buffers, themes, navigation
+- ✅ **Sprint 2**: RSS and Podcasts — Subscriptions, OPML, feeds
+- ✅ **Sprint 3**: Episodes and Downloads — Download manager, file organization
+- ✅ **Audio Playback** — rodio backend + external player fallback, NowPlaying buffer (F9)
+- ✅ **Search & Filter** — Text search, status filter, date filter (v1.6.0)
+- ✅ **Playlist Management** — User playlists + `Today` auto-playlist (v1.7.0)
+- ✅ **Sync Buffer v2/v3** — Dry-run preview, directory picker, live progress view, F8 shortcut (v1.9.0)
+- ✅ **Keybinding Presets** — default, vim, emacs presets (v1.10.0)
+- ✅ **Community Themes** — catppuccin-mocha, dracula, nord, gruvbox-dark, tokyo-night + user TOML themes (v1.10.0)
+- ✅ **Podcast Discovery** — `:discover` / `:trending` via PodcastIndex API (v1.10.0)
+- ✅ **Smart Playlists** — `:smart-playlist` command (v1.10.0)
+- ✅ **Favorites & Marking** — `*` favorite, `m`/`u` mark played/unplayed (v1.10.0)
+- ✅ **Tagging** — `:tag`, `:untag`, `:filter-tag` (v1.10.0)
+- ✅ **Startup Performance** — Removed delays, parallelized metadata calls (v1.11.0)
+- ✅ **ListenBrainz Scrobbling** — Optional scrobbling client with circuit breaker (v1.12.0)
+- ✅ **NixOS Flake** — First-class NixOS packaging (v1.12.0)
 
-### Completed
-- ✅ **Sprint 4**: Audio Playback
-
-### Upcoming Sprints
-- ⏳ **Sprint 5**: Enhanced Features (Playlists, notes, search)
-- ⏳ **Sprint 6**: Statistics and Cleanup
-- ⏳ **Sprint 7**: Polish and Cross-Platform
+### Remaining Planned
+- ⏳ **Episode Notes** — Personal notes on episodes
+- ⏳ **Statistics Tracking** — Listen time and play count stats
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: 2025-10-07  
-**Sprint Reviews**: Weekly on Fridays
-**Retrospectives**: End of each sprint
-**Daily Standups**: Personal daily check-ins with progress tracking
+**Document Version**: 1.2
+**Last Updated**: February 2026
+**Current Version**: 1.12.0

@@ -2,7 +2,7 @@
 
 ## Project Information
 - **Project Name**: Podcast TUI
-- **Version**: 1.6.0
+- **Version**: 1.12.0
 - **Created**: 2025-09-28
 - **Last Updated**: 2026-02-18
 - **Status**: Active Development
@@ -77,7 +77,6 @@ Current podcast management solutions are either:
 - [x] Episode artwork embedding ✅ **COMPLETE**
 
 ### Won't Have (This Version)
-- Advanced smart playlists
 - Cloud synchronization
 - Advanced statistics and analytics
 - Plugin system
@@ -211,13 +210,28 @@ data/
 - Clear documentation for setup and contribution
 - Consistent code style and formatting
 
+## Features Delivered Post-Initial PRD (v1.7.0–v1.12.0)
+
+These features were delivered after the initial PRD scope and represent the current capabilities of v1.12.0:
+
+- ✅ **Smart Playlists** — `:smart-playlist` command; `Today` auto-playlist (last 24h)
+- ✅ **Sync Buffer v2/v3** — Interactive F8 buffer with dry-run preview, directory picker, live progress
+- ✅ **Keybinding Presets** — default, vim, and emacs presets configurable in `config.json`
+- ✅ **Community Themes** — catppuccin-mocha, dracula, nord, gruvbox-dark, tokyo-night bundled; user TOML theme files with `extends` inheritance
+- ✅ **Podcast Discovery** — `:discover <query>` and `:trending` via PodcastIndex API
+- ✅ **Favorites & Marking** — `*` toggle favorite, `m` mark played, `u` mark unplayed
+- ✅ **Podcast Tagging** — `:tag`, `:untag`, `:filter-tag` for tag-based organization
+- ✅ **NowPlaying Buffer** — Live playback view with progress bar, volume, and state (F9)
+- ✅ **Startup Performance** — Removed artificial delays, parallelized metadata loading
+- ✅ **ListenBrainz Scrobbling** — Optional listen tracking with circuit breaker; disabled by default
+- ✅ **NixOS Flake** — First-class NixOS packaging
+
 ## Future Considerations
 
-### Version 1.1 Candidates
-- SQLite storage backend
-- Advanced playlist features
-- Plugin architecture foundation
-- Enhanced statistics and reporting
+### Post-v1.12.0 Candidates
+- Episode Notes — Personal notes on episodes (⏳ pending)
+- Statistics Tracking — Listen time and play count stats (⏳ pending)
+- Duration Filter — Filter by episode duration (deferred pending RSS data)
 
 ### Version 2.0 Vision
 - Optional cloud synchronization
@@ -227,7 +241,6 @@ data/
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2025-09-28
-**Next Review**: Weekly during development
-**Approver**: Project Lead
+**Document Version**: 1.1
+**Last Updated**: February 2026
+**Current Version**: 1.12.0

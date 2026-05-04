@@ -61,7 +61,8 @@ nix build && ./result/bin/podcast-tui
 ```
 - `Cargo.lock` is tracked in git — always commit changes to it
 - `flake.lock` must be regenerated on a Nix-capable system when `flake.nix` inputs change (`nix flake lock`)
-- See [docs/NIX_PACKAGING.md](docs/NIX_PACKAGING.md) for full details
+- `nix/release-hashes.nix` is auto-regenerated after each release by `.github/workflows/release.yml` (auto-opens a `chore(nix): bump release hashes` PR). To regenerate manually: `bash scripts/update-flake-hashes.sh vX.Y.Z`
+- See [docs/NIX_PACKAGING.md](docs/NIX_PACKAGING.md) for user-facing install docs and [docs/NIX_FLAKE_INTERNALS.md](docs/NIX_FLAKE_INTERNALS.md) for the contributor architecture deep-dive
 
 **DevContainer (Recommended):**
 - Install [Docker](https://docker.com) and [VS Code](https://code.visualstudio.com)

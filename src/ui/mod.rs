@@ -513,8 +513,6 @@ pub trait UIComponent {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_category_covers_all_visible_actions() {
         // Arrange — use the default keybinding handler to enumerate all bound actions

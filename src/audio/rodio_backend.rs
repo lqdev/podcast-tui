@@ -588,11 +588,7 @@ mod tests {
             .position()
             .expect("position should be Some after seek while playing");
         let target = Duration::from_secs(2);
-        let diff = if pos > target {
-            pos - target
-        } else {
-            target - pos
-        };
+        let diff = pos.abs_diff(target);
         assert!(
             diff <= Duration::from_millis(500),
             "position after seek {pos:?} not within 500 ms of target 2 s"
@@ -622,11 +618,7 @@ mod tests {
         if let Some(dur) = backend.duration() {
             // Allow ±200 ms tolerance
             let expected = Duration::from_secs(3);
-            let diff = if dur > expected {
-                dur - expected
-            } else {
-                expected - dur
-            };
+            let diff = dur.abs_diff(expected);
             assert!(
                 diff <= Duration::from_millis(200),
                 "duration {dur:?} not within 200 ms of 3 s"

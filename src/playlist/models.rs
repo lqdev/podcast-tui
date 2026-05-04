@@ -289,7 +289,7 @@ pub struct PlaylistEpisode {
 mod tests {
     use super::*;
     use crate::podcast::{Episode, EpisodeStatus, Podcast};
-    use crate::storage::{EpisodeId, PodcastId};
+    use crate::storage::PodcastId;
     use chrono::Utc;
 
     fn make_episode(podcast_id: PodcastId, status: EpisodeStatus, favorited: bool) -> Episode {
@@ -379,10 +379,7 @@ mod tests {
     fn test_smart_filter_and_requires_all_to_match() {
         // Arrange: downloaded AND favorited
         let id = PodcastId::new();
-        let both = {
-            let mut e = make_episode(id.clone(), EpisodeStatus::Downloaded, true);
-            e
-        };
+        let both = make_episode(id.clone(), EpisodeStatus::Downloaded, true);
         let only_downloaded = make_episode(id.clone(), EpisodeStatus::Downloaded, false);
         let only_favorited = make_episode(id.clone(), EpisodeStatus::New, true);
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Reproducible Nix builds**: `flake.lock` is now committed, pinning `nixpkgs`/`crane`/`flake-utils` to specific revisions. `nix run github:lqdev/podcast-tui`, `nix build`, and `nix flake check` (clippy + fmt) work end-to-end on Linux. The flake source filter also keeps `*.opml` test fixtures so integration tests pass inside the pure Nix sandbox, and several pre-existing clippy warnings were cleaned up so `nix flake check` (which runs clippy with `-D warnings`) stays green. Closes [#195](https://github.com/lqdev/podcast-tui/issues/195).
+
 ---
 
 ## [1.12.0] - 2026-03-30

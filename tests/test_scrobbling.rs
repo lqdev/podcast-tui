@@ -501,9 +501,11 @@ fn test_create_scrobbler_disabled_returns_noop() {
 #[test]
 fn test_create_scrobbler_enabled_no_endpoint_returns_noop() {
     // Arrange
-    let mut config = ScrobblingConfig::default();
-    config.enabled = true;
-    // endpoint is None
+    let config = ScrobblingConfig {
+        enabled: true,
+        // endpoint is None
+        ..Default::default()
+    };
     let tmp = TempDir::new().unwrap();
 
     // Act
@@ -516,9 +518,11 @@ fn test_create_scrobbler_enabled_no_endpoint_returns_noop() {
 #[test]
 fn test_create_scrobbler_enabled_with_endpoint_returns_real_client() {
     // Arrange
-    let mut config = ScrobblingConfig::default();
-    config.enabled = true;
-    config.endpoint = Some("http://localhost:5000".to_string());
+    let config = ScrobblingConfig {
+        enabled: true,
+        endpoint: Some("http://localhost:5000".to_string()),
+        ..Default::default()
+    };
     let tmp = TempDir::new().unwrap();
 
     // Act

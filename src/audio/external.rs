@@ -187,16 +187,26 @@ impl Drop for ExternalPlayerBackend {
 /// Extract the lowercase player basename from an executable path or name,
 /// stripping path separators and platform extensions (e.g. `.exe` on Windows).
 ///
+/// Uses explicit `/` and `\` splitting rather than `std::path::Path` so that
+/// Windows-style paths (e.g. `C:\Program Files\mpv\mpv.exe`) work correctly
+/// when the code runs on Linux (where `\` is not a path separator).
+///
 /// Examples:
 /// - `"mpv"` → `"mpv"`
 /// - `"/usr/bin/mpv"` → `"mpv"`
 /// - `r"C:\Program Files\mpv\mpv.exe"` → `"mpv"`
 /// - `"ffplay.exe"` → `"ffplay"`
 fn player_basename(cmd: &str) -> String {
-    Path::new(cmd)
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_lowercase())
-        .unwrap_or_else(|| cmd.to_lowercase())
+    // Split on both Unix (`/`) and Windows (`\`) separators.
+    let filename = cmd.rsplit(['/', '\\']).next().unwrap_or(cmd);
+
+    // Strip the file extension (e.g. `.exe`, `.app`).
+    let stem = match filename.rsplit_once('.') {
+        Some((base, _)) if !base.is_empty() => base,
+        _ => filename,
+    };
+
+    stem.to_lowercase()
 }
 
 /// Returns the version-check flag for `cmd`.

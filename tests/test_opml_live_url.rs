@@ -3,6 +3,7 @@ mod test_opml_live_url {
     use podcast_tui::podcast::OpmlParser;
 
     #[tokio::test]
+    #[ignore = "requires live network access — run with --include-ignored on a connected machine"]
     async fn test_parse_lqdev_opml() {
         let url = "https://www.lqdev.me/collections/podroll/index.opml";
 

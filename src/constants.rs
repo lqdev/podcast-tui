@@ -248,61 +248,61 @@ mod tests {
         // Network constants
         assert!(network::HTTP_TIMEOUT.as_secs() > 0);
         assert!(network::DOWNLOAD_TIMEOUT > network::HTTP_TIMEOUT);
-        assert!(network::MAX_REDIRECTS > 0);
+        const { assert!(network::MAX_REDIRECTS > 0) };
         assert!(!network::USER_AGENT.is_empty());
 
         // Download constants
-        assert!(downloads::MIN_CONCURRENT_DOWNLOADS > 0);
-        assert!(downloads::DEFAULT_CONCURRENT_DOWNLOADS >= downloads::MIN_CONCURRENT_DOWNLOADS);
-        assert!(downloads::DEFAULT_CONCURRENT_DOWNLOADS <= downloads::MAX_CONCURRENT_DOWNLOADS);
-        assert!(downloads::CHUNK_SIZE > 0);
-        assert!(downloads::MAX_DOWNLOAD_RETRIES > 0);
+        const { assert!(downloads::MIN_CONCURRENT_DOWNLOADS > 0) };
+        const { assert!(downloads::DEFAULT_CONCURRENT_DOWNLOADS >= downloads::MIN_CONCURRENT_DOWNLOADS) };
+        const { assert!(downloads::DEFAULT_CONCURRENT_DOWNLOADS <= downloads::MAX_CONCURRENT_DOWNLOADS) };
+        const { assert!(downloads::CHUNK_SIZE > 0) };
+        const { assert!(downloads::MAX_DOWNLOAD_RETRIES > 0) };
 
         // UI constants
-        assert!(ui::MIN_WHATS_NEW_LIMIT > 0);
-        assert!(ui::DEFAULT_WHATS_NEW_LIMIT >= ui::MIN_WHATS_NEW_LIMIT);
-        assert!(ui::DEFAULT_WHATS_NEW_LIMIT <= ui::MAX_WHATS_NEW_LIMIT);
+        const { assert!(ui::MIN_WHATS_NEW_LIMIT > 0) };
+        const { assert!(ui::DEFAULT_WHATS_NEW_LIMIT >= ui::MIN_WHATS_NEW_LIMIT) };
+        const { assert!(ui::DEFAULT_WHATS_NEW_LIMIT <= ui::MAX_WHATS_NEW_LIMIT) };
         assert!(!ui::DEFAULT_THEME.is_empty());
-        assert!(ui::UI_TICK_RATE_MS > 0);
-        assert!(ui::MIN_FRAME_INTERVAL_MS > 0);
+        const { assert!(ui::UI_TICK_RATE_MS > 0) };
+        const { assert!(ui::MIN_FRAME_INTERVAL_MS > 0) };
 
         // Storage constants
-        assert!(storage::MIN_CLEANUP_DAYS > 0);
-        assert!(storage::DEFAULT_CLEANUP_AFTER_DAYS >= storage::MIN_CLEANUP_DAYS);
-        assert!(storage::DEFAULT_CLEANUP_AFTER_DAYS <= storage::MAX_CLEANUP_DAYS);
+        const { assert!(storage::MIN_CLEANUP_DAYS > 0) };
+        const { assert!(storage::DEFAULT_CLEANUP_AFTER_DAYS >= storage::MIN_CLEANUP_DAYS) };
+        const { assert!(storage::DEFAULT_CLEANUP_AFTER_DAYS <= storage::MAX_CLEANUP_DAYS) };
         assert!(!storage::TEMP_FILE_SUFFIX.is_empty());
         assert!(!storage::BACKUP_FILE_SUFFIX.is_empty());
 
         // Feed constants
-        assert!(feed::MIN_REFRESH_INTERVAL_HOURS > 0);
-        assert!(feed::DEFAULT_REFRESH_INTERVAL_HOURS >= feed::MIN_REFRESH_INTERVAL_HOURS);
+        const { assert!(feed::MIN_REFRESH_INTERVAL_HOURS > 0) };
+        const { assert!(feed::DEFAULT_REFRESH_INTERVAL_HOURS >= feed::MIN_REFRESH_INTERVAL_HOURS) };
         assert!(feed::PARSE_TIMEOUT.as_secs() > 0);
 
         // Audio constants
-        assert!(audio::DEFAULT_VOLUME >= 0.0 && audio::DEFAULT_VOLUME <= 1.0);
-        assert!(audio::VOLUME_STEP > 0.0);
-        assert!(audio::SEEK_STEP_SECS > 0);
-        assert!(audio::AUDIO_BUFFER_SIZE > 0);
+        const { assert!(audio::DEFAULT_VOLUME >= 0.0 && audio::DEFAULT_VOLUME <= 1.0) };
+        const { assert!(audio::VOLUME_STEP > 0.0) };
+        const { assert!(audio::SEEK_STEP_SECS > 0) };
+        const { assert!(audio::AUDIO_BUFFER_SIZE > 0) };
 
         // OPML constants
-        assert!(opml::MAX_PARALLEL_IMPORTS > 0);
+        const { assert!(opml::MAX_PARALLEL_IMPORTS > 0) };
         assert!(opml::IMPORT_TIMEOUT.as_secs() > 0);
-        assert!(opml::MAX_OPML_FILE_SIZE > 0);
+        const { assert!(opml::MAX_OPML_FILE_SIZE > 0) };
         assert!(!opml::OPML_VERSION.is_empty());
 
         // Playlist constants
-        assert!(super::playlist::MAX_PLAYLIST_NAME_LENGTH > 0);
-        assert!(super::playlist::MAX_EPISODES_PER_PLAYLIST > 0);
-        assert!(super::playlist::MAX_USER_PLAYLISTS > 0);
+        const { assert!(super::playlist::MAX_PLAYLIST_NAME_LENGTH > 0) };
+        const { assert!(super::playlist::MAX_EPISODES_PER_PLAYLIST > 0) };
+        const { assert!(super::playlist::MAX_USER_PLAYLISTS > 0) };
 
         // Scrobbling constants
-        assert!(scrobbling::DEFAULT_MIN_LISTEN_PERCENT > 0);
-        assert!(scrobbling::DEFAULT_MIN_LISTEN_PERCENT <= 100);
-        assert!(scrobbling::DEFAULT_MIN_LISTEN_SECONDS > 0);
+        const { assert!(scrobbling::DEFAULT_MIN_LISTEN_PERCENT > 0) };
+        const { assert!(scrobbling::DEFAULT_MIN_LISTEN_PERCENT <= 100) };
+        const { assert!(scrobbling::DEFAULT_MIN_LISTEN_SECONDS > 0) };
         assert!(scrobbling::SCROBBLE_TIMEOUT.as_secs() > 0);
-        assert!(scrobbling::MAX_RETRY_QUEUE_SIZE > 0);
-        assert!(scrobbling::RETRY_QUEUE_TTL_DAYS > 0);
-        assert!(scrobbling::CIRCUIT_BREAKER_FAILURE_THRESHOLD > 0);
+        const { assert!(scrobbling::MAX_RETRY_QUEUE_SIZE > 0) };
+        const { assert!(scrobbling::RETRY_QUEUE_TTL_DAYS > 0) };
+        const { assert!(scrobbling::CIRCUIT_BREAKER_FAILURE_THRESHOLD > 0) };
         assert!(scrobbling::CIRCUIT_BREAKER_RESET.as_secs() > 0);
         assert!(scrobbling::DRAIN_INTERVAL_BASE < scrobbling::DRAIN_INTERVAL_MAX);
     }
@@ -311,13 +311,13 @@ mod tests {
     fn test_filesystem_constants() {
         use super::filesystem;
 
-        assert!(filesystem::MAX_FILENAME_LENGTH == 255); // Cross-platform standard
-        assert!(filesystem::MAX_PATH_LENGTH >= 4096);
+        const { assert!(filesystem::MAX_FILENAME_LENGTH == 255) }; // Cross-platform standard
+        const { assert!(filesystem::MAX_PATH_LENGTH >= 4096) };
 
         #[cfg(unix)]
         {
-            assert!(filesystem::DEFAULT_DIR_PERMISSIONS == 0o755);
-            assert!(filesystem::DEFAULT_FILE_PERMISSIONS == 0o644);
+            const { assert!(filesystem::DEFAULT_DIR_PERMISSIONS == 0o755) };
+            const { assert!(filesystem::DEFAULT_FILE_PERMISSIONS == 0o644) };
         }
     }
 }

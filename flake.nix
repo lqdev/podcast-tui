@@ -13,9 +13,15 @@
         pkgs = nixpkgs.legacyPackages.${system};
         craneLib = crane.mkLib pkgs;
 
-        # Filter source to only Rust/Cargo-relevant files.
-        # If build.rs or src/ ever needs non-Rust assets, replace with a custom filter.
-        src = craneLib.cleanCargoSource ./.;
+        # Filter source to Rust/Cargo-relevant files plus OPML fixtures used by
+        # integration tests (tests/test_opml_local_file.rs reads
+        # examples/sample-subscriptions.opml via CARGO_MANIFEST_DIR).
+        src = pkgs.lib.cleanSourceWith {
+          src = craneLib.path ./.;
+          filter = path: type:
+            (craneLib.filterCargoSources path type) ||
+            (builtins.match ".*\\.opml$" path != null);
+        };
 
         commonArgs = {
           inherit src;

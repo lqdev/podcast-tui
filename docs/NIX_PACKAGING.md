@@ -271,5 +271,4 @@ Cachix) is recorded in
 
 ---
 
-*Last updated: 2026-05 · Version: v1.12.0 · Maintainer:
-[@lqdev](https://github.com/lqdev)*
+*Last Updated: May 2026 | Version: v1.12.0 | Maintainer: [@lqdev](https://github.com/lqdev)*

@@ -107,11 +107,14 @@ clobbering flake logic. It also makes the table trivially hand-auditable.
   sole user touchpoint, matching the nixvim/helix pattern.
 
 ### Negative
-- **`sourceProvenance = [ binaryNativeCode ]`** — purist NixOS users
-  who prefer "everything from source" need to opt into
-  `podcast-tui-source` explicitly (or set `nixpkgs.config.allowUnfree`
-  accordingly in their config — though we are MIT-licensed, the
-  source-provenance flag is what controls this).
+- **Binary-only by default on Linux.** Purist users who prefer
+  "everything from source" can opt into `podcast-tui-source`
+  explicitly via `nix build github:lqdev/podcast-tui#podcast-tui-source`
+  (or pin their module to it). The `meta.sourceProvenance =
+  [ binaryNativeCode ]` flag we set on the binary derivation is
+  informational — it tells nixpkgs tooling this output is prebuilt
+  binary code rather than built-from-source, but it does *not*
+  trigger `nixpkgs.config.allowUnfree` (we are MIT-licensed).
 - **Hash maintenance burden.** Releases now have an extra step (the
   auto-bump PR). This is fully automated, but if CI breaks, releases
   ship without prebuilt-binary support until the bump PR is opened

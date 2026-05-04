@@ -19,6 +19,12 @@
       # `nix build .#podcast-tui-source`). Crane supports both Linux arches.
       sourceSystems = [ "x86_64-linux" "aarch64-linux" ];
 
+      # All systems for which we expose per-system outputs at all. Includes
+      # Darwin so that `packages.default` and the overlay produce a *helpful*
+      # eval-time error on macOS instead of a generic missing-attribute one.
+      # Keep this a superset of binarySystems ∪ sourceSystems.
+      allSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+
       releaseHashes = import ./nix/release-hashes.nix;
 
       # Map nix system -> tarball platform tag used in release filenames.
@@ -111,9 +117,13 @@
     {
       # ─── Cross-system flake outputs ───────────────────────────────────────
       # Overlay: makes `pkgs.podcast-tui` available to downstream Nix code.
-      overlays.default = final: _prev: {
-        podcast-tui = self.packages.${final.system}.default;
-      };
+      # Guarded so that on systems without a published default (e.g. Darwin),
+      # importing the overlay still succeeds; only *referencing* `pkgs.podcast-tui`
+      # surfaces the unsupported-system error.
+      overlays.default = final: _prev:
+        if (self.packages ? ${final.system}) && (self.packages.${final.system} ? default)
+        then { podcast-tui = self.packages.${final.system}.default; }
+        else { podcast-tui = throw "podcast-tui: no package available for ${final.system}"; };
 
       # Home Manager module: `programs.podcast-tui.enable = true;`
       homeManagerModules.default = import ./nix/hm-module.nix self;
@@ -125,25 +135,31 @@
     }
     //
     # ─── Per-system outputs ───────────────────────────────────────────────
-    flake-utils.lib.eachSystem (nixpkgs.lib.unique (binarySystems ++ sourceSystems)) (system:
+    flake-utils.lib.eachSystem allSystems (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         bin    = mkBinaryFor pkgs system;
         source = mkSourceFor system;
         # `default` prefers the prebuilt binary; falls through to source if no
-        # binary is published for this system.
+        # binary is published for this system. On systems with neither (e.g.
+        # macOS today) the throw fires the moment something forces `default`,
+        # giving users a clear, actionable error instead of an opaque
+        # missing-attribute failure.
+        hasDefault = bin != null || source != null;
         default =
           if bin != null then bin
           else if source != null then source
-          else throw "podcast-tui: no prebuilt binary or source build available for ${system}";
+          else throw "podcast-tui: no prebuilt binary or source build available for ${system}. Supported: ${toString (nixpkgs.lib.unique (binarySystems ++ sourceSystems))}.";
       in
       {
         packages =
-          { inherit default; }
+          (pkgs.lib.optionalAttrs hasDefault { inherit default; })
           // (pkgs.lib.optionalAttrs (bin    != null) { podcast-tui-bin    = bin; })
           // (pkgs.lib.optionalAttrs (source != null) { podcast-tui-source = source; });
 
-        apps.default = flake-utils.lib.mkApp { drv = default; };
+        apps = pkgs.lib.optionalAttrs hasDefault {
+          default = flake-utils.lib.mkApp { drv = default; };
+        };
 
         devShells.default = (crane.mkLib pkgs).devShell {
           inputsFrom = pkgs.lib.optional (source != null) source;

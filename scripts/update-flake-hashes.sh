@@ -27,6 +27,14 @@ REPO="lqdev/podcast-tui"
 BASE="https://github.com/${REPO}/releases/download/${TAG}"
 OUT="nix/release-hashes.nix"
 
+# Validate tag format early so a malformed input (e.g. "1.12.0" without `v`)
+# fails fast rather than silently emitting all-null hashes because the asset
+# URLs won't exist.
+if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+  echo "error: tag must look like 'vX.Y.Z' (got: '$TAG')" >&2
+  exit 64
+fi
+
 # system tag -> release-filename platform suffix
 declare -A PLATFORMS=(
   [x86_64-linux]=linux-x86_64

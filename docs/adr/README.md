@@ -17,6 +17,7 @@ An ADR documents a significant architectural decision made during development, i
 | [ADR-002](ADR-002-buffer-based-ui.md) | Emacs-Style Buffer-Based UI | Accepted | 2025-09 |
 | [ADR-003](ADR-003-metadata-device-sync.md) | Metadata-Based Device Sync | Accepted | 2025-10 |
 | [ADR-004](ADR-004-nix-packaging.md) | Nix Flake for NixOS Packaging | Accepted | 2026-03 |
+| [ADR-005](ADR-005-binary-fetch-flake.md) | Binary-Fetch Flake for NixOS Distribution | Accepted | 2026-05 |
 
 ## Status Values
 - **Proposed** — Under consideration

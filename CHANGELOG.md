@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**Nix Packaging — Binary-Fetch Flake**
+- **Sub-10s install on supported platforms**: New `packages.podcast-tui-bin` derivation consumes prebuilt GitHub Release tarballs via `fetchurl` + `autoPatchelfHook`, eliminating the 5–15 min source compile for `nix run`/`nix profile install`/declarative installs. Source build (`packages.podcast-tui-source`) remains for `nix flake check` and as a graceful fallback on platforms without a published binary. `packages.default` routes per-system. ([ADR-005](docs/adr/ADR-005-binary-fetch-flake.md))
+- **Home Manager + NixOS modules**: `homeManagerModules.default` (and the renamed `homeModules.default` alias) plus `nixosModules.default` expose `programs.podcast-tui.enable = true;` — no more manual `home.packages = [ inputs.podcast-tui.packages.${pkgs.system}.default ];` boilerplate.
+- **Overlay**: `overlays.default` exposes `pkgs.podcast-tui` for use in any nixpkgs-derived module.
+- **`aarch64-linux` release builds**: `release.yml` now builds Linux ARM64 tarballs on free `ubuntu-24.04-arm` runners alongside `linux-x86_64` and `windows-x86_64`. Raspberry Pi 4/5 and Graviton users get prebuilt binaries.
+- **Auto hash-bump PR**: Each successful release opens `chore(nix): bump release hashes for vX.Y.Z`, regenerating `nix/release-hashes.nix` so `nix run github:lqdev/podcast-tui` serves the prebuilt binary within minutes of a release publishing.
+- **`scripts/update-flake-hashes.sh`**: Local + CI tooling to regenerate the per-platform hash table from the GitHub Release `.sha256` sidecars.
+- **Documentation**: [`docs/NIX_PACKAGING.md`](docs/NIX_PACKAGING.md) rewritten end-to-end (user-facing); new [`docs/NIX_FLAKE_INTERNALS.md`](docs/NIX_FLAKE_INTERNALS.md) (contributor architecture deep-dive); new [`ADR-005`](docs/adr/ADR-005-binary-fetch-flake.md) (decision record).
+
 ### Fixed
 
 - **Reproducible Nix builds**: `flake.lock` is now committed, pinning `nixpkgs`/`crane`/`flake-utils` to specific revisions. `nix run github:lqdev/podcast-tui`, `nix build`, and `nix flake check` (clippy + fmt) work end-to-end on Linux. The flake source filter also keeps `*.opml` test fixtures so integration tests pass inside the pure Nix sandbox, and several pre-existing clippy warnings were cleaned up so `nix flake check` (which runs clippy with `-D warnings`) stays green. Closes [#195](https://github.com/lqdev/podcast-tui/issues/195).

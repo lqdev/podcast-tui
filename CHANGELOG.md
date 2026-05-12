@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Configurable startup buffer** — Choose which buffer opens on launch via `ui.startup_buffer` in `~/.config/podcast-tui/config.json`. Valid values: `"help"` (default, preserves existing behavior), `"podcast-list"`, `"downloads"`, `"sync"`, `"playlist-list"`, `"whats-new"`, `"now-playing"`. Unknown values fall back to `"help"` with a console warning. Closes #203.
+
 **Nix Packaging — Binary-Fetch Flake**
 - **Sub-10s install on supported platforms**: New `packages.podcast-tui-bin` derivation consumes prebuilt GitHub Release tarballs via `fetchurl` + `autoPatchelfHook`, eliminating the 5–15 min source compile for `nix run`/`nix profile install`/declarative installs. Source build (`packages.podcast-tui-source`) remains for `nix flake check` and as a graceful fallback on platforms without a published binary. `packages.default` routes per-system. ([ADR-005](docs/adr/ADR-005-binary-fetch-flake.md))
 - **Home Manager + NixOS modules**: `homeManagerModules.default` (and the renamed `homeModules.default` alias) plus `nixosModules.default` expose `programs.podcast-tui.enable = true;` — no more manual `home.packages = [ inputs.podcast-tui.packages.${pkgs.system}.default ];` boilerplate.

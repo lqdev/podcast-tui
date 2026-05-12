@@ -22,6 +22,30 @@ Three presets are available. Set one in `~/.config/podcast-tui/config.json`:
 
 If `preset` is omitted or unrecognised, `default` is used.
 
+## Startup Buffer
+
+Choose which buffer opens when Podcast TUI launches. Add `ui.startup_buffer` to `~/.config/podcast-tui/config.json`:
+
+```json
+{
+  "ui": {
+    "startup_buffer": "whats-new"
+  }
+}
+```
+
+| Value | Buffer |
+|-------|--------|
+| `help` (default) | `*Help: Keybindings*` — auto-generated keybinding reference |
+| `podcast-list` | Subscribed podcasts |
+| `downloads` | Active and recent downloads |
+| `sync` | Device sync history |
+| `playlist-list` | Playlists |
+| `whats-new` | Rolling new episodes across all podcasts |
+| `now-playing` | Audio playback status |
+
+Unknown values fall back to `help` and log a warning to stderr.
+
 ## Auto-Generated Help
 
 Press `F1`, `?`, or run `:help` to open `*Help: Keybindings*`. This buffer reflects whichever preset is active for the current session. If you change `config.json` (including the `preset`), restart Podcast TUI to update the keybindings shown here.

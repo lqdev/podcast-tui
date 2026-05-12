@@ -708,11 +708,21 @@ pub struct UiConfig {
     // NOTE: Duration filter config (filter_short_max_minutes, filter_long_min_minutes)
     // deferred until episode duration data is populated from RSS feeds.
     // See Design Decision #13 in docs/SEARCH_AND_FILTER.md.
+    /// Buffer to open on application startup. Valid values:
+    /// `"help"`, `"podcast-list"`, `"downloads"`, `"sync"`,
+    /// `"playlist-list"`, `"whats-new"`, `"now-playing"`.
+    /// Unknown values fall back to `"help"` with a warning.
+    #[serde(default = "default_startup_buffer")]
+    pub startup_buffer: String,
 }
 
 // Default function for serde
 fn default_whats_new_episode_limit() -> usize {
     ui::DEFAULT_WHATS_NEW_LIMIT
+}
+
+fn default_startup_buffer() -> String {
+    "help".to_string()
 }
 
 // NOTE: Duration filter default fns removed — deferred until extract_duration is implemented.
@@ -729,6 +739,7 @@ impl Default for UiConfig {
             compact_mode: false,
             mouse_support: true,
             whats_new_episode_limit: ui::DEFAULT_WHATS_NEW_LIMIT,
+            startup_buffer: default_startup_buffer(),
         }
     }
 }

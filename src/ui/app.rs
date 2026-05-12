@@ -45,6 +45,26 @@ use crate::{
 use directories::ProjectDirs;
 use std::sync::Arc;
 
+/// Resolve the configured startup buffer name to an actual buffer ID.
+///
+/// All buffers except `help` use their kebab-case name as their ID directly,
+/// so we just verify the ID exists. `help` uses a UUID-suffixed ID and must
+/// be looked up by display title.
+///
+/// Returns `None` if `name` is not a recognized buffer.
+fn resolve_startup_buffer_id(buffer_manager: &BufferManager, name: &str) -> Option<String> {
+    match name {
+        "help" => buffer_manager.find_buffer_id_by_name("*Help: Keybindings*"),
+        "podcast-list" | "downloads" | "sync" | "playlist-list" | "whats-new" | "now-playing" => {
+            buffer_manager
+                .get_buffer_ids()
+                .into_iter()
+                .find(|id| id == name)
+        }
+        _ => None,
+    }
+}
+
 /// The main UI application
 pub struct UIApp {
     /// Configuration
@@ -282,9 +302,18 @@ impl UIApp {
         );
         buffer_manager.create_now_playing_buffer();
 
-        // Set initial buffer
-        if let Some(buffer_id) = buffer_manager.get_buffer_ids().first() {
-            let _ = buffer_manager.switch_to_buffer(&buffer_id.clone());
+        // Set initial buffer (configurable via ui.startup_buffer)
+        let target_id = resolve_startup_buffer_id(&buffer_manager, &config.ui.startup_buffer)
+            .or_else(|| {
+                eprintln!(
+                    "[config] Unknown ui.startup_buffer '{}', falling back to 'help'",
+                    config.ui.startup_buffer
+                );
+                resolve_startup_buffer_id(&buffer_manager, "help")
+            })
+            .or_else(|| buffer_manager.get_buffer_ids().first().cloned());
+        if let Some(id) = target_id {
+            let _ = buffer_manager.switch_to_buffer(&id);
         }
 
         // Skip loading data during initialization - it will be loaded asynchronously in the background
@@ -567,9 +596,19 @@ impl UIApp {
             .create_playlist_list_buffer(self.playlist_manager.clone());
         self.buffer_manager.create_now_playing_buffer();
 
-        // Set initial buffer
-        if let Some(buffer_id) = self.buffer_manager.get_buffer_ids().first() {
-            let _ = self.buffer_manager.switch_to_buffer(&buffer_id.clone());
+        // Set initial buffer (configurable via ui.startup_buffer)
+        let target_id =
+            resolve_startup_buffer_id(&self.buffer_manager, &self.config.ui.startup_buffer)
+                .or_else(|| {
+                    eprintln!(
+                        "[config] Unknown ui.startup_buffer '{}', falling back to 'help'",
+                        self.config.ui.startup_buffer
+                    );
+                    resolve_startup_buffer_id(&self.buffer_manager, "help")
+                })
+                .or_else(|| self.buffer_manager.get_buffer_ids().first().cloned());
+        if let Some(id) = target_id {
+            let _ = self.buffer_manager.switch_to_buffer(&id);
         }
 
         // Update status bar
@@ -5463,6 +5502,86 @@ mod tests {
         let app = app.unwrap();
         assert!(!app.should_quit);
         assert_eq!(app.frame_count, 0);
+    }
+
+    /// Helper to construct a UIApp with the given UiConfig for startup-buffer tests.
+    async fn make_app_with_ui_config(ui: UiConfig) -> UIApp {
+        use crate::config::DownloadConfig;
+        use crate::storage::JsonStorage;
+        use tempfile::TempDir;
+
+        let config = Config {
+            ui,
+            ..Default::default()
+        };
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_dir.path().to_path_buf(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
+        let (app_event_tx, _rx) = mpsc::unbounded_channel();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager,
+            storage,
+            app_event_tx,
+        )
+        .unwrap();
+        // initialize() is what actually creates buffers and applies the
+        // configured startup_buffer selection.
+        app.initialize().await.unwrap();
+        app
+    }
+
+    #[tokio::test]
+    async fn test_startup_buffer_default_is_help() {
+        // Default UiConfig must preserve current behavior: land on Help.
+        let app = make_app_with_ui_config(UiConfig::default()).await;
+        let name = app.buffer_manager.current_buffer_name();
+        assert_eq!(name.as_deref(), Some("*Help: Keybindings*"));
+    }
+
+    #[tokio::test]
+    async fn test_startup_buffer_whats_new() {
+        let app = make_app_with_ui_config(UiConfig {
+            startup_buffer: "whats-new".to_string(),
+            ..UiConfig::default()
+        })
+        .await;
+        let name = app.buffer_manager.current_buffer_name();
+        assert_eq!(name.as_deref(), Some("What's New"));
+    }
+
+    #[tokio::test]
+    async fn test_startup_buffer_downloads() {
+        let app = make_app_with_ui_config(UiConfig {
+            startup_buffer: "downloads".to_string(),
+            ..UiConfig::default()
+        })
+        .await;
+        let name = app.buffer_manager.current_buffer_name();
+        assert_eq!(name.as_deref(), Some("Downloads"));
+    }
+
+    #[tokio::test]
+    async fn test_startup_buffer_invalid_falls_back_to_help() {
+        let app = make_app_with_ui_config(UiConfig {
+            startup_buffer: "nonexistent-buffer".to_string(),
+            ..UiConfig::default()
+        })
+        .await;
+        let name = app.buffer_manager.current_buffer_name();
+        assert_eq!(name.as_deref(), Some("*Help: Keybindings*"));
     }
 
     #[tokio::test]

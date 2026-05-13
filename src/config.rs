@@ -22,8 +22,10 @@ pub struct Config {
     /// Named device profiles for sync filename customization.
     ///
     /// Empty by default — when no profiles are configured, sync uses the
-    /// existing local filename. See `docs/DEVICE_PROFILES.md` for the token
-    /// reference (introduced with the template engine in #208).
+    /// existing local filename. The filename template engine and its full
+    /// token reference land in #208; user-facing documentation lands in
+    /// #211. Until then, `filename_template` strings configured here are
+    /// inert (recognized by the schema but not yet applied at sync time).
     #[serde(default)]
     pub device_profiles: Vec<DeviceProfile>,
     /// Name of the currently active device profile, if any.

@@ -202,7 +202,11 @@ Press `:` (or `Shift+:`) to open the command prompt. Press `Tab` to autocomplete
 
 - `sync [path]` — Sync to device
 - `sync-dry-run [path]` — Preview sync without applying
-- `set-device-profile [name]` — Switch the active device profile (in-memory). Tab-completes against `device_profiles[].name` from `config.json`. Empty argument clears the active profile. **Limitation:** the change is not yet written back to `config.json`; it persists for the current session only.
+- `set-device-profile [name]` — Switch the active device profile (in-memory). Tab-completes against `device_profiles[].name` from `config.json`. Empty argument clears the active profile. **Limitation:** the change is not yet written back to `config.json`; it persists for the current session only. See [`docs/DEVICE_PROFILES.md`](DEVICE_PROFILES.md).
+
+### Storage Commands
+
+- `cache-rebuild` — Discard the in-memory storage cache and rebuild it from disk, then flush the rebuilt index to `cache_index.json`. Use this if the cache appears stale (e.g. after editing data files outside the app). The on-disk JSON files are always the source of truth, so this is a safe escape hatch.
 
 ### Playlist Commands
 

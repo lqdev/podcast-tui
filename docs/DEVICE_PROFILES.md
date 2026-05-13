@@ -12,8 +12,7 @@ which shows the literal filename and offers no metadata fallback.
 
 > **Status:** runtime profile switching with `:set-device-profile` is
 > on the `[Unreleased]` track and will land in the next release.
-> Persisting that switch back to `config.json` is tracked in
-> [#223](https://github.com/lqdev/podcast-tui/issues/223).
+> The switch is persisted to `config.json` so it survives restart.
 
 ## Quick start: Innioasis Y1
 
@@ -143,12 +142,10 @@ Use the `:set-device-profile` minibuffer command:
 
 Tab-completes against `device_profiles[].name`. Pass an empty argument
 (`:set-device-profile`) to clear the active profile. The Sync buffer
-header updates immediately.
-
-> **Limitation:** the change is in-memory only — it does not write back
-> to `config.json` and does not survive a restart. Tracked in
-> [#223](https://github.com/lqdev/podcast-tui/issues/223). To make a
-> change permanent, edit `config.json` directly.
+header updates immediately, and the change is **persisted to
+`config.json`** so it survives the next restart. If saving fails (for
+example, because the file is read-only), an error message is shown but
+the in-memory switch still applies for the current session.
 
 ## Verifying before syncing
 

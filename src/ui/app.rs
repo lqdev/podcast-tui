@@ -138,6 +138,13 @@ pub struct UIApp {
 
     /// Frame counter for debugging
     frame_count: u64,
+
+    /// Resolved path to `config.json`, set by `App::new_with_progress`
+    /// when the path is known. `None` in tests / programmatic uses where
+    /// no path is wired through. Used by [`UIApp::persist_config`] to
+    /// write runtime config mutations (e.g. `:set-device-profile`,
+    /// `:theme`) back to disk.
+    config_path: Option<std::path::PathBuf>,
 }
 
 impl UIApp {
@@ -225,6 +232,7 @@ impl UIApp {
             pending_playlist_deletion: None,
             pending_bulk_deletion: false,
             pending_cleanup_hours: None,
+            config_path: None,
         })
     }
 
@@ -350,6 +358,7 @@ impl UIApp {
             pending_playlist_deletion: None,
             pending_bulk_deletion: false,
             pending_cleanup_hours: None,
+            config_path: None,
         })
     }
 
@@ -359,6 +368,46 @@ impl UIApp {
     /// playback `UIAction` handlers check this before sending commands.
     pub fn set_audio_command_tx(&mut self, tx: mpsc::UnboundedSender<AudioCommand>) {
         self.audio_command_tx = Some(tx);
+    }
+
+    /// Wire the resolved `config.json` path into the app.
+    ///
+    /// Called from `App::new_with_progress` when the path is known.
+    /// Without this, runtime config mutations (`:set-device-profile`,
+    /// `:theme`) cannot persist across restarts and
+    /// [`UIApp::persist_config`] becomes a no-op.
+    pub fn set_config_path(&mut self, path: std::path::PathBuf) {
+        self.config_path = Some(path);
+    }
+
+    /// Persist the current in-memory `Config` back to `config.json`.
+    ///
+    /// Returns a `JoinHandle` for the spawned write task, or `None` when
+    /// no `config_path` is wired (e.g. tests). Production callers can
+    /// drop the handle (`let _ = self.persist_config();`) — the task
+    /// will run to completion on the blocking thread pool. Tests that
+    /// want to assert the file was written can `.await` the handle.
+    ///
+    /// The actual disk write is dispatched to a
+    /// `tokio::task::spawn_blocking` worker so the UI event loop is
+    /// never blocked on filesystem I/O. This is fire-and-forget by
+    /// design — save failures are logged via `eprintln!` (matching the
+    /// rest of the codebase) rather
+    /// than surfaced through the minibuffer, since the in-memory
+    /// mutation has already been applied and we don't want to gate the
+    /// snappy command response on a slow disk.
+    pub fn persist_config(&self) -> Option<tokio::task::JoinHandle<()>> {
+        let path = self.config_path.clone()?;
+        let config = self.config.clone();
+        Some(tokio::task::spawn_blocking(move || {
+            if let Err(e) = config.save(&path) {
+                eprintln!(
+                    "[config] Failed to persist config to {}: {}",
+                    path.display(),
+                    e
+                );
+            }
+        }))
     }
 
     /// Replace the app event sender after construction (used when wiring AudioManager).
@@ -3011,7 +3060,9 @@ impl UIApp {
                 self.buffer_manager.set_theme_all(&new_theme);
                 self.minibuffer.set_theme(new_theme.clone());
                 self.status_bar.set_theme(new_theme);
+                self.config.ui.theme = theme_name.to_string();
                 self.show_message(format!("Theme changed to: {}", theme_name));
+                let _ = self.persist_config();
                 Ok(true)
             }
             None => {
@@ -3021,16 +3072,16 @@ impl UIApp {
         }
     }
 
-    /// Switch the active device profile at runtime (in-memory only).
+    /// Switch the active device profile at runtime.
     ///
     /// An empty `name` clears the active profile. Otherwise the name must
     /// match one of `config.device_profiles[].name` (case-sensitive). The
     /// Sync buffer header is updated immediately so the user sees the
     /// switch reflected without re-opening the buffer.
     ///
-    /// Persistence to `config.json` is intentionally **not** done here —
-    /// see issue #223 (follow-up) and the CHANGELOG entry. Behavior
-    /// matches `set_theme_direct`, which also only mutates in-memory state.
+    /// On success the change is also written back to `config.json` via
+    /// [`UIApp::persist_config`] (best-effort — a save failure is
+    /// surfaced via `show_error` but the in-memory change is kept).
     pub(crate) fn set_device_profile_direct(&mut self, name: &str) {
         let trimmed = name.trim();
         if trimmed.is_empty() {
@@ -3039,6 +3090,7 @@ impl UIApp {
                 sync_buffer.set_active_device_profile_name(None);
             }
             self.show_message("Cleared active device profile".to_string());
+            let _ = self.persist_config();
             return;
         }
 
@@ -3053,6 +3105,7 @@ impl UIApp {
                 sync_buffer.set_active_device_profile_name(Some(trimmed.to_string()));
             }
             self.show_message(format!("Active device profile: {}", trimmed));
+            let _ = self.persist_config();
         } else {
             self.show_error(format!("No device profile named '{}'", trimmed));
         }
@@ -5809,6 +5862,131 @@ mod tests {
         assert!(cmds.iter().any(|c| c == "set-device-profile"));
         assert!(cmds.iter().any(|c| c == "set-device-profile Innioasis Y1"));
         assert!(cmds.iter().any(|c| c == "set-device-profile Generic"));
+    }
+
+    // ---- persist_config tests (#223) -----------------------------------
+
+    #[tokio::test]
+    async fn test_persist_config_round_trip_for_device_profile() {
+        let (mut app, _tmp) = make_app_with_device_profiles(
+            vec![sample_profile("Innioasis Y1"), sample_profile("Generic")],
+            None,
+        )
+        .await;
+        let cfg_dir = tempfile::TempDir::new().unwrap();
+        let cfg_path = cfg_dir.path().join("config.json");
+        app.set_config_path(cfg_path.clone());
+
+        app.set_device_profile_direct("Innioasis Y1");
+        // Wait for the spawn_blocking write task to complete.
+        if let Some(handle) = app.persist_config() {
+            handle.await.unwrap();
+        }
+
+        // File written and parses back with the new active profile selected.
+        assert!(cfg_path.exists(), "config.json should be written");
+        let reloaded: Config =
+            serde_json::from_str(&std::fs::read_to_string(&cfg_path).unwrap()).unwrap();
+        assert_eq!(
+            reloaded.active_device_profile.as_deref(),
+            Some("Innioasis Y1")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_persist_config_round_trip_for_theme() {
+        use crate::config::DownloadConfig;
+        use crate::storage::JsonStorage;
+        use tempfile::TempDir;
+
+        let config = Config::default();
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_dir.path().to_path_buf(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
+        let (app_event_tx, _rx) = mpsc::unbounded_channel();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager,
+            storage,
+            app_event_tx,
+        )
+        .unwrap();
+        let cfg_dir = TempDir::new().unwrap();
+        let cfg_path = cfg_dir.path().join("config.json");
+        app.set_config_path(cfg_path.clone());
+
+        app.set_theme_direct("light").unwrap();
+        if let Some(handle) = app.persist_config() {
+            handle.await.unwrap();
+        }
+
+        let reloaded: Config =
+            serde_json::from_str(&std::fs::read_to_string(&cfg_path).unwrap()).unwrap();
+        assert_eq!(reloaded.ui.theme, "light");
+    }
+
+    #[tokio::test]
+    async fn test_persist_config_no_path_is_silent_noop() {
+        // No `set_config_path` call → persist_config returns None and does
+        // not touch disk, so the runtime mutation still applies cleanly.
+        let (mut app, _tmp) =
+            make_app_with_device_profiles(vec![sample_profile("Generic")], None).await;
+        assert!(app.config_path.is_none());
+
+        app.set_device_profile_direct("Generic");
+
+        assert_eq!(
+            app.config.active_device_profile.as_deref(),
+            Some("Generic"),
+            "in-memory mutation must apply even when persistence is unwired"
+        );
+        assert!(
+            app.persist_config().is_none(),
+            "no config_path → no spawned task"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_persist_config_save_failure_does_not_rollback_state() {
+        // Point config_path at an unwritable location: a path whose parent
+        // is a regular file, so create_dir_all fails inside the spawned
+        // save. The blocking task logs a warning and exits cleanly; the
+        // in-memory mutation is never touched.
+        let (mut app, _tmp) =
+            make_app_with_device_profiles(vec![sample_profile("Generic")], None).await;
+        let blocker_dir = tempfile::TempDir::new().unwrap();
+        let blocker_file = blocker_dir.path().join("blocker");
+        std::fs::write(&blocker_file, b"x").unwrap();
+        // `blocker/sub/config.json` → create_dir_all("blocker/sub") fails
+        // because `blocker` is a regular file.
+        let bad_path = blocker_file.join("sub").join("config.json");
+        app.set_config_path(bad_path);
+
+        app.set_device_profile_direct("Generic");
+        // The spawned task completes (it doesn't panic) even though the
+        // write failed — assert it joins cleanly.
+        if let Some(handle) = app.persist_config() {
+            handle.await.unwrap();
+        }
+
+        // In-memory state still applied despite save failure.
+        assert_eq!(
+            app.config.active_device_profile.as_deref(),
+            Some("Generic"),
+            "save failure must not roll back the in-memory mutation"
+        );
     }
 
     #[tokio::test]

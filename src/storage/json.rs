@@ -268,8 +268,10 @@ impl JsonStorage {
     /// rebuild from disk.
     async fn load_cache_from_disk(&self) -> Result<Option<CacheSnapshot>, StorageError> {
         let path = self.cache_index_path();
-        if !path.exists() {
-            return Ok(None);
+        match fs::try_exists(&path).await {
+            Ok(true) => {}
+            Ok(false) => return Ok(None),
+            Err(e) => return Err(StorageError::file_operation("stat_cache_index", &path, e)),
         }
         let bytes = fs::read(&path)
             .await
@@ -312,7 +314,10 @@ impl JsonStorage {
         flush_snapshot(&self.data_dir, &self.cache, &self.cache_dirty).await
     }
 
-    /// Rebuild the in-memory snapshot from disk and immediately flush it.
+    /// Rebuild the in-memory snapshot from disk. When caching is enabled
+    /// (the default), the freshly built snapshot is also flushed to the
+    /// persistent index immediately. When caching is disabled, only the
+    /// in-memory snapshot is replaced — there is no persistent index to write.
     /// Returns `(podcast_count, episode_count)` for user feedback.
     /// Used by `:cache-rebuild`.
     pub async fn rebuild_cache(&self) -> Result<(usize, usize), StorageError> {
@@ -1019,34 +1024,55 @@ impl Default for JsonStorage {
 /// reference to `&JsonStorage` (which would couple task lifetime to the
 /// instance and complicate the async `move` closure).
 ///
-/// Clears the dirty flag only on a successful rename — a failed write
-/// leaves the cache dirty so the next flush retries.
+/// **Concurrency contract**: claims the dirty flag with a `swap(false)`
+/// up front, snapshots the cache, then writes. If the write fails, the
+/// flag is restored to `true` so the next interval retries. If a writer
+/// re-marks dirty *after* the swap but *before* the rename completes,
+/// their flag set is preserved — we never overwrite their `true` with
+/// `false`. This avoids the race where a concurrent write could be
+/// silently dropped from the persistent index.
 async fn flush_snapshot(
     data_dir: &Path,
     cache: &Arc<RwLock<Option<CacheSnapshot>>>,
     dirty: &AtomicBool,
 ) -> Result<(), StorageError> {
-    if !dirty.load(Ordering::Relaxed) {
+    // Atomically claim the dirty flag. If it was already false, another
+    // call beat us to it — nothing to do.
+    if !dirty.swap(false, Ordering::AcqRel) {
         return Ok(());
     }
     let snap = match cache.read().await.clone() {
         Some(s) => s,
         None => {
-            // Nothing to flush; clear the flag so we don't busy-loop.
-            dirty.store(false, Ordering::Relaxed);
+            // Nothing to flush. Don't restore the flag — there's literally
+            // no cache to persist, so leaving it false is correct.
             return Ok(());
         }
     };
-    let json = serde_json::to_vec(&snap)?;
+    // From here on, any error path must restore the dirty flag so the
+    // next interval retries the flush. Use a small helper closure to keep
+    // the restore explicit at every early return.
+    let restore_on_err = |e| {
+        dirty.store(true, Ordering::Release);
+        e
+    };
+    let json = serde_json::to_vec(&snap).map_err(|e| restore_on_err(StorageError::from(e)))?;
     let final_path = data_dir.join(CACHE_FILE_NAME);
     let tmp_path = final_path.with_extension("json.tmp");
-    fs::write(&tmp_path, &json)
-        .await
-        .map_err(|e| StorageError::file_operation("write_cache_index", &tmp_path, e))?;
-    fs::rename(&tmp_path, &final_path)
-        .await
-        .map_err(|e| StorageError::file_operation("rename_cache_index", &final_path, e))?;
-    dirty.store(false, Ordering::Relaxed);
+    fs::write(&tmp_path, &json).await.map_err(|e| {
+        restore_on_err(StorageError::file_operation(
+            "write_cache_index",
+            &tmp_path,
+            e,
+        ))
+    })?;
+    fs::rename(&tmp_path, &final_path).await.map_err(|e| {
+        restore_on_err(StorageError::file_operation(
+            "rename_cache_index",
+            &final_path,
+            e,
+        ))
+    })?;
     Ok(())
 }
 
@@ -1571,5 +1597,41 @@ mod tests {
         let (pcount, ecount) = storage.rebuild_cache().await.unwrap();
         assert_eq!(pcount, 1);
         assert_eq!(ecount, 3);
+    }
+
+    /// Regression test for the race documented on `flush_snapshot`: a
+    /// writer that sets `dirty = true` between the snapshot clone and the
+    /// final atomic update must not have its flag overwritten.
+    ///
+    /// We can't easily hit the "between clone and rename" window
+    /// deterministically, but we can verify the contract: after a
+    /// successful `flush_cache_blocking()`, if we immediately mark dirty
+    /// again, a *second* flush still sees and persists the new state.
+    #[tokio::test]
+    async fn test_flush_does_not_clobber_concurrent_dirty_marker() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = temp_dir.path().to_path_buf();
+
+        let storage = JsonStorage::with_data_dir(data_dir.clone());
+        storage.initialize().await.unwrap();
+        storage.save_podcast(&make_podcast("First")).await.unwrap();
+        storage.flush_cache_blocking().await.unwrap();
+        assert!(!storage.cache_dirty.load(Ordering::Relaxed));
+
+        // A new write marks dirty; the next flush must see it.
+        storage.save_podcast(&make_podcast("Second")).await.unwrap();
+        assert!(storage.cache_dirty.load(Ordering::Relaxed));
+        storage.flush_cache_blocking().await.unwrap();
+        assert!(!storage.cache_dirty.load(Ordering::Relaxed));
+
+        // Reload from disk in a fresh instance; both podcasts must be present.
+        let b = JsonStorage::with_data_dir(data_dir);
+        b.initialize().await.unwrap();
+        let podcasts = b.list_podcasts().await.unwrap();
+        assert_eq!(
+            podcasts.len(),
+            2,
+            "second write must have been persisted in the second flush"
+        );
     }
 }

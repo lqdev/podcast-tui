@@ -287,7 +287,10 @@ is a read accelerator and is updated synchronously after every write.
 A 5 s background flush task gated on a dirty bit writes the index
 atomically (`.tmp` + `rename`); a final flush runs on graceful shutdown.
 On startup, a schema-version mismatch or a corrupt index file
-triggers a silent rebuild from disk. The `:cache-rebuild` minibuffer
+triggers an automatic rebuild from disk; the rebuild is logged to
+stderr with a `[cache]` prefix (e.g. `[cache] Index schema 1 != expected 2; rebuilding from disk`)
+so operators can recognise it as expected recovery rather than an
+unexplained warning. The `:cache-rebuild` minibuffer
 command is the user-facing escape hatch when the cache appears stale.
 Configurable via `storage.cache_enabled` (default `true`); disabling
 restores the pre-cache behaviour. See

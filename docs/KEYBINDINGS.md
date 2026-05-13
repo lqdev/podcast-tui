@@ -206,7 +206,7 @@ Press `:` (or `Shift+:`) to open the command prompt. Press `Tab` to autocomplete
 
 ### Storage Commands
 
-- `cache-rebuild` — Discard the in-memory storage cache and rebuild it from disk, then flush the rebuilt index to `cache_index.json`. Use this if the cache appears stale (e.g. after editing data files outside the app). The on-disk JSON files are always the source of truth, so this is a safe escape hatch.
+- `cache-rebuild` — Discard the in-memory storage cache and rebuild it from disk. If `storage.cache_enabled` is `true` (the default), the rebuilt index is then flushed atomically to `cache_index.json`; if caching is disabled, the snapshot is rebuilt in memory but no on-disk index is written. Use this if the cache appears stale (e.g. after editing data files outside the app). The on-disk JSON files are always the source of truth, so this is a safe escape hatch.
 
 ### Playlist Commands
 

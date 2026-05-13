@@ -10,8 +10,9 @@ This is necessary for devices that ignore ID3 tags and display the bare
 filename as the track title. The headline example is the **Innioasis Y1**,
 which shows the literal filename and offers no metadata fallback.
 
-> **Status:** runtime profile switching with `:set-device-profile` lands in
-> v1.12.0. Persisting that switch back to `config.json` is tracked in
+> **Status:** runtime profile switching with `:set-device-profile` is
+> on the `[Unreleased]` track and will land in the next release.
+> Persisting that switch back to `config.json` is tracked in
 > [#223](https://github.com/lqdev/podcast-tui/issues/223).
 
 ## Quick start: Innioasis Y1
@@ -27,8 +28,7 @@ Add this to `~/.config/podcast-tui/config.json` (Linux) or
       "match_path_contains": "INNIOASIS",
       "filename_template": "{podcast_short}/{track:03} - {title}.{ext}",
       "max_filename_length": 64,
-      "ascii_only": true,
-      "preserve_structure": false
+      "ascii_only": true
     }
   ],
   "active_device_profile": "Innioasis Y1"
@@ -48,9 +48,9 @@ Each entry in `device_profiles` is a `DeviceProfile`:
 | `name`                | string  | —       | Human-readable identifier. Referenced by `active_device_profile`.                                                                    |
 | `match_path_contains` | string? | `null`  | Substring matched against the sync target path. Currently informational; auto-selection is not yet wired to it.                      |
 | `filename_template`   | string  | —       | Template used to render the per-file device-side path. See [Token reference](#token-reference). Empty templates are rejected at sync time. |
-| `max_filename_length` | uint    | `128`   | Maximum **byte** length of the rendered filename (per path segment, excluding separators). The title segment is truncated to fit.    |
-| `ascii_only`          | bool    | `false` | If `true`, transliterate or strip non-ASCII characters from the rendered name.                                                       |
-| `preserve_structure`  | bool    | `true`  | If `true`, keep per-podcast subdirectories (matching the local layout). If `false`, flatten every file under the device's `Podcasts/` root. |
+| `max_filename_length` | uint    | `128`   | Maximum **byte** length applied to **each path segment** of the rendered filename after substitution (UTF-8-aware). Both the podcast-folder segment and the filename segment are capped independently.                |
+| `ascii_only`          | bool    | `false` | If `true`, strip non-ASCII characters from each segment after sanitization. If a segment becomes empty, it is replaced with the literal `Podcast` (folder segment) or `Episode` (filename segment) so files are never nameless. |
+| `preserve_structure`  | bool    | `true`  | _Schema only — not yet honored by sync._ When implemented, `false` will flatten every file under the device's `Podcasts/` root. Tracked in [#221](https://github.com/lqdev/podcast-tui/issues/221).                              |
 
 `active_device_profile` (top-level) selects which profile to apply. Set to
 `null` (or omit) to use the default behaviour: copy files verbatim with
@@ -93,8 +93,7 @@ subdirectories.
   "name": "Innioasis Y1",
   "filename_template": "{podcast_short}/{track:03} - {title}.{ext}",
   "max_filename_length": 64,
-  "ascii_only": true,
-  "preserve_structure": false
+  "ascii_only": true
 }
 ```
 
@@ -112,22 +111,21 @@ limit.
   "name": "Flat",
   "filename_template": "{podcast} - {title}.{ext}",
   "max_filename_length": 128,
-  "ascii_only": false,
-  "preserve_structure": false
+  "ascii_only": false
 }
 ```
 
-Renders as: `My Tech Podcast - Episode about Rust.mp3`, all files in a
-single device folder. Useful for devices that don't handle nested
-directories well.
+Renders as: `My Tech Podcast - Episode about Rust.mp3`. The template
+contains no `/`, so all files land in a single device folder under
+`Podcasts/`. Useful for devices that don't handle nested directories
+well.
 
 ### 3. Date-organised by month
 
 ```json
 {
   "name": "ByMonth",
-  "filename_template": "{podcast}/{date:%Y-%m}/{title}.{ext}",
-  "preserve_structure": false
+  "filename_template": "{podcast}/{date:%Y-%m}/{title}.{ext}"
 }
 ```
 
@@ -178,19 +176,21 @@ episode UUID. You'll see filenames like
 `007 - Episode about Rust-a1b2c3.mp3` in the second one.
 
 **My non-ASCII titles look weird with `ascii_only: true`.**
-The transliterator is `unicode_folding`-style: accented Latin characters
-are folded to their base letter (`é` → `e`), and characters with no
-ASCII equivalent (CJK, emoji) are stripped. If the result is empty, the
-template will fall back to the episode UUID prefix so you never get a
-zero-length filename.
+After sanitization, any remaining non-ASCII characters are stripped.
+If the strip leaves a segment empty, the renderer substitutes the
+literal placeholder `Episode` (filename segment) or `Podcast` (folder
+segment) so you never get a nameless file. CJK, emoji, and characters
+with no ASCII representation are removed entirely; accented Latin
+characters are first folded by the upstream sanitizer (`é` → `e`).
 
 **Filenames get cut off mid-word.**
-`max_filename_length` truncates the title segment (not the podcast
-folder, not the extension) to keep the rendered name within the byte
-budget. If the cut is unacceptable, raise `max_filename_length` (your
-device's actual limit may be higher than 64) or pick a template with
-fewer leading tokens (`{title}.{ext}` rather than
-`{podcast_short}/{track:03} - {title}.{ext}`).
+`max_filename_length` is applied to **every** path segment after
+substitution (the podcast folder, the filename, and any other segments
+created by literal `/` in the template) — not just the title. If the
+cap consumes the entire stem, a single `_` placeholder is substituted
+to avoid emitting a dotfile like `.mp3`. If the cut is unacceptable,
+raise `max_filename_length` (your device's actual limit may be higher
+than 64) or pick a template with fewer/shorter leading tokens.
 
 **`set-device-profile` says "unknown profile".**
 The argument is matched exactly against the `name` field, including

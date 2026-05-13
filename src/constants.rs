@@ -30,6 +30,17 @@ pub mod filesystem {
     /// Maximum filename length (cross-platform safe)
     pub const MAX_FILENAME_LENGTH: usize = 255;
 
+    /// Safety cap on sanitized filename byte length, used by
+    /// [`crate::download::sanitize::sanitize_filename`].
+    ///
+    /// Distinct from [`MAX_FILENAME_LENGTH`] (the absolute filesystem max):
+    /// this lower cap leaves headroom for extensions (`.mp3`), disambiguators
+    /// (`-2`, `-3`), and platform path-length overhead. Most modern
+    /// filesystems allow 255 bytes per filename, but Windows enforces
+    /// MAX_PATH (260 chars) for full paths and some sync targets (FAT32 USB
+    /// drives, MP3 players) have stricter caps.
+    pub const MAX_FILENAME_BYTES: usize = 140;
+
     /// Maximum path length (varies by platform, this is a safe minimum)
     pub const MAX_PATH_LENGTH: usize = 4096;
 
@@ -312,6 +323,8 @@ mod tests {
         use super::filesystem;
 
         const { assert!(filesystem::MAX_FILENAME_LENGTH == 255) }; // Cross-platform standard
+        const { assert!(filesystem::MAX_FILENAME_BYTES > 0) };
+        const { assert!(filesystem::MAX_FILENAME_BYTES < filesystem::MAX_FILENAME_LENGTH) };
         const { assert!(filesystem::MAX_PATH_LENGTH >= 4096) };
 
         #[cfg(unix)]

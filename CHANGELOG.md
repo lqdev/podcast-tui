@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`DeviceProfile.preserve_structure: false` now produces a flat device layout** — Previously the field was silently ignored and all files always landed under `Podcasts/`. With this fix, setting `preserve_structure: false` on a device profile flattens podcast files to the device root (any `/` separators inside the rendered template output are replaced with `_`) — perfect for devices that don't browse subdirectories well, like the Innioasis Y1. **Orphan deletion of podcast files is automatically skipped in flat mode** because podcast files share the device root with arbitrary user files (photos, music, etc.) that the app cannot safely tell apart from old episodes; a warning is surfaced in the sync report and the minibuffer status line. Playlist files keep their structure either way. `SyncReport` and `SyncHistorySummary` gain a `warnings: Vec<String>` field. Closes #221.
 - **Reproducible Nix builds**: `flake.lock` is now committed, pinning `nixpkgs`/`crane`/`flake-utils` to specific revisions. `nix run github:lqdev/podcast-tui`, `nix build`, and `nix flake check` (clippy + fmt) work end-to-end on Linux. The flake source filter also keeps `*.opml` test fixtures so integration tests pass inside the pure Nix sandbox, and several pre-existing clippy warnings were cleaned up so `nix flake check` (which runs clippy with `-D warnings`) stays green. Closes [#195](https://github.com/lqdev/podcast-tui/issues/195).
 
 ---

@@ -76,6 +76,17 @@ fn make_profile(template: &str, ascii_only: bool, max: usize) -> DeviceProfile {
     }
 }
 
+fn make_flat_profile(template: &str, ascii_only: bool, max: usize) -> DeviceProfile {
+    DeviceProfile {
+        name: "flat-test-profile".to_string(),
+        match_path_contains: None,
+        filename_template: template.to_string(),
+        max_filename_length: max,
+        ascii_only,
+        preserve_structure: false,
+    }
+}
+
 #[tokio::test]
 async fn test_sync_with_profile_rewrites_filenames() {
     let temp = TempDir::new().unwrap();
@@ -343,5 +354,308 @@ async fn test_sync_with_profile_malformed_template_returns_error() {
     assert!(
         err_msg.contains("template") || err_msg.contains("Template"),
         "error message should mention template, got: {err_msg}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Flat-layout (preserve_structure: false) tests — issue #221
+// ---------------------------------------------------------------------------
+
+/// When `preserve_structure: false` is set on the active profile, podcast
+/// files must land at the device root (no `Podcasts/` subdir) and any `/`
+/// in the rendered template output must be flattened to `_`.
+#[tokio::test]
+async fn test_sync_flat_layout_writes_to_device_root() {
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().join("data");
+    let downloads_dir = temp.path().join("downloads");
+    let device_dir = temp.path().join("device");
+    fs::create_dir_all(&data_dir).await.unwrap();
+    fs::create_dir_all(&downloads_dir).await.unwrap();
+    fs::create_dir_all(&device_dir).await.unwrap();
+
+    let storage = Arc::new(JsonStorage::with_data_dir(data_dir.clone()));
+    storage.initialize().await.unwrap();
+
+    let _ = make_podcast_with_episodes(&storage, &downloads_dir, "Flat Pod", &["First", "Second"])
+        .await;
+
+    let manager = DownloadManager::new(
+        storage.clone(),
+        downloads_dir.clone(),
+        DownloadConfig::default(),
+    )
+    .unwrap();
+
+    // Template includes a `/` separator — must be flattened to `_` in flat mode.
+    let profile = make_flat_profile("{podcast_short}/{track:03} - {title}.{ext}", true, 64);
+
+    let report = manager
+        .sync_to_device(
+            device_dir.clone(),
+            None,
+            false,
+            false,
+            false,
+            None,
+            Some(profile),
+        )
+        .await
+        .expect("sync should succeed");
+
+    assert_eq!(report.errors.len(), 0, "no errors expected");
+    assert_eq!(report.files_copied.len(), 2, "expected 2 files copied");
+
+    // No Podcasts/ subdir should be created.
+    assert!(
+        !device_dir.join("Podcasts").exists(),
+        "Podcasts/ should NOT exist in flat mode"
+    );
+
+    // Walk the device root non-recursively and assert files land there.
+    let mut found = Vec::new();
+    let mut entries = fs::read_dir(&device_dir).await.unwrap();
+    while let Some(entry) = entries.next_entry().await.unwrap() {
+        let p = entry.path();
+        if p.is_file() {
+            found.push(p.file_name().unwrap().to_string_lossy().to_string());
+        }
+    }
+    assert_eq!(
+        found.len(),
+        2,
+        "expected 2 files at device root, got {:?}",
+        found
+    );
+
+    // Each filename must be flat (no path separators) and contain the
+    // flattened separator (`_`) where the template had `/`.
+    for name in &found {
+        assert!(name.ends_with(".mp3"), "unexpected file name: {}", name);
+        assert!(
+            !name.contains('/') && !name.contains('\\'),
+            "filename should be flat, got: {}",
+            name
+        );
+        assert!(
+            name.contains('_'),
+            "expected flattened separator in name: {}",
+            name
+        );
+    }
+}
+
+/// In flat mode, `delete_orphans: true` must skip podcast orphan deletion
+/// entirely (because podcast files share the device root with arbitrary
+/// user files) and surface a warning in the report.
+#[tokio::test]
+async fn test_sync_flat_layout_skips_orphan_deletion_with_warning() {
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().join("data");
+    let downloads_dir = temp.path().join("downloads");
+    let device_dir = temp.path().join("device");
+    fs::create_dir_all(&data_dir).await.unwrap();
+    fs::create_dir_all(&downloads_dir).await.unwrap();
+    fs::create_dir_all(&device_dir).await.unwrap();
+
+    let storage = Arc::new(JsonStorage::with_data_dir(data_dir.clone()));
+    storage.initialize().await.unwrap();
+
+    let _ = make_podcast_with_episodes(&storage, &downloads_dir, "Pod", &["alpha"]).await;
+
+    // Pre-existing user file at the device root that the sync MUST NOT touch.
+    let user_file = device_dir.join("vacation_photo.jpg");
+    fs::write(&user_file, b"my photo bytes").await.unwrap();
+
+    // Pre-existing "stale" audio file at the root that COULD plausibly be a
+    // previous flat-mode sync output, but the app cannot tell — must also
+    // be left alone in this conservative-first-cut implementation.
+    let stale_audio = device_dir.join("Old Pod_Old Episode.mp3");
+    fs::write(&stale_audio, b"stale audio").await.unwrap();
+
+    let manager = DownloadManager::new(
+        storage.clone(),
+        downloads_dir.clone(),
+        DownloadConfig::default(),
+    )
+    .unwrap();
+    let profile = make_flat_profile("{podcast_short}_{title}.{ext}", false, 128);
+
+    let report = manager
+        .sync_to_device(
+            device_dir.clone(),
+            None,
+            true, // delete_orphans on
+            false,
+            false,
+            None,
+            Some(profile),
+        )
+        .await
+        .expect("sync should succeed");
+
+    assert_eq!(report.errors.len(), 0, "no errors expected");
+    assert_eq!(
+        report.files_deleted.len(),
+        0,
+        "no orphan deletion should occur in flat mode, got: {:?}",
+        report.files_deleted
+    );
+    assert!(
+        !report.warnings.is_empty(),
+        "expected a flat-mode warning to be surfaced"
+    );
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.to_lowercase().contains("orphan") && w.to_lowercase().contains("flat")),
+        "warning text should explain the skipped orphan deletion: {:?}",
+        report.warnings
+    );
+
+    // Both pre-existing files must still be on disk.
+    assert!(
+        user_file.exists(),
+        "user's unrelated file at device root must not be deleted"
+    );
+    assert!(
+        stale_audio.exists(),
+        "stale audio at device root must not be deleted in flat mode"
+    );
+}
+
+/// In flat mode, syncing a second time must detect already-present files
+/// (by name + size) at the device root and mark them as skipped — not
+/// re-copy them every run.
+#[tokio::test]
+async fn test_sync_flat_layout_skips_already_synced_files() {
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().join("data");
+    let downloads_dir = temp.path().join("downloads");
+    let device_dir = temp.path().join("device");
+    fs::create_dir_all(&data_dir).await.unwrap();
+    fs::create_dir_all(&downloads_dir).await.unwrap();
+    fs::create_dir_all(&device_dir).await.unwrap();
+
+    let storage = Arc::new(JsonStorage::with_data_dir(data_dir.clone()));
+    storage.initialize().await.unwrap();
+
+    let _ = make_podcast_with_episodes(&storage, &downloads_dir, "Pod", &["one", "two"]).await;
+
+    let manager = DownloadManager::new(
+        storage.clone(),
+        downloads_dir.clone(),
+        DownloadConfig::default(),
+    )
+    .unwrap();
+    let profile = make_flat_profile("{podcast_short}_{title}.{ext}", false, 128);
+
+    // First sync — everything new.
+    let r1 = manager
+        .sync_to_device(
+            device_dir.clone(),
+            None,
+            false,
+            false,
+            false,
+            None,
+            Some(profile.clone()),
+        )
+        .await
+        .expect("first sync");
+    assert_eq!(r1.files_copied.len(), 2);
+    assert_eq!(r1.files_skipped.len(), 0);
+
+    // Second sync with the same inputs — all files should be skipped.
+    let r2 = manager
+        .sync_to_device(
+            device_dir.clone(),
+            None,
+            false,
+            false,
+            false,
+            None,
+            Some(profile),
+        )
+        .await
+        .expect("second sync");
+    assert_eq!(
+        r2.files_copied.len(),
+        0,
+        "no files should re-copy on second sync, got: {:?}",
+        r2.files_copied
+    );
+    assert_eq!(
+        r2.files_skipped.len(),
+        2,
+        "both files should be skipped, got: {:?}",
+        r2.files_skipped
+    );
+}
+
+/// In flat mode, playlist files (under `Playlists/`) must KEEP their
+/// directory structure and orphan deletion must still reconcile them.
+/// Flat layout only flattens the podcast tree.
+#[tokio::test]
+async fn test_sync_flat_layout_preserves_playlists_structure() {
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().join("data");
+    let downloads_dir = temp.path().join("downloads");
+    let playlists_dir = temp.path().join("playlists_data");
+    let device_dir = temp.path().join("device");
+    fs::create_dir_all(&data_dir).await.unwrap();
+    fs::create_dir_all(&downloads_dir).await.unwrap();
+    fs::create_dir_all(&device_dir).await.unwrap();
+
+    // Build a minimal playlist on disk: playlists_data/<name>/audio/<file>
+    let playlist_audio = playlists_dir.join("My List").join("audio");
+    fs::create_dir_all(&playlist_audio).await.unwrap();
+    fs::write(playlist_audio.join("001-track.mp3"), b"playlist audio")
+        .await
+        .unwrap();
+
+    let storage = Arc::new(JsonStorage::with_data_dir(data_dir.clone()));
+    storage.initialize().await.unwrap();
+
+    let manager = DownloadManager::new(
+        storage.clone(),
+        downloads_dir.clone(),
+        DownloadConfig::default(),
+    )
+    .unwrap();
+    let profile = make_flat_profile("{podcast_short}_{title}.{ext}", false, 128);
+
+    let report = manager
+        .sync_to_device(
+            device_dir.clone(),
+            Some(playlists_dir.clone()),
+            true,
+            false,
+            false,
+            None,
+            Some(profile),
+        )
+        .await
+        .expect("sync should succeed");
+
+    assert_eq!(report.errors.len(), 0);
+
+    // Playlist file must land under Playlists/My List/... (sync strips the
+    // intermediate `audio/` directory; see `scan_playlists_for_sync`).
+    let playlist_target = device_dir
+        .join("Playlists")
+        .join("My List")
+        .join("001-track.mp3");
+    assert!(
+        playlist_target.exists(),
+        "playlist file should preserve structure under Playlists/, expected: {}",
+        playlist_target.display()
+    );
+
+    // Flat-mode warning must still be surfaced because delete_orphans was on.
+    assert!(
+        !report.warnings.is_empty(),
+        "flat-mode warning should be surfaced even when only playlists are present"
     );
 }

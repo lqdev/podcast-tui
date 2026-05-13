@@ -379,8 +379,17 @@ pub struct DeviceProfile {
     #[serde(default)]
     pub ascii_only: bool,
     /// If true (default), preserve the per-podcast subdirectory structure
-    /// when writing to the device. If false, all files are flattened into
-    /// the device root.
+    /// when writing to the device — files land under `Podcasts/<podcast>/...`
+    /// and orphan deletion safely reconciles the entire `Podcasts/` tree.
+    ///
+    /// If false, all podcast files are flattened into the device root (any
+    /// `/` separators inside the rendered template output are replaced with
+    /// `_`). **Orphan deletion of podcast files is automatically skipped in
+    /// this mode** because podcast files share the device root with
+    /// arbitrary user files (photos, music, etc.) that the app cannot
+    /// safely distinguish from old episodes; a warning is surfaced in the
+    /// sync report when this happens. Playlist files keep their structure
+    /// either way.
     #[serde(default = "default_true")]
     pub preserve_structure: bool,
 }

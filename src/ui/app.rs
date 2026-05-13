@@ -2195,6 +2195,11 @@ impl UIApp {
                             report.errors.len()
                         )
                     };
+                    let summary = if report.warnings.is_empty() {
+                        summary
+                    } else {
+                        format!("{} — {} warning(s)", summary, report.warnings.len())
+                    };
                     self.show_message(summary);
                 } else {
                     // Real sync completed — update history, return to overview
@@ -2218,6 +2223,11 @@ impl UIApp {
                             report.files_deleted.len(),
                             report.files_skipped.len()
                         )
+                    };
+                    let summary = if report.warnings.is_empty() {
+                        summary
+                    } else {
+                        format!("{} ({} warning(s))", summary, report.warnings.len())
                     };
                     self.load_playlists_into_buffer().await;
                     self.show_message(summary);

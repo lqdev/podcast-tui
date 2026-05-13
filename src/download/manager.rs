@@ -68,6 +68,11 @@ pub struct SyncReport {
     pub files_deleted: Vec<PathBuf>,
     pub files_skipped: Vec<PathBuf>,
     pub errors: Vec<(PathBuf, String)>,
+    /// Non-fatal advisories surfaced during sync (e.g. "orphan deletion was
+    /// skipped because the active device profile uses a flat layout").
+    /// Distinct from `errors`: warnings do **not** flip
+    /// [`SyncReport::is_success`] to false.
+    pub warnings: Vec<String>,
     /// File sizes (bytes) for files to be copied — populated during both real and dry-run syncs.
     pub file_sizes: std::collections::HashMap<PathBuf, u64>,
 }
@@ -80,6 +85,7 @@ impl SyncReport {
             files_deleted: Vec::new(),
             files_skipped: Vec::new(),
             errors: Vec::new(),
+            warnings: Vec::new(),
             file_sizes: std::collections::HashMap::new(),
         }
     }
@@ -114,6 +120,11 @@ pub struct SyncHistorySummary {
     pub error_count: usize,
     /// Error messages only (paths stripped)
     pub errors: Vec<String>,
+    /// Non-fatal advisories surfaced during sync. Persisted alongside
+    /// errors so the user can audit decisions like skipped orphan deletion
+    /// from the sync history.
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 impl From<&SyncReport> for SyncHistorySummary {
@@ -124,6 +135,7 @@ impl From<&SyncReport> for SyncHistorySummary {
             files_skipped_count: report.files_skipped.len(),
             error_count: report.errors.len(),
             errors: report.errors.iter().map(|(_, e)| e.clone()).collect(),
+            warnings: report.warnings.clone(),
         }
     }
 }
@@ -1084,18 +1096,61 @@ impl<S: Storage> DownloadManager<S> {
                 .await?;
         }
 
+        // Resolve the active layout mode. `flat_podcasts == true` means the
+        // active profile asked for a flat device root (no `Podcasts/`
+        // subdir). This affects both the device-side scan below and orphan
+        // deletion in Step 4.
+        let flat_podcasts = device_profile
+            .as_ref()
+            .map(|p| !p.preserve_structure)
+            .unwrap_or(false);
+
         // Step 2: Build a map of managed files already on the device.
         // We intentionally scope this to managed sync roots so regular sync doesn't
         // touch unrelated user media elsewhere on the device.
         let mut device_files: std::collections::HashMap<PathBuf, (PathBuf, u64)> =
             std::collections::HashMap::new();
 
-        self.scan_directory_with_prefix(
-            &device_path.join("Podcasts"),
-            Path::new("Podcasts"),
-            &mut device_files,
-        )
-        .await?;
+        if flat_podcasts {
+            // In flat mode podcast files live at the device root, mixed in
+            // with arbitrary user files. We can't safely recurse the whole
+            // device, so we only consider top-level files whose names match
+            // a key we're about to write. This gives us a correct
+            // "already-synced, skip" check without any blanket scanning of
+            // the user's other media.
+            let pc_filenames: std::collections::HashSet<PathBuf> = pc_files
+                .keys()
+                .filter(|k| k.parent().map(|p| p.as_os_str().is_empty()).unwrap_or(true))
+                .cloned()
+                .collect();
+            if !pc_filenames.is_empty() {
+                let mut entries = fs::read_dir(&device_path).await?;
+                while let Some(entry) = entries.next_entry().await? {
+                    let path = entry.path();
+                    let metadata = match entry.metadata().await {
+                        Ok(m) => m,
+                        Err(_) => continue,
+                    };
+                    if !metadata.is_file() {
+                        continue;
+                    }
+                    let name = match path.file_name() {
+                        Some(n) => PathBuf::from(n),
+                        None => continue,
+                    };
+                    if pc_filenames.contains(&name) {
+                        device_files.insert(name, (path, metadata.len()));
+                    }
+                }
+            }
+        } else {
+            self.scan_directory_with_prefix(
+                &device_path.join("Podcasts"),
+                Path::new("Podcasts"),
+                &mut device_files,
+            )
+            .await?;
+        }
 
         if playlists_dir.is_some() {
             self.scan_directory_with_prefix(
@@ -1232,7 +1287,32 @@ impl<S: Storage> DownloadManager<S> {
 
         // Step 4: Delete orphan files on device (files not present on PC)
         if delete_orphans && !hard_sync {
+            // In flat-podcasts mode podcast files share the device root
+            // with arbitrary user files (photos, other music, etc.). We
+            // have no safe way to tell "an old episode this app wrote" from
+            // "the user's vacation photo", so we skip orphan deletion
+            // entirely and surface a warning. A manifest-based approach is
+            // tracked for a follow-up — see issue #221.
+            if flat_podcasts {
+                report.warnings.push(
+                    "Orphan deletion skipped: active device profile uses a flat layout \
+                     (preserve_structure: false). Old podcast files at the device root \
+                     are not removed automatically — delete them manually or run a hard \
+                     sync. Playlist orphans are still cleaned up."
+                        .to_string(),
+                );
+            }
+
             for (relative_path, (device_file_path, _)) in &device_files {
+                if flat_podcasts {
+                    // Skip podcast (root-level) entries entirely; only
+                    // playlist entries (which keep their structure) are
+                    // safe to reconcile.
+                    let is_playlist = relative_path.starts_with("Playlists");
+                    if !is_playlist {
+                        continue;
+                    }
+                }
                 if !pc_files.contains_key(relative_path) {
                     // File exists on device but not on PC, delete it
                     if !dry_run {
@@ -1264,9 +1344,15 @@ impl<S: Storage> DownloadManager<S> {
 
             // Clean up empty directories in managed roots (only if not dry run)
             if !dry_run {
-                let podcasts_root = device_path.join("Podcasts");
-                if podcasts_root.exists() {
-                    let _ = self.cleanup_empty_directories_in(&podcasts_root).await;
+                // Only sweep Podcasts/ when the active profile actually
+                // wrote there; in flat mode there's nothing to clean and
+                // any pre-existing Podcasts/ tree was left intentionally
+                // untouched.
+                if !flat_podcasts {
+                    let podcasts_root = device_path.join("Podcasts");
+                    if podcasts_root.exists() {
+                        let _ = self.cleanup_empty_directories_in(&podcasts_root).await;
+                    }
                 }
 
                 if playlists_dir.is_some() {
@@ -1292,8 +1378,17 @@ impl<S: Storage> DownloadManager<S> {
     /// files using the active [`DeviceProfile`]'s filename template.
     ///
     /// Only entries under `Podcasts/` are remapped; `Playlists/` entries are
-    /// left untouched. The `Podcasts/` managed-root prefix is preserved on
-    /// the rewritten path so orphan-deletion scoping continues to work.
+    /// left untouched.
+    ///
+    /// When [`DeviceProfile::preserve_structure`] is `true` (default), the
+    /// `Podcasts/` managed-root prefix is preserved on the rewritten path so
+    /// orphan-deletion scoping continues to work.
+    ///
+    /// When `preserve_structure` is `false`, the `Podcasts/` prefix is
+    /// dropped (files land at the device root) and any path separators
+    /// inside the rendered template output are flattened to `_` so the key
+    /// is a single filename. Callers should additionally skip orphan
+    /// deletion in this mode — see `sync_to_device`.
     ///
     /// Episodes whose source path cannot be matched to a known podcast in
     /// storage (e.g. orphaned files left over from a previous app version)
@@ -1382,9 +1477,37 @@ impl<S: Storage> DownloadManager<S> {
         let mut remapped: std::collections::HashMap<PathBuf, (PathBuf, u64)> =
             std::collections::HashMap::with_capacity(pc_files.len());
 
+        // Helper: build the device-side key for a rendered template output,
+        // honoring the profile's `preserve_structure` flag.
+        let build_key = |rendered: PathBuf| -> PathBuf {
+            if profile.preserve_structure {
+                Path::new("Podcasts").join(rendered)
+            } else {
+                // Flatten any `/` or `\` separators inside the rendered
+                // template output so the entry is a single filename at the
+                // device root.
+                let flat = rendered.to_string_lossy().replace(['/', '\\'], "_");
+                PathBuf::from(flat)
+            }
+        };
+
+        // Fallback when an episode's source can't be found in storage:
+        // keep the file's original layout under whichever prefix the
+        // current mode dictates.
+        let fallback_key = |after_root: PathBuf| -> PathBuf {
+            if profile.preserve_structure {
+                Path::new("Podcasts").join(after_root)
+            } else {
+                let flat = after_root.to_string_lossy().replace(['/', '\\'], "_");
+                PathBuf::from(flat)
+            }
+        };
+
         for (relative_path, (source_path, size)) in pc_files {
             // Anything outside the Podcasts/ managed root (e.g. Playlists/)
-            // is forwarded verbatim.
+            // is forwarded verbatim — even in flat-podcasts mode, the
+            // playlist tree keeps its structure so on-device players that
+            // index Playlists/ still work.
             let after_root = match relative_path.strip_prefix("Podcasts") {
                 Ok(rest) => rest.to_path_buf(),
                 Err(_) => {
@@ -1416,7 +1539,7 @@ impl<S: Storage> DownloadManager<S> {
                         ext,
                         &opts,
                     ) {
-                        Ok(rendered) => Path::new("Podcasts").join(rendered),
+                        Ok(rendered) => build_key(rendered),
                         Err(e) => {
                             // We pre-validated the template above, so a
                             // failure here is per-episode (e.g. a token
@@ -1428,11 +1551,11 @@ impl<S: Storage> DownloadManager<S> {
                                 source_path.clone(),
                                 format!("Template render failed for episode: {}", e),
                             ));
-                            Path::new("Podcasts").join(after_root)
+                            fallback_key(after_root)
                         }
                     }
                 }
-                None => Path::new("Podcasts").join(after_root),
+                None => fallback_key(after_root),
             };
 
             // Resolve collisions. Loop until we find a free key so two

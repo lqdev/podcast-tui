@@ -20,13 +20,19 @@ pub struct App {
 
 impl App {
     /// Create a new application instance
-    pub async fn new(config: Config) -> Result<Self> {
-        Self::new_with_progress(config, tokio::sync::mpsc::unbounded_channel().0).await
+    pub async fn new(config: Config, config_path: Option<std::path::PathBuf>) -> Result<Self> {
+        Self::new_with_progress(
+            config,
+            config_path,
+            tokio::sync::mpsc::unbounded_channel().0,
+        )
+        .await
     }
 
     /// Create a new application instance with progress reporting
     pub async fn new_with_progress(
         config: Config,
+        config_path: Option<std::path::PathBuf>,
         status_tx: tokio::sync::mpsc::UnboundedSender<crate::InitStatus>,
     ) -> Result<Self> {
         // Initialize storage
@@ -63,7 +69,7 @@ impl App {
 
         // Initialize UI with config and managers (with progress updates)
         status_tx.send(crate::InitStatus::CreatingBuffers).ok();
-        let ui = UIApp::new_with_progress(
+        let mut ui = UIApp::new_with_progress(
             config.clone(),
             subscription_manager.clone(),
             download_manager.clone(),
@@ -73,6 +79,12 @@ impl App {
         )
         .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize UI: {e}"))?;
+
+        // Wire the resolved config path so runtime mutations (e.g.
+        // `:set-device-profile`, `:theme`) can persist back to disk.
+        if let Some(path) = config_path {
+            ui.set_config_path(path);
+        }
 
         Ok(Self {
             config,

@@ -37,12 +37,22 @@ pub struct Config {
 }
 
 impl Config {
+    /// Resolve the config file path for a given CLI override.
+    ///
+    /// Returns the path that [`load_or_default`] would read from /
+    /// write to. Exposed so callers (e.g. `main.rs`) can hold onto the
+    /// path for later runtime persistence without re-implementing the
+    /// resolution logic.
+    pub fn resolve_config_path(custom_path: Option<&String>) -> Result<PathBuf> {
+        match custom_path {
+            Some(path) => Ok(PathBuf::from(path)),
+            None => Self::default_config_path(),
+        }
+    }
+
     /// Load configuration from file or create default
     pub fn load_or_default(custom_path: Option<&String>) -> Result<Self> {
-        let config_path = match custom_path {
-            Some(path) => PathBuf::from(path),
-            None => Self::default_config_path()?,
-        };
+        let config_path = Self::resolve_config_path(custom_path)?;
 
         if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)?;

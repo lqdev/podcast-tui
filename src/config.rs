@@ -19,6 +19,21 @@ pub struct Config {
     pub discovery: DiscoveryConfig,
     #[serde(default)]
     pub scrobbling: ScrobblingConfig,
+    /// Named device profiles for sync filename customization.
+    ///
+    /// Empty by default — when no profiles are configured, sync uses the
+    /// existing local filename. The filename template engine and its full
+    /// token reference land in #208; user-facing documentation lands in
+    /// #211. Until then, `filename_template` strings configured here are
+    /// inert (recognized by the schema but not yet applied at sync time).
+    #[serde(default)]
+    pub device_profiles: Vec<DeviceProfile>,
+    /// Name of the currently active device profile, if any.
+    ///
+    /// Must match a `DeviceProfile::name` in `device_profiles`. Use
+    /// [`Config::active_device_profile`] to resolve to the profile struct.
+    #[serde(default)]
+    pub active_device_profile: Option<String>,
 }
 
 impl Config {
@@ -58,6 +73,16 @@ impl Config {
             .ok_or_else(|| anyhow::anyhow!("Unable to determine config directory"))?;
 
         Ok(project_dirs.config_dir().join("config.json"))
+    }
+
+    /// Resolve [`Config::active_device_profile`] (a name) to the matching
+    /// [`DeviceProfile`] in [`Config::device_profiles`], if any.
+    ///
+    /// Returns `None` when no profile is selected, or when the selected name
+    /// does not match any configured profile.
+    pub fn active_device_profile(&self) -> Option<&DeviceProfile> {
+        let name = self.active_device_profile.as_ref()?;
+        self.device_profiles.iter().find(|p| &p.name == name)
     }
 }
 
@@ -291,6 +316,71 @@ impl Default for ScrobblingConfig {
             retry_queue_ttl_days: scrobbling::RETRY_QUEUE_TTL_DAYS,
         }
     }
+}
+
+/// Device-specific filename profile for sync.
+///
+/// Defines how files are named when copied to a target device (e.g., a budget
+/// MP3 player like the Innioasis Y1 that ignores ID3 metadata and displays
+/// raw filenames). Profiles are pure config — they do not affect how files are
+/// stored locally, only how they are written during `sync_to_device`.
+///
+/// The `filename_template` field is a string with substitution tokens. The
+/// template engine (and full token reference) lands in #208; this issue only
+/// defines the schema. Until then, profiles configured here are inert.
+///
+/// # Example
+///
+/// ```json
+/// {
+///   "name": "Innioasis Y1",
+///   "match_path_contains": "INNIOASIS",
+///   "filename_template": "{podcast} - {episode_number:03} - {title}.{ext}",
+///   "max_filename_length": 64,
+///   "ascii_only": true,
+///   "preserve_structure": false
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeviceProfile {
+    /// Human-readable identifier for the profile. Referenced by
+    /// [`Config::active_device_profile`].
+    pub name: String,
+    /// Optional substring to match against the sync target path for future
+    /// auto-selection. Currently informational only — sync still uses
+    /// `active_device_profile` to choose a profile.
+    #[serde(default)]
+    pub match_path_contains: Option<String>,
+    /// Filename template containing literal text and substitution tokens.
+    ///
+    /// Validation is intentionally deferred to the template engine (#208) so
+    /// the schema stays permissive: an empty or malformed template
+    /// deserializes successfully but will surface a user-friendly error at
+    /// sync time. This keeps `config.json` editable without requiring the
+    /// user to know every token up front.
+    pub filename_template: String,
+    /// Maximum length (in bytes) of the rendered filename, excluding any path
+    /// separators. The template engine truncates the title segment if the
+    /// rendered name exceeds this limit.
+    #[serde(default = "default_device_max_filename_length")]
+    pub max_filename_length: usize,
+    /// If true, transliterate or strip non-ASCII characters in the rendered
+    /// filename. Useful for devices that cannot render Unicode.
+    #[serde(default)]
+    pub ascii_only: bool,
+    /// If true (default), preserve the per-podcast subdirectory structure
+    /// when writing to the device. If false, all files are flattened into
+    /// the device root.
+    #[serde(default = "default_true")]
+    pub preserve_structure: bool,
+}
+
+fn default_device_max_filename_length() -> usize {
+    128
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Global keybindings — apply in all buffers unless overridden by a context section.
@@ -1101,5 +1191,150 @@ mod tests {
         assert_eq!(ep.mark_played, vec!["M"]);
         // Unspecified fields within the section are empty (= use global default)
         assert!(ep.download_episode.is_empty());
+    }
+
+    #[test]
+    fn test_device_profile_defaults_for_empty_config() {
+        // Arrange / Act
+        let config = Config::default();
+
+        // Assert — fresh config has no profiles configured and none active
+        assert!(config.device_profiles.is_empty());
+        assert!(config.active_device_profile.is_none());
+        assert!(config.active_device_profile().is_none());
+    }
+
+    #[test]
+    fn test_device_profile_roundtrip_serialization() {
+        // Arrange — config with two device profiles
+        let config = Config {
+            device_profiles: vec![
+                DeviceProfile {
+                    name: "Innioasis Y1".to_string(),
+                    match_path_contains: Some("INNIOASIS".to_string()),
+                    filename_template: "{podcast} - {episode_number:03} - {title}.{ext}"
+                        .to_string(),
+                    max_filename_length: 64,
+                    ascii_only: true,
+                    preserve_structure: false,
+                },
+                DeviceProfile {
+                    name: "Generic USB".to_string(),
+                    match_path_contains: None,
+                    filename_template: "{title}.{ext}".to_string(),
+                    max_filename_length: 128,
+                    ascii_only: false,
+                    preserve_structure: true,
+                },
+            ],
+            active_device_profile: Some("Innioasis Y1".to_string()),
+            ..Config::default()
+        };
+
+        // Act
+        let json = serde_json::to_string_pretty(&config).expect("serialize");
+        let restored: Config = serde_json::from_str(&json).expect("deserialize");
+
+        // Assert
+        assert_eq!(restored.device_profiles.len(), 2);
+        assert_eq!(restored.device_profiles, config.device_profiles);
+        assert_eq!(
+            restored.active_device_profile.as_deref(),
+            Some("Innioasis Y1")
+        );
+    }
+
+    #[test]
+    fn test_device_profile_backward_compat_no_field() {
+        // Arrange — serialize a Config without device_profiles by stripping
+        // those fields from the JSON. This simulates a config.json written by
+        // an earlier version of podcast-tui that predates #207.
+        let original = Config::default();
+        let mut value = serde_json::to_value(&original).expect("to_value");
+        let map = value
+            .as_object_mut()
+            .expect("config should serialize as object");
+        map.remove("device_profiles");
+        map.remove("active_device_profile");
+        let json = serde_json::to_string(&value).expect("to_string");
+
+        // Act
+        let restored: Config = serde_json::from_str(&json).expect("deserialize legacy config");
+
+        // Assert — defaults applied without error
+        assert!(restored.device_profiles.is_empty());
+        assert!(restored.active_device_profile.is_none());
+    }
+
+    #[test]
+    fn test_device_profile_partial_fields_use_defaults() {
+        // Arrange — profile JSON omits max_filename_length, ascii_only, preserve_structure
+        let json = r#"{
+            "name": "Minimal",
+            "filename_template": "{title}.{ext}"
+        }"#;
+
+        // Act
+        let profile: DeviceProfile =
+            serde_json::from_str(json).expect("deserialize partial profile");
+
+        // Assert — schema defaults apply
+        assert_eq!(profile.name, "Minimal");
+        assert_eq!(profile.filename_template, "{title}.{ext}");
+        assert_eq!(profile.max_filename_length, 128);
+        assert!(!profile.ascii_only);
+        assert!(profile.preserve_structure); // default_true
+        assert!(profile.match_path_contains.is_none());
+    }
+
+    #[test]
+    fn test_active_device_profile_resolves_by_name() {
+        // Arrange
+        let mut config = Config {
+            device_profiles: vec![
+                DeviceProfile {
+                    name: "A".to_string(),
+                    match_path_contains: None,
+                    filename_template: "a.{ext}".to_string(),
+                    max_filename_length: 128,
+                    ascii_only: false,
+                    preserve_structure: true,
+                },
+                DeviceProfile {
+                    name: "B".to_string(),
+                    match_path_contains: None,
+                    filename_template: "b.{ext}".to_string(),
+                    max_filename_length: 128,
+                    ascii_only: false,
+                    preserve_structure: true,
+                },
+            ],
+            ..Config::default()
+        };
+
+        // Act / Assert — selecting an existing profile resolves
+        config.active_device_profile = Some("B".to_string());
+        let active = config.active_device_profile().expect("B should resolve");
+        assert_eq!(active.name, "B");
+        assert_eq!(active.filename_template, "b.{ext}");
+
+        // Act / Assert — selecting an unknown profile returns None
+        config.active_device_profile = Some("does-not-exist".to_string());
+        assert!(config.active_device_profile().is_none());
+
+        // Act / Assert — None when no profile selected
+        config.active_device_profile = None;
+        assert!(config.active_device_profile().is_none());
+    }
+
+    #[test]
+    fn test_device_profile_empty_strings_deserialize_successfully() {
+        // The schema is intentionally permissive: validation lives in the
+        // template engine (#208), so empty name / empty template still
+        // deserialize. They will surface a user-friendly error at sync time.
+        let json = r#"{"name": "", "filename_template": ""}"#;
+        let profile: DeviceProfile = serde_json::from_str(json).expect("deserialize empty fields");
+        assert_eq!(profile.name, "");
+        assert_eq!(profile.filename_template, "");
     }
 }

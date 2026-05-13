@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **In-memory storage cache** — `JsonStorage` now keeps a lazy in-memory snapshot of all podcasts, episodes, and playlists, eliminating repeated disk scans on hot paths like What's New refresh. First read seeds the cache from disk; subsequent reads are served from memory; writes update disk first then the cache. Configurable via `storage.cache_enabled` in `~/.config/podcast-tui/config.json` (default `true`). Closes #204.
 - **Configurable startup buffer** — Choose which buffer opens on launch via `ui.startup_buffer` in `~/.config/podcast-tui/config.json`. Valid values: `"help"` (default, preserves existing behavior), `"podcast-list"`, `"downloads"`, `"sync"`, `"playlist-list"`, `"whats-new"`, `"now-playing"`. Unknown values fall back to `"help"` with a console warning. Closes #203.
 
 **Nix Packaging — Binary-Fetch Flake**

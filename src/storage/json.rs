@@ -1,13 +1,54 @@
 use async_trait::async_trait;
 use directories::ProjectDirs;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::fs;
+use tokio::sync::RwLock;
 
 use crate::playlist::{Playlist, PlaylistId};
 use crate::podcast::{Episode, Podcast};
 use crate::storage::{EpisodeId, PodcastId, Storage, StorageError};
 use crate::utils::text::strip_html;
 use crate::utils::validation::sanitize_playlist_name;
+
+/// Schema version for the in-memory cache snapshot. Bumped when the snapshot
+/// shape changes incompatibly. The persistent index file (added in a follow-up
+/// issue) will reject older versions and rebuild from disk.
+pub(crate) const CACHE_SCHEMA_VERSION: u32 = 1;
+
+/// In-memory snapshot of the storage data set.
+///
+/// The snapshot is the authoritative read source when caching is enabled;
+/// individual JSON files on disk remain the persistent source of truth and
+/// every mutation is written to disk *before* the snapshot is updated.
+///
+/// A `None` snapshot indicates the cache has not been initialised yet (lazy
+/// build on first access). The fields are visible to the rest of the
+/// `storage` module so a future persistent-index loader can construct
+/// snapshots directly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CacheSnapshot {
+    pub(crate) schema_version: u32,
+    pub(crate) last_updated: chrono::DateTime<chrono::Utc>,
+    pub(crate) podcasts: HashMap<PodcastId, Podcast>,
+    pub(crate) episodes: HashMap<PodcastId, Vec<Episode>>,
+    pub(crate) playlists: HashMap<PlaylistId, Playlist>,
+}
+
+impl CacheSnapshot {
+    pub(crate) fn empty() -> Self {
+        Self {
+            schema_version: CACHE_SCHEMA_VERSION,
+            last_updated: chrono::Utc::now(),
+            podcasts: HashMap::new(),
+            episodes: HashMap::new(),
+            playlists: HashMap::new(),
+        }
+    }
+}
 
 /// JSON-based file storage implementation
 ///
@@ -23,11 +64,26 @@ use crate::utils::validation::sanitize_playlist_name;
 ///     └── {podcast-id}/
 ///         └── {episode-id}.json
 /// ```
+///
+/// ## Caching
+///
+/// When `cache_enabled` is true (the default), an in-memory snapshot of the
+/// data is built lazily on first read and kept in sync with disk on every
+/// write. Subsequent reads in the same session return cached values without
+/// re-scanning the data directory. Disk remains the source of truth: writes
+/// land on disk first and the cache is updated only after a successful write.
+///
+/// The `cache_dirty` flag is set whenever the in-memory snapshot diverges
+/// from the on-disk persistent index. It is read by the background flush
+/// task added in the persistent-cache follow-up issue.
 pub struct JsonStorage {
     pub data_dir: PathBuf,
     podcasts_dir: PathBuf,
     episodes_dir: PathBuf,
     playlists_dir: PathBuf,
+    cache_enabled: bool,
+    cache: Arc<RwLock<Option<CacheSnapshot>>>,
+    cache_dirty: Arc<AtomicBool>,
 }
 
 impl JsonStorage {
@@ -45,20 +101,24 @@ impl JsonStorage {
         })?;
 
         let data_dir = project_dirs.data_dir().to_path_buf();
-        let podcasts_dir = data_dir.join("podcasts");
-        let episodes_dir = data_dir.join("episodes");
-        let playlists_dir = data_dir.join("Playlists");
-
-        Ok(Self {
-            data_dir,
-            podcasts_dir,
-            episodes_dir,
-            playlists_dir,
-        })
+        Ok(Self::build(data_dir, true))
     }
 
     /// Create a new JSON storage instance with custom data directory
     pub fn with_data_dir(data_dir: PathBuf) -> Self {
+        Self::build(data_dir, true)
+    }
+
+    /// Builder: enable or disable the in-memory cache.
+    ///
+    /// Defaults to enabled. Disabling makes every read hit disk, matching
+    /// the behaviour of versions prior to the cache.
+    pub fn with_cache(mut self, enabled: bool) -> Self {
+        self.cache_enabled = enabled;
+        self
+    }
+
+    fn build(data_dir: PathBuf, cache_enabled: bool) -> Self {
         let podcasts_dir = data_dir.join("podcasts");
         let episodes_dir = data_dir.join("episodes");
         let playlists_dir = data_dir.join("Playlists");
@@ -68,7 +128,21 @@ impl JsonStorage {
             podcasts_dir,
             episodes_dir,
             playlists_dir,
+            cache_enabled,
+            cache: Arc::new(RwLock::new(None)),
+            cache_dirty: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Whether the in-memory cache is enabled for this instance.
+    pub fn cache_enabled(&self) -> bool {
+        self.cache_enabled
+    }
+
+    /// True when the in-memory snapshot has changed since the last persistent
+    /// flush. Used by the persistent-index follow-up issue.
+    pub fn cache_is_dirty(&self) -> bool {
+        self.cache_dirty.load(Ordering::Relaxed)
     }
 
     /// Get the file path for a podcast
@@ -160,6 +234,208 @@ impl JsonStorage {
 
         Ok(())
     }
+
+    // ─── Cache helpers ──────────────────────────────────────────────────
+
+    /// Mark the in-memory snapshot as out-of-sync with the persistent index.
+    fn mark_dirty(&self) {
+        if self.cache_enabled {
+            self.cache_dirty.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Lazily build the in-memory snapshot from disk on first access.
+    ///
+    /// Subsequent calls are a cheap `Option` check while holding only a
+    /// read lock. The snapshot is built outside any lock, then installed
+    /// under a brief write lock — concurrent first-access calls will each
+    /// build their own snapshot and the last writer wins; that is correct
+    /// because `build_snapshot_from_disk` is idempotent.
+    async fn ensure_cache_initialized(&self) -> Result<(), StorageError> {
+        if !self.cache_enabled {
+            return Ok(());
+        }
+        if self.cache.read().await.is_some() {
+            return Ok(());
+        }
+        let snapshot = self.build_snapshot_from_disk().await?;
+        let mut guard = self.cache.write().await;
+        if guard.is_none() {
+            *guard = Some(snapshot);
+        }
+        Ok(())
+    }
+
+    /// Scan disk and build a fresh snapshot. Used for first-access lazy
+    /// init and (in the persistent-cache follow-up) for `:cache-rebuild`.
+    async fn build_snapshot_from_disk(&self) -> Result<CacheSnapshot, StorageError> {
+        let mut snap = CacheSnapshot::empty();
+
+        let podcast_ids = self.list_podcasts_from_disk().await?;
+        for pid in &podcast_ids {
+            let podcast = self.load_podcast_from_disk(pid).await?;
+            snap.podcasts.insert(pid.clone(), podcast);
+
+            let episode_ids = self.list_episode_ids_from_disk(pid).await?;
+            let mut eps = Vec::with_capacity(episode_ids.len());
+            for eid in episode_ids {
+                eps.push(self.load_episode_from_disk(pid, &eid).await?);
+            }
+            snap.episodes.insert(pid.clone(), eps);
+        }
+
+        for playlist in self.list_playlists_from_disk().await? {
+            snap.playlists.insert(playlist.id.clone(), playlist);
+        }
+
+        Ok(snap)
+    }
+
+    // ─── Uncached disk readers (used by build_snapshot_from_disk and as
+    //     fallback when the cache is disabled) ──────────────────────────
+
+    async fn load_podcast_from_disk(&self, id: &PodcastId) -> Result<Podcast, StorageError> {
+        let path = self.podcast_path(id);
+        if !path.exists() {
+            return Err(StorageError::PodcastNotFound { id: id.clone() });
+        }
+        let content = fs::read_to_string(&path)
+            .await
+            .map_err(|e| StorageError::file_operation("read", &path, e))?;
+        let mut podcast: Podcast = serde_json::from_str(&content)?;
+        if let Some(ref description) = podcast.description {
+            if description.contains('<') || description.contains("&lt;") {
+                podcast.description = Some(strip_html(description));
+            }
+        }
+        Ok(podcast)
+    }
+
+    async fn list_podcasts_from_disk(&self) -> Result<Vec<PodcastId>, StorageError> {
+        if !self.podcasts_dir.exists() {
+            return Ok(Vec::new());
+        }
+        let mut entries = fs::read_dir(&self.podcasts_dir)
+            .await
+            .map_err(|e| StorageError::file_operation("read_dir", &self.podcasts_dir, e))?;
+        let mut ids = Vec::new();
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| StorageError::file_operation("read_dir_entry", &self.podcasts_dir, e))?
+        {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                let filename = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
+                    StorageError::FileOperation {
+                        operation: "parse_filename".to_string(),
+                        path: path.display().to_string(),
+                        error: "Invalid filename".to_string(),
+                    }
+                })?;
+                let id =
+                    PodcastId::from_string(filename).map_err(|e| StorageError::FileOperation {
+                        operation: "parse_uuid".to_string(),
+                        path: path.display().to_string(),
+                        error: e.to_string(),
+                    })?;
+                ids.push(id);
+            }
+        }
+        Ok(ids)
+    }
+
+    async fn load_episode_from_disk(
+        &self,
+        podcast_id: &PodcastId,
+        episode_id: &EpisodeId,
+    ) -> Result<Episode, StorageError> {
+        let path = self.episode_path(podcast_id, episode_id);
+        if !path.exists() {
+            return Err(StorageError::EpisodeNotFound {
+                podcast_id: podcast_id.clone(),
+                episode_id: episode_id.clone(),
+            });
+        }
+        let content = fs::read_to_string(&path)
+            .await
+            .map_err(|e| StorageError::file_operation("read", &path, e))?;
+        let mut episode: Episode = serde_json::from_str(&content)?;
+        if let Some(ref description) = episode.description {
+            if description.contains('<') || description.contains("&lt;") {
+                episode.description = Some(strip_html(description));
+            }
+        }
+        Ok(episode)
+    }
+
+    async fn list_episode_ids_from_disk(
+        &self,
+        podcast_id: &PodcastId,
+    ) -> Result<Vec<EpisodeId>, StorageError> {
+        let episodes_dir = self.podcast_episodes_dir(podcast_id);
+        if !episodes_dir.exists() {
+            return Ok(Vec::new());
+        }
+        let mut entries = fs::read_dir(&episodes_dir)
+            .await
+            .map_err(|e| StorageError::file_operation("read_dir", &episodes_dir, e))?;
+        let mut ids = Vec::new();
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| StorageError::file_operation("read_dir_entry", &episodes_dir, e))?
+        {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                let filename = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
+                    StorageError::FileOperation {
+                        operation: "parse_filename".to_string(),
+                        path: path.display().to_string(),
+                        error: "Invalid filename".to_string(),
+                    }
+                })?;
+                let id =
+                    EpisodeId::from_string(filename).map_err(|e| StorageError::FileOperation {
+                        operation: "parse_uuid".to_string(),
+                        path: path.display().to_string(),
+                        error: e.to_string(),
+                    })?;
+                ids.push(id);
+            }
+        }
+        Ok(ids)
+    }
+
+    async fn list_playlists_from_disk(&self) -> Result<Vec<Playlist>, StorageError> {
+        if !self.playlists_dir.exists() {
+            return Ok(Vec::new());
+        }
+        let mut entries = fs::read_dir(&self.playlists_dir)
+            .await
+            .map_err(|e| StorageError::file_operation("read_dir", &self.playlists_dir, e))?;
+        let mut out = Vec::new();
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| StorageError::file_operation("read_dir_entry", &self.playlists_dir, e))?
+        {
+            let playlist_dir = entry.path();
+            if !playlist_dir.is_dir() {
+                continue;
+            }
+            let metadata_path = playlist_dir.join("playlist.json");
+            if !metadata_path.exists() {
+                continue;
+            }
+            let content = fs::read_to_string(&metadata_path)
+                .await
+                .map_err(|e| StorageError::file_operation("read", &metadata_path, e))?;
+            let playlist: Playlist = serde_json::from_str(&content)?;
+            out.push(playlist);
+        }
+        Ok(out)
+    }
 }
 
 #[async_trait]
@@ -170,30 +446,34 @@ impl Storage for JsonStorage {
         let path = self.podcast_path(&podcast.id);
         let json = serde_json::to_string_pretty(podcast)?;
 
-        self.atomic_write(&path, &json).await
+        self.atomic_write(&path, &json).await?;
+
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            let mut guard = self.cache.write().await;
+            if let Some(snap) = guard.as_mut() {
+                snap.podcasts.insert(podcast.id.clone(), podcast.clone());
+                snap.episodes.entry(podcast.id.clone()).or_default();
+                snap.last_updated = chrono::Utc::now();
+            }
+            drop(guard);
+            self.mark_dirty();
+        }
+        Ok(())
     }
 
     async fn load_podcast(&self, id: &PodcastId) -> Result<Podcast, Self::Error> {
-        let path = self.podcast_path(id);
-
-        if !path.exists() {
-            return Err(StorageError::PodcastNotFound { id: id.clone() });
-        }
-
-        let content = fs::read_to_string(&path)
-            .await
-            .map_err(|e| StorageError::file_operation("read", &path, e))?;
-
-        let mut podcast: Podcast = serde_json::from_str(&content)?;
-
-        // Migration: Clean HTML from descriptions for podcasts stored before fix
-        if let Some(ref description) = podcast.description {
-            if description.contains('<') || description.contains("&lt;") {
-                podcast.description = Some(strip_html(description));
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            if let Some(snap) = self.cache.read().await.as_ref() {
+                return snap
+                    .podcasts
+                    .get(id)
+                    .cloned()
+                    .ok_or_else(|| StorageError::PodcastNotFound { id: id.clone() });
             }
         }
-
-        Ok(podcast)
+        self.load_podcast_from_disk(id).await
     }
 
     async fn delete_podcast(&self, id: &PodcastId) -> Result<(), Self::Error> {
@@ -215,49 +495,38 @@ impl Storage for JsonStorage {
                 .map_err(|e| StorageError::file_operation("remove_dir_all", &episodes_dir, e))?;
         }
 
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            let mut guard = self.cache.write().await;
+            if let Some(snap) = guard.as_mut() {
+                snap.podcasts.remove(id);
+                snap.episodes.remove(id);
+                snap.last_updated = chrono::Utc::now();
+            }
+            drop(guard);
+            self.mark_dirty();
+        }
+
         Ok(())
     }
 
     async fn list_podcasts(&self) -> Result<Vec<PodcastId>, Self::Error> {
-        if !self.podcasts_dir.exists() {
-            return Ok(Vec::new());
-        }
-
-        let mut entries = fs::read_dir(&self.podcasts_dir)
-            .await
-            .map_err(|e| StorageError::file_operation("read_dir", &self.podcasts_dir, e))?;
-
-        let mut ids = Vec::new();
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|e| StorageError::file_operation("read_dir_entry", &self.podcasts_dir, e))?
-        {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
-                    StorageError::FileOperation {
-                        operation: "parse_filename".to_string(),
-                        path: path.display().to_string(),
-                        error: "Invalid filename".to_string(),
-                    }
-                })?;
-
-                let id =
-                    PodcastId::from_string(filename).map_err(|e| StorageError::FileOperation {
-                        operation: "parse_uuid".to_string(),
-                        path: path.display().to_string(),
-                        error: e.to_string(),
-                    })?;
-
-                ids.push(id);
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            if let Some(snap) = self.cache.read().await.as_ref() {
+                return Ok(snap.podcasts.keys().cloned().collect());
             }
         }
-
-        Ok(ids)
+        self.list_podcasts_from_disk().await
     }
 
     async fn podcast_exists(&self, id: &PodcastId) -> Result<bool, Self::Error> {
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            if let Some(snap) = self.cache.read().await.as_ref() {
+                return Ok(snap.podcasts.contains_key(id));
+            }
+        }
         Ok(self.podcast_path(id).exists())
     }
 
@@ -269,7 +538,24 @@ impl Storage for JsonStorage {
         let path = self.episode_path(podcast_id, &episode.id);
         let json = serde_json::to_string_pretty(episode)?;
 
-        self.atomic_write(&path, &json).await
+        self.atomic_write(&path, &json).await?;
+
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            let mut guard = self.cache.write().await;
+            if let Some(snap) = guard.as_mut() {
+                let list = snap.episodes.entry(podcast_id.clone()).or_default();
+                if let Some(pos) = list.iter().position(|e| e.id == episode.id) {
+                    list[pos] = episode.clone();
+                } else {
+                    list.push(episode.clone());
+                }
+                snap.last_updated = chrono::Utc::now();
+            }
+            drop(guard);
+            self.mark_dirty();
+        }
+        Ok(())
     }
 
     async fn load_episode(
@@ -277,30 +563,26 @@ impl Storage for JsonStorage {
         podcast_id: &PodcastId,
         episode_id: &EpisodeId,
     ) -> Result<Episode, Self::Error> {
-        let path = self.episode_path(podcast_id, episode_id);
-
-        if !path.exists() {
-            return Err(StorageError::EpisodeNotFound {
-                podcast_id: podcast_id.clone(),
-                episode_id: episode_id.clone(),
-            });
-        }
-
-        let content = fs::read_to_string(&path)
-            .await
-            .map_err(|e| StorageError::file_operation("read", &path, e))?;
-
-        let mut episode: Episode = serde_json::from_str(&content)?;
-
-        // Migration: Clean HTML from descriptions for episodes stored before fix
-        // This ensures existing episodes with HTML get sanitized on load
-        if let Some(ref description) = episode.description {
-            if description.contains('<') || description.contains("&lt;") {
-                episode.description = Some(strip_html(description));
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            if let Some(snap) = self.cache.read().await.as_ref() {
+                if let Some(eps) = snap.episodes.get(podcast_id) {
+                    return eps
+                        .iter()
+                        .find(|e| e.id == *episode_id)
+                        .cloned()
+                        .ok_or_else(|| StorageError::EpisodeNotFound {
+                            podcast_id: podcast_id.clone(),
+                            episode_id: episode_id.clone(),
+                        });
+                }
+                return Err(StorageError::EpisodeNotFound {
+                    podcast_id: podcast_id.clone(),
+                    episode_id: episode_id.clone(),
+                });
             }
         }
-
-        Ok(episode)
+        self.load_episode_from_disk(podcast_id, episode_id).await
     }
 
     async fn delete_episode(
@@ -321,48 +603,34 @@ impl Storage for JsonStorage {
             .await
             .map_err(|e| StorageError::file_operation("delete", &path, e))?;
 
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            let mut guard = self.cache.write().await;
+            if let Some(snap) = guard.as_mut() {
+                if let Some(list) = snap.episodes.get_mut(podcast_id) {
+                    list.retain(|e| e.id != *episode_id);
+                }
+                snap.last_updated = chrono::Utc::now();
+            }
+            drop(guard);
+            self.mark_dirty();
+        }
+
         Ok(())
     }
 
     async fn list_episodes(&self, podcast_id: &PodcastId) -> Result<Vec<EpisodeId>, Self::Error> {
-        let episodes_dir = self.podcast_episodes_dir(podcast_id);
-
-        if !episodes_dir.exists() {
-            return Ok(Vec::new());
-        }
-
-        let mut entries = fs::read_dir(&episodes_dir)
-            .await
-            .map_err(|e| StorageError::file_operation("read_dir", &episodes_dir, e))?;
-
-        let mut ids = Vec::new();
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|e| StorageError::file_operation("read_dir_entry", &episodes_dir, e))?
-        {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                let filename = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
-                    StorageError::FileOperation {
-                        operation: "parse_filename".to_string(),
-                        path: path.display().to_string(),
-                        error: "Invalid filename".to_string(),
-                    }
-                })?;
-
-                let id =
-                    EpisodeId::from_string(filename).map_err(|e| StorageError::FileOperation {
-                        operation: "parse_uuid".to_string(),
-                        path: path.display().to_string(),
-                        error: e.to_string(),
-                    })?;
-
-                ids.push(id);
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            if let Some(snap) = self.cache.read().await.as_ref() {
+                return Ok(snap
+                    .episodes
+                    .get(podcast_id)
+                    .map(|eps| eps.iter().map(|e| e.id.clone()).collect())
+                    .unwrap_or_default());
             }
         }
-
-        Ok(ids)
+        self.list_episode_ids_from_disk(podcast_id).await
     }
 
     async fn episode_exists(
@@ -370,6 +638,15 @@ impl Storage for JsonStorage {
         podcast_id: &PodcastId,
         episode_id: &EpisodeId,
     ) -> Result<bool, Self::Error> {
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            if let Some(snap) = self.cache.read().await.as_ref() {
+                return Ok(snap
+                    .episodes
+                    .get(podcast_id)
+                    .is_some_and(|eps| eps.iter().any(|e| e.id == *episode_id)));
+            }
+        }
         Ok(self.episode_path(podcast_id, episode_id).exists())
     }
 
@@ -393,11 +670,17 @@ impl Storage for JsonStorage {
     }
 
     async fn load_episodes(&self, podcast_id: &PodcastId) -> Result<Vec<Episode>, Self::Error> {
-        let episode_ids = self.list_episodes(podcast_id).await?;
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            if let Some(snap) = self.cache.read().await.as_ref() {
+                return Ok(snap.episodes.get(podcast_id).cloned().unwrap_or_default());
+            }
+        }
+        let episode_ids = self.list_episode_ids_from_disk(podcast_id).await?;
         let mut episodes = Vec::with_capacity(episode_ids.len());
 
         for episode_id in episode_ids {
-            let episode = self.load_episode(podcast_id, &episode_id).await?;
+            let episode = self.load_episode_from_disk(podcast_id, &episode_id).await?;
             episodes.push(episode);
         }
 
@@ -453,10 +736,32 @@ impl Storage for JsonStorage {
             .map_err(|e| StorageError::file_operation("create_dir_all", &audio_dir, e))?;
 
         let json = serde_json::to_string_pretty(playlist)?;
-        self.atomic_write(&metadata_path, &json).await
+        self.atomic_write(&metadata_path, &json).await?;
+
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            let mut guard = self.cache.write().await;
+            if let Some(snap) = guard.as_mut() {
+                snap.playlists.insert(playlist.id.clone(), playlist.clone());
+                snap.last_updated = chrono::Utc::now();
+            }
+            drop(guard);
+            self.mark_dirty();
+        }
+        Ok(())
     }
 
     async fn load_playlist(&self, id: &PlaylistId) -> Result<Playlist, Self::Error> {
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            if let Some(snap) = self.cache.read().await.as_ref() {
+                return snap
+                    .playlists
+                    .get(id)
+                    .cloned()
+                    .ok_or_else(|| StorageError::PlaylistNotFound { id: id.to_string() });
+            }
+        }
         let metadata_path = self
             .find_playlist_metadata_path_by_id(id)
             .await?
@@ -486,45 +791,42 @@ impl Storage for JsonStorage {
             .await
             .map_err(|e| StorageError::file_operation("remove_dir_all", playlist_dir, e))?;
 
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            let mut guard = self.cache.write().await;
+            if let Some(snap) = guard.as_mut() {
+                snap.playlists.remove(id);
+                snap.last_updated = chrono::Utc::now();
+            }
+            drop(guard);
+            self.mark_dirty();
+        }
+
         Ok(())
     }
 
     async fn list_playlists(&self) -> Result<Vec<PlaylistId>, Self::Error> {
-        if !self.playlists_dir.exists() {
-            return Ok(Vec::new());
-        }
-
-        let mut entries = fs::read_dir(&self.playlists_dir)
-            .await
-            .map_err(|e| StorageError::file_operation("read_dir", &self.playlists_dir, e))?;
-
-        let mut ids = Vec::new();
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|e| StorageError::file_operation("read_dir_entry", &self.playlists_dir, e))?
-        {
-            let playlist_dir = entry.path();
-            if !playlist_dir.is_dir() {
-                continue;
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            if let Some(snap) = self.cache.read().await.as_ref() {
+                return Ok(snap.playlists.keys().cloned().collect());
             }
-
-            let metadata_path = playlist_dir.join("playlist.json");
-            if !metadata_path.exists() {
-                continue;
-            }
-
-            let content = fs::read_to_string(&metadata_path)
-                .await
-                .map_err(|e| StorageError::file_operation("read", &metadata_path, e))?;
-            let playlist: Playlist = serde_json::from_str(&content)?;
-            ids.push(playlist.id);
         }
-
-        Ok(ids)
+        Ok(self
+            .list_playlists_from_disk()
+            .await?
+            .into_iter()
+            .map(|p| p.id)
+            .collect())
     }
 
     async fn playlist_exists(&self, id: &PlaylistId) -> Result<bool, Self::Error> {
+        if self.cache_enabled {
+            self.ensure_cache_initialized().await?;
+            if let Some(snap) = self.cache.read().await.as_ref() {
+                return Ok(snap.playlists.contains_key(id));
+            }
+        }
         Ok(self.find_playlist_metadata_path_by_id(id).await?.is_some())
     }
 
@@ -809,5 +1111,150 @@ mod tests {
 
         assert!(exists);
         assert!(!missing);
+    }
+
+    // ---- Cache layer tests (issue #204) ----
+
+    fn make_test_podcast(title: &str) -> Podcast {
+        Podcast {
+            id: PodcastId::new(),
+            title: title.to_string(),
+            url: format!("https://example.com/{}.xml", title),
+            description: Some(format!("desc for {}", title)),
+            author: Some("Test".to_string()),
+            image_url: None,
+            language: None,
+            categories: Vec::new(),
+            explicit: false,
+            last_updated: chrono::Utc::now(),
+            episodes: Vec::new(),
+            tags: Vec::new(),
+        }
+    }
+
+    fn make_test_episode(podcast_id: &PodcastId, title: &str) -> Episode {
+        Episode::new(
+            podcast_id.clone(),
+            title.to_string(),
+            format!("https://example.com/{}.mp3", title),
+            chrono::Utc::now(),
+        )
+    }
+
+    /// Save podcast + episode, then delete the underlying JSON files. Cache should
+    /// still serve the data, proving reads come from the cache snapshot.
+    #[tokio::test]
+    async fn test_cache_round_trip() {
+        let (storage, _temp_dir) = create_test_storage();
+        storage.initialize().await.unwrap();
+
+        let podcast = make_test_podcast("rt");
+        storage.save_podcast(&podcast).await.unwrap();
+        let episode = make_test_episode(&podcast.id, "ep1");
+        storage.save_episode(&podcast.id, &episode).await.unwrap();
+
+        // Sneak underneath the cache and remove the disk files.
+        let podcast_file = storage.podcasts_dir.join(format!("{}.json", podcast.id));
+        let episode_file = storage
+            .episodes_dir
+            .join(podcast.id.to_string())
+            .join(format!("{}.json", episode.id));
+        std::fs::remove_file(&podcast_file).unwrap();
+        std::fs::remove_file(&episode_file).unwrap();
+
+        // Cache must still return the data.
+        let loaded = storage.load_podcast(&podcast.id).await.unwrap();
+        assert_eq!(loaded.id, podcast.id);
+        let eps = storage.load_episodes(&podcast.id).await.unwrap();
+        assert_eq!(eps.len(), 1);
+        assert_eq!(eps[0].id, episode.id);
+        assert!(storage.cache_is_dirty());
+    }
+
+    /// With cache disabled, behavior matches the pre-cache implementation: deleting
+    /// the underlying file makes the data inaccessible.
+    #[tokio::test]
+    async fn test_cache_disabled_passthrough() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = JsonStorage::with_data_dir(temp_dir.path().to_path_buf()).with_cache(false);
+        storage.initialize().await.unwrap();
+        assert!(!storage.cache_enabled());
+
+        let podcast = make_test_podcast("disabled");
+        storage.save_podcast(&podcast).await.unwrap();
+
+        let podcast_file = storage.podcasts_dir.join(format!("{}.json", podcast.id));
+        std::fs::remove_file(&podcast_file).unwrap();
+
+        let result = storage.load_podcast(&podcast.id).await;
+        assert!(matches!(result, Err(StorageError::PodcastNotFound { .. })));
+    }
+
+    /// Deleting through the storage API must invalidate the cache entry too.
+    #[tokio::test]
+    async fn test_cache_invalidates_on_delete() {
+        let (storage, _temp_dir) = create_test_storage();
+        storage.initialize().await.unwrap();
+
+        let podcast = make_test_podcast("inv");
+        storage.save_podcast(&podcast).await.unwrap();
+        let episode = make_test_episode(&podcast.id, "ep");
+        storage.save_episode(&podcast.id, &episode).await.unwrap();
+
+        // Prime the cache via reads.
+        let _ = storage.load_podcast(&podcast.id).await.unwrap();
+        let _ = storage.load_episodes(&podcast.id).await.unwrap();
+
+        storage
+            .delete_episode(&podcast.id, &episode.id)
+            .await
+            .unwrap();
+        let exists = storage
+            .episode_exists(&podcast.id, &episode.id)
+            .await
+            .unwrap();
+        assert!(!exists);
+        let load_err = storage.load_episode(&podcast.id, &episode.id).await;
+        assert!(matches!(
+            load_err,
+            Err(StorageError::EpisodeNotFound { .. })
+        ));
+
+        storage.delete_podcast(&podcast.id).await.unwrap();
+        let exists = storage.podcast_exists(&podcast.id).await.unwrap();
+        assert!(!exists);
+    }
+
+    /// Concurrent writes must all land in both the cache and on disk; nothing is lost.
+    #[tokio::test]
+    async fn test_cache_concurrent_writes() {
+        let (storage, _temp_dir) = create_test_storage();
+        storage.initialize().await.unwrap();
+
+        let podcast = make_test_podcast("concurrent");
+        storage.save_podcast(&podcast).await.unwrap();
+
+        let storage = Arc::new(storage);
+        let podcast_id = podcast.id.clone();
+        let mut handles = Vec::new();
+        for i in 0..50 {
+            let storage = storage.clone();
+            let podcast_id = podcast_id.clone();
+            handles.push(tokio::spawn(async move {
+                let ep = make_test_episode(&podcast_id, &format!("ep{}", i));
+                storage.save_episode(&podcast_id, &ep).await.unwrap();
+            }));
+        }
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        let eps = storage.load_episodes(&podcast_id).await.unwrap();
+        assert_eq!(eps.len(), 50, "all concurrent writes should be cached");
+
+        // And on disk too.
+        let disk_dir = storage.episodes_dir.join(podcast_id.to_string());
+        let count = std::fs::read_dir(&disk_dir).unwrap().count();
+        assert_eq!(count, 50, "all concurrent writes should be persisted");
     }
 }

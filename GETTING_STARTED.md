@@ -360,7 +360,8 @@ The application will create configuration files on first run:
     "download_retries": 3
   },
   "ui": {
-    "theme": "dark"
+    "theme": "dark",
+    "startup_buffer": "whats-new"
   },
   "audio": {
     "volume": 0.8,
@@ -384,6 +385,26 @@ The application will create configuration files on first run:
   }
 }
 ```
+
+### Startup Buffer
+
+Choose which buffer opens when Podcast TUI launches by setting `ui.startup_buffer`:
+
+| Value | Buffer |
+|-------|--------|
+| `help` (default) | Auto-generated keybinding reference |
+| `podcast-list` | Subscribed podcasts |
+| `downloads` | Active and recent downloads |
+| `sync` | Device sync history |
+| `playlist-list` | Playlists |
+| `whats-new` | Rolling new episodes across all podcasts |
+| `now-playing` | Audio playback status |
+
+Unknown values fall back to `help` and log a warning to stderr. See [`docs/KEYBINDINGS.md`](docs/KEYBINDINGS.md#startup-buffer).
+
+### Device Profiles
+
+If you sync to a device that ignores ID3 tags (such as the Innioasis Y1) and shows the literal filename as the track title, configure a device profile to rewrite filenames during sync without changing your local downloads layout. See [`docs/DEVICE_PROFILES.md`](docs/DEVICE_PROFILES.md) for the schema, token reference, and worked examples.
 
 ### Themes
 

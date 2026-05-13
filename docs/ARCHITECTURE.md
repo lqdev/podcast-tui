@@ -279,6 +279,24 @@ User Input → KeyEvent → App::handle_key() → State Update → UI Render
 
 **Dependencies**: `tokio::fs`, `serde`, `serde_json`
 
+**Cache layer** (`src/storage/json.rs`): `JsonStorage` keeps an
+in-memory `RwLock<Option<CacheSnapshot>>` of every podcast, episode,
+and playlist, backed by a persistent `cache_index.json` in the data
+directory. Disk JSON files are always the source of truth; the cache
+is a read accelerator and is updated synchronously after every write.
+A 5 s background flush task gated on a dirty bit writes the index
+atomically (`.tmp` + `rename`); a final flush runs on graceful shutdown.
+On startup, a schema-version mismatch or a corrupt index file
+triggers an automatic rebuild from disk; the rebuild is logged to
+stderr with a `[cache]` prefix (e.g. `[cache] Index schema 1 != expected 2; rebuilding from disk`)
+so operators can recognise it as expected recovery rather than an
+unexplained warning. The `:cache-rebuild` minibuffer
+command is the user-facing escape hatch when the cache appears stale.
+Configurable via `storage.cache_enabled` (default `true`); disabling
+restores the pre-cache behaviour. See
+[`docs/STORAGE_DESIGN.md`](STORAGE_DESIGN.md) for the on-disk layout
+and the warm-cache benchmark numbers.
+
 #### `src/download/`
 **Purpose**: Episode download management, device sync, and download cleanup
 

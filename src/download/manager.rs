@@ -1369,13 +1369,9 @@ impl<S: Storage> DownloadManager<S> {
         // the template is malformed, so we surface it here as a hard
         // SyncError rather than silently falling back to verbatim names.
         if let Some((podcast, episode)) = by_source.values().next() {
-            if let Err(e) = device_template::render(
-                &profile.filename_template,
-                podcast,
-                episode,
-                "mp3",
-                &opts,
-            ) {
+            if let Err(e) =
+                device_template::render(&profile.filename_template, podcast, episode, "mp3", &opts)
+            {
                 return Err(SyncError::TemplateInvalid(format!(
                     "profile '{}': {}",
                     profile.name, e

@@ -673,10 +673,20 @@ pub struct StorageConfig {
     pub max_backups: u32,
     #[serde(default = "default_opml_export_directory")]
     pub opml_export_directory: String,
+    /// When true (default), `JsonStorage` keeps an in-memory snapshot of
+    /// podcasts/episodes/playlists so repeated reads within a session do not
+    /// re-scan the data directory. Set to `false` to disable and behave
+    /// exactly like older versions (every read hits disk).
+    #[serde(default = "default_cache_enabled")]
+    pub cache_enabled: bool,
 }
 
 fn default_opml_export_directory() -> String {
     "~/Documents/podcast-exports".to_string()
+}
+
+fn default_cache_enabled() -> bool {
+    true
 }
 
 impl Default for StorageConfig {
@@ -687,6 +697,7 @@ impl Default for StorageConfig {
             backup_frequency_days: 7,
             max_backups: storage::MAX_BACKUPS as u32,
             opml_export_directory: default_opml_export_directory(),
+            cache_enabled: default_cache_enabled(),
         }
     }
 }

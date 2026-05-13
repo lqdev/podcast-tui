@@ -35,6 +35,7 @@ impl App {
         } else {
             JsonStorage::new()?
         };
+        let storage = storage.with_cache(config.storage.cache_enabled);
 
         // Initialize storage directories
         storage.initialize().await?;

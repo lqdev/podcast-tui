@@ -2208,6 +2208,18 @@ impl UIApp {
                 self.trigger_background_refresh(BufferRefreshType::Downloads);
                 self.show_error(format!("Could not clean up downloads: {}", error));
             }
+            AppEvent::CacheRebuilt {
+                podcast_count,
+                episode_count,
+            } => {
+                self.show_message(format!(
+                    "Cache rebuilt: {} podcasts, {} episodes",
+                    podcast_count, episode_count
+                ));
+            }
+            AppEvent::CacheRebuildFailed { error } => {
+                self.show_error(format!("Could not rebuild cache: {}", error));
+            }
             AppEvent::PodcastTagAdded {
                 podcast_id: _,
                 tag: _,
@@ -2694,6 +2706,27 @@ impl UIApp {
                     Ok(true)
                 }
             }
+            "cache-rebuild" => {
+                let storage = self._storage.clone();
+                let app_event_tx = self.app_event_tx.clone();
+                self.show_message("Rebuilding storage cache...".to_string());
+                tokio::spawn(async move {
+                    match storage.rebuild_cache().await {
+                        Ok((podcast_count, episode_count)) => {
+                            let _ = app_event_tx.send(AppEvent::CacheRebuilt {
+                                podcast_count,
+                                episode_count,
+                            });
+                        }
+                        Err(e) => {
+                            let _ = app_event_tx.send(AppEvent::CacheRebuildFailed {
+                                error: e.to_string(),
+                            });
+                        }
+                    }
+                });
+                Ok(true)
+            }
             "search" => {
                 if parts.len() > 1 {
                     let query = parts[1..].join(" ");
@@ -3118,6 +3151,8 @@ impl UIApp {
             // Cleanup commands
             "clean-older-than".to_string(),
             "cleanup".to_string(),
+            // Cache commands
+            "cache-rebuild".to_string(),
             // Search & filter commands
             "search".to_string(),
             "filter-status".to_string(),

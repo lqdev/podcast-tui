@@ -37,6 +37,8 @@ pub enum SyncError {
     CopyFailed(String),
     #[error("Failed to delete file: {0}")]
     DeleteFailed(String),
+    #[error("Device profile template invalid: {0}")]
+    TemplateInvalid(String),
 }
 
 /// Progress events emitted by `sync_to_device()` when a progress channel is provided.
@@ -1077,7 +1079,9 @@ impl<S: Storage> DownloadManager<S> {
         // downloads paths (the values) remain untouched. Playlist entries
         // are left as-is.
         if let Some(ref profile) = device_profile {
-            pc_files = self.remap_pc_files_with_profile(pc_files, profile).await?;
+            pc_files = self
+                .remap_pc_files_with_profile(pc_files, profile, &mut report.errors)
+                .await?;
         }
 
         // Step 2: Build a map of managed files already on the device.
@@ -1302,6 +1306,7 @@ impl<S: Storage> DownloadManager<S> {
         &self,
         pc_files: std::collections::HashMap<PathBuf, (PathBuf, u64)>,
         profile: &DeviceProfile,
+        report_errors: &mut Vec<(PathBuf, String)>,
     ) -> Result<std::collections::HashMap<PathBuf, (PathBuf, u64)>, SyncError> {
         // Build a source-path → (Podcast, Episode) lookup from storage.
         // We index by the absolute, canonicalised local_path so the lookup
@@ -1317,19 +1322,34 @@ impl<S: Storage> DownloadManager<S> {
             std::collections::HashMap::new();
 
         for pid in &podcast_ids {
+            // Storage failures for one podcast must not abort an otherwise
+            // healthy sync — we surface them via `report.errors` and fall
+            // back to verbatim filenames for that podcast's files. This
+            // keeps a single corrupted JSON file from breaking the whole
+            // device sync, but the user still sees the failure in the
+            // sync buffer.
             let podcast = match self.storage.load_podcast(pid).await {
                 Ok(p) => p,
-                Err(_) => continue,
+                Err(e) => {
+                    report_errors.push((
+                        PathBuf::from(format!("podcast:{}", pid)),
+                        format!("Failed to load podcast for templating: {}", e),
+                    ));
+                    continue;
+                }
             };
             let episodes = match self.storage.load_episodes(pid).await {
                 Ok(eps) => eps,
-                Err(_) => continue,
+                Err(e) => {
+                    report_errors.push((
+                        PathBuf::from(format!("podcast:{}", pid)),
+                        format!("Failed to load episodes for templating: {}", e),
+                    ));
+                    continue;
+                }
             };
             for ep in episodes {
                 if let Some(ref local) = ep.local_path {
-                    // Use canonicalize where possible so symlinked / normalised
-                    // paths still match `pc_files` keys. Fall back to the
-                    // raw path on error (e.g. file missing).
                     let key = fs::canonicalize(local)
                         .await
                         .unwrap_or_else(|_| local.clone());
@@ -1342,6 +1362,26 @@ impl<S: Storage> DownloadManager<S> {
             max_length: profile.max_filename_length,
             ascii_only: profile.ascii_only,
         };
+
+        // Validate the template once up-front against any episode we
+        // happen to know about. The DeviceProfile schema (see config.rs)
+        // explicitly promises a user-friendly error at sync time when
+        // the template is malformed, so we surface it here as a hard
+        // SyncError rather than silently falling back to verbatim names.
+        if let Some((podcast, episode)) = by_source.values().next() {
+            if let Err(e) = device_template::render(
+                &profile.filename_template,
+                podcast,
+                episode,
+                "mp3",
+                &opts,
+            ) {
+                return Err(SyncError::TemplateInvalid(format!(
+                    "profile '{}': {}",
+                    profile.name, e
+                )));
+            }
+        }
 
         let mut remapped: std::collections::HashMap<PathBuf, (PathBuf, u64)> =
             std::collections::HashMap::with_capacity(pc_files.len());
@@ -1368,8 +1408,6 @@ impl<S: Storage> DownloadManager<S> {
 
             let new_relative = match lookup {
                 Some((podcast, episode)) => {
-                    // Derive the extension from the on-disk file so the
-                    // template's `{ext}` token resolves correctly.
                     let ext = source_path
                         .extension()
                         .and_then(|e| e.to_str())
@@ -1383,11 +1421,17 @@ impl<S: Storage> DownloadManager<S> {
                         &opts,
                     ) {
                         Ok(rendered) => Path::new("Podcasts").join(rendered),
-                        Err(_) => {
-                            // Malformed template — skip remap for this
-                            // entry so the file still syncs under its
-                            // original name. The user-facing error
-                            // surfaces via dry-run / future validation.
+                        Err(e) => {
+                            // We pre-validated the template above, so a
+                            // failure here is per-episode (e.g. a token
+                            // resolves to empty after sanitization).
+                            // Surface it to the user but keep the file
+                            // syncing under its original name so it
+                            // doesn't silently disappear.
+                            report_errors.push((
+                                source_path.clone(),
+                                format!("Template render failed for episode: {}", e),
+                            ));
                             Path::new("Podcasts").join(after_root)
                         }
                     }
@@ -1395,21 +1439,101 @@ impl<S: Storage> DownloadManager<S> {
                 None => Path::new("Podcasts").join(after_root),
             };
 
-            // Resolve collisions by disambiguating with the episode id.
-            let final_relative = if remapped.contains_key(&new_relative) {
-                if let Some((_, episode)) = lookup {
-                    device_template::disambiguate(&new_relative, &episode.id)
-                } else {
-                    new_relative
-                }
-            } else {
-                new_relative
-            };
+            // Resolve collisions. Loop until we find a free key so two
+            // colliding sources can't silently overwrite each other in
+            // the HashMap. For the no-metadata case (no episode lookup)
+            // we fall back to a stable hash of the source path so the
+            // disambiguator is deterministic and unique per file.
+            let final_relative =
+                self.disambiguate_until_unique(new_relative, &source_path, lookup, &remapped);
 
             remapped.insert(final_relative, (source_path, size));
         }
 
         Ok(remapped)
+    }
+
+    /// Resolve a remapped device-side path against an existing collection
+    /// of already-assigned paths. Loops until a free key is found.
+    ///
+    /// When `lookup` carries an `Episode`, we use its id for
+    /// disambiguation (matches the existing
+    /// `device_template::disambiguate` behavior). When `lookup` is
+    /// `None` (file has no episode metadata in storage — e.g. an
+    /// orphaned download from a previous app version), we derive a
+    /// deterministic suffix from a hash of the source path so two
+    /// orphan files with the same name still produce distinct device
+    /// keys.
+    fn disambiguate_until_unique(
+        &self,
+        initial: PathBuf,
+        source_path: &Path,
+        lookup: Option<&(Podcast, Episode)>,
+        existing: &std::collections::HashMap<PathBuf, (PathBuf, u64)>,
+    ) -> PathBuf {
+        if !existing.contains_key(&initial) {
+            return initial;
+        }
+
+        // First disambiguation pass: append the episode id (or a hash
+        // of the source path for orphans).
+        let mut candidate = match lookup {
+            Some((_, episode)) => device_template::disambiguate(&initial, &episode.id),
+            None => Self::append_path_hash_suffix(&initial, source_path),
+        };
+
+        // If even that collides (extremely unlikely but possible: same
+        // template + same episode id is impossible, but two orphan files
+        // with the same source-path hash could in theory collide), keep
+        // appending a numeric counter until we find a free slot.
+        let mut counter: u32 = 2;
+        while existing.contains_key(&candidate) {
+            candidate = Self::append_numeric_suffix(&candidate, counter);
+            counter += 1;
+            // Defensive cap: 10_000 collisions on a single name means
+            // something is deeply wrong; bail out with the current
+            // candidate rather than spinning forever.
+            if counter > 10_000 {
+                break;
+            }
+        }
+        candidate
+    }
+
+    /// Append an 8-char hex hash of `seed_path` to the file stem of `path`.
+    /// Used to deterministically disambiguate orphan files that have no
+    /// matching episode metadata in storage.
+    fn append_path_hash_suffix(path: &Path, seed_path: &Path) -> PathBuf {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        seed_path.hash(&mut hasher);
+        let hash = format!("{:08x}", hasher.finish() as u32);
+        Self::append_to_stem(path, &hash)
+    }
+
+    /// Append `-NN` (where NN is `counter`) to the file stem of `path`.
+    fn append_numeric_suffix(path: &Path, counter: u32) -> PathBuf {
+        Self::append_to_stem(path, &counter.to_string())
+    }
+
+    fn append_to_stem(path: &Path, suffix: &str) -> PathBuf {
+        let parent = path.parent().map(|p| p.to_path_buf());
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let new_name = if ext.is_empty() {
+            format!("{}-{}", stem, suffix)
+        } else {
+            format!("{}-{}.{}", stem, suffix, ext)
+        };
+        match parent {
+            Some(p) => p.join(new_name),
+            None => PathBuf::from(new_name),
+        }
     }
 
     ///

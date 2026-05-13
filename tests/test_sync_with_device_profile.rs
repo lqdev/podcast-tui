@@ -298,3 +298,50 @@ async fn test_sync_with_profile_disambiguates_collisions() {
         report.files_copied
     );
 }
+
+/// A malformed filename template must surface as a hard `SyncError`
+/// rather than silently falling back to verbatim names. The
+/// `DeviceProfile` config schema explicitly promises this behavior, and
+/// PR #219 review feedback called out the previous silent fallback.
+#[tokio::test]
+async fn test_sync_with_profile_malformed_template_returns_error() {
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().join("data");
+    let downloads_dir = temp.path().join("downloads");
+    let device_dir = temp.path().join("device");
+    fs::create_dir_all(&data_dir).await.unwrap();
+    fs::create_dir_all(&downloads_dir).await.unwrap();
+    fs::create_dir_all(&device_dir).await.unwrap();
+
+    let storage = Arc::new(JsonStorage::with_data_dir(data_dir.clone()));
+    storage.initialize().await.unwrap();
+
+    let _ = make_podcast_with_episodes(&storage, &downloads_dir, "Pod", &["E1"]).await;
+
+    let manager = DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+    // {bogus_token} does not exist in the engine — must error.
+    let profile = make_profile("{bogus_token}.{ext}", false, 128);
+
+    let result = manager
+        .sync_to_device(
+            device_dir.clone(),
+            None,
+            false,
+            false,
+            false,
+            None,
+            Some(profile),
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "malformed template should produce a SyncError, got: {:?}",
+        result
+    );
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(
+        err_msg.contains("template") || err_msg.contains("Template"),
+        "error message should mention template, got: {err_msg}"
+    );
+}

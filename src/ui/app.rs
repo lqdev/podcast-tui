@@ -382,22 +382,32 @@ impl UIApp {
 
     /// Persist the current in-memory `Config` back to `config.json`.
     ///
-    /// Returns `Ok(())` and silently skips when no `config_path` is wired
-    /// (e.g. tests). Returns the underlying I/O error on save failure;
-    /// callers are expected to surface it via `show_error` but **must
-    /// not** roll back the in-memory mutation — partial persistence is
-    /// preferable to losing the user's runtime change.
-    pub fn persist_config(&self) -> UIResult<()> {
-        let Some(ref path) = self.config_path else {
-            return Ok(());
-        };
-        self.config.save(path).map_err(|e| {
-            UIError::InvalidOperation(format!(
-                "Failed to persist config to {}: {}",
-                path.display(),
-                e
-            ))
-        })
+    /// Returns a `JoinHandle` for the spawned write task, or `None` when
+    /// no `config_path` is wired (e.g. tests). Production callers can
+    /// drop the handle (`let _ = self.persist_config();`) — the task
+    /// will run to completion on the blocking thread pool. Tests that
+    /// want to assert the file was written can `.await` the handle.
+    ///
+    /// The actual disk write is dispatched to a
+    /// `tokio::task::spawn_blocking` worker so the UI event loop is
+    /// never blocked on filesystem I/O. This is fire-and-forget by
+    /// design — save failures are logged via `eprintln!` (matching the
+    /// rest of the codebase) rather
+    /// than surfaced through the minibuffer, since the in-memory
+    /// mutation has already been applied and we don't want to gate the
+    /// snappy command response on a slow disk.
+    pub fn persist_config(&self) -> Option<tokio::task::JoinHandle<()>> {
+        let path = self.config_path.clone()?;
+        let config = self.config.clone();
+        Some(tokio::task::spawn_blocking(move || {
+            if let Err(e) = config.save(&path) {
+                eprintln!(
+                    "[config] Failed to persist config to {}: {}",
+                    path.display(),
+                    e
+                );
+            }
+        }))
     }
 
     /// Replace the app event sender after construction (used when wiring AudioManager).
@@ -3052,9 +3062,7 @@ impl UIApp {
                 self.status_bar.set_theme(new_theme);
                 self.config.ui.theme = theme_name.to_string();
                 self.show_message(format!("Theme changed to: {}", theme_name));
-                if let Err(e) = self.persist_config() {
-                    self.show_error(format!("Theme applied but not persisted: {}", e));
-                }
+                let _ = self.persist_config();
                 Ok(true)
             }
             None => {
@@ -3082,9 +3090,7 @@ impl UIApp {
                 sync_buffer.set_active_device_profile_name(None);
             }
             self.show_message("Cleared active device profile".to_string());
-            if let Err(e) = self.persist_config() {
-                self.show_error(format!("Profile cleared but not persisted: {}", e));
-            }
+            let _ = self.persist_config();
             return;
         }
 
@@ -3099,9 +3105,7 @@ impl UIApp {
                 sync_buffer.set_active_device_profile_name(Some(trimmed.to_string()));
             }
             self.show_message(format!("Active device profile: {}", trimmed));
-            if let Err(e) = self.persist_config() {
-                self.show_error(format!("Profile set but not persisted: {}", e));
-            }
+            let _ = self.persist_config();
         } else {
             self.show_error(format!("No device profile named '{}'", trimmed));
         }
@@ -5874,6 +5878,10 @@ mod tests {
         app.set_config_path(cfg_path.clone());
 
         app.set_device_profile_direct("Innioasis Y1");
+        // Wait for the spawn_blocking write task to complete.
+        if let Some(handle) = app.persist_config() {
+            handle.await.unwrap();
+        }
 
         // File written and parses back with the new active profile selected.
         assert!(cfg_path.exists(), "config.json should be written");
@@ -5920,6 +5928,9 @@ mod tests {
         app.set_config_path(cfg_path.clone());
 
         app.set_theme_direct("light").unwrap();
+        if let Some(handle) = app.persist_config() {
+            handle.await.unwrap();
+        }
 
         let reloaded: Config =
             serde_json::from_str(&std::fs::read_to_string(&cfg_path).unwrap()).unwrap();
@@ -5928,8 +5939,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_persist_config_no_path_is_silent_noop() {
-        // No `set_config_path` call → persist_config should succeed without
-        // touching disk, so the runtime mutation still applies cleanly.
+        // No `set_config_path` call → persist_config returns None and does
+        // not touch disk, so the runtime mutation still applies cleanly.
         let (mut app, _tmp) =
             make_app_with_device_profiles(vec![sample_profile("Generic")], None).await;
         assert!(app.config_path.is_none());
@@ -5941,13 +5952,18 @@ mod tests {
             Some("Generic"),
             "in-memory mutation must apply even when persistence is unwired"
         );
-        assert!(app.persist_config().is_ok());
+        assert!(
+            app.persist_config().is_none(),
+            "no config_path → no spawned task"
+        );
     }
 
     #[tokio::test]
     async fn test_persist_config_save_failure_does_not_rollback_state() {
-        // Point config_path at a directory that doesn't exist *and* whose
-        // parent path collides with a regular file, so create_dir_all fails.
+        // Point config_path at an unwritable location: a path whose parent
+        // is a regular file, so create_dir_all fails inside the spawned
+        // save. The blocking task logs a warning and exits cleanly; the
+        // in-memory mutation is never touched.
         let (mut app, _tmp) =
             make_app_with_device_profiles(vec![sample_profile("Generic")], None).await;
         let blocker_dir = tempfile::TempDir::new().unwrap();
@@ -5959,6 +5975,11 @@ mod tests {
         app.set_config_path(bad_path);
 
         app.set_device_profile_direct("Generic");
+        // The spawned task completes (it doesn't panic) even though the
+        // write failed — assert it joins cleanly.
+        if let Some(handle) = app.persist_config() {
+            handle.await.unwrap();
+        }
 
         // In-memory state still applied despite save failure.
         assert_eq!(
@@ -5966,7 +5987,6 @@ mod tests {
             Some("Generic"),
             "save failure must not roll back the in-memory mutation"
         );
-        assert!(app.persist_config().is_err());
     }
 
     #[tokio::test]

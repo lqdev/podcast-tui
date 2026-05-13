@@ -462,7 +462,7 @@ async fn main() -> Result<()> {
     // Load configuration
     update_splash_status(InitStatus::LoadingConfig.message())?;
 
-    let config_path_arg = matches.get_one::<String>("config");
+    let config_path_arg = matches.get_one::<String>("config").map(String::as_str);
     let resolved_config_path = Config::resolve_config_path(config_path_arg)?;
     let config = Config::load_or_default(config_path_arg)?;
 

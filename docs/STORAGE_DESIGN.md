@@ -65,8 +65,10 @@ target set by epic #202.**
 - **no cache** uses `JsonStorage::with_cache(false)`. Every `list_podcasts` /
   `load_episodes` call hits disk. This is the pre-#204 baseline.
 - **cache (cold build)** is the first launch after install: no
-  `cache_index.json` yet on disk; `initialize()` is fast but the first read
-  pays the snapshot-build cost.
+  `cache_index.json` yet on disk. `initialize()` builds the in-memory
+  snapshot from the per-podcast / per-episode JSON files, so the build cost
+  shows up here (456 ms in the table). All subsequent reads are in-memory
+  hits (0 ms).
 - **cache (warm)** is every subsequent launch: `initialize()` deserialises
   `cache_index.json` in one shot (~13 ms for 6,000 episodes); reads are pure
   in-memory hits.

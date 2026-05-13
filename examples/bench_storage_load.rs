@@ -62,15 +62,15 @@ async fn main() -> anyhow::Result<()> {
     // Ensure no stale cache index from a previous run is on disk. seed_fixture
     // does not write one, but this guards future refactors.
     let cache_index = data_dir.join("cache_index.json");
-    if cache_index.exists() {
-        std::fs::remove_file(&cache_index)?;
+    if tokio::fs::try_exists(&cache_index).await? {
+        tokio::fs::remove_file(&cache_index).await?;
     }
     let cold_cache = measure(&data_dir, true, n_podcasts).await?;
 
     // The cold-cache run flushed cache_index.json on shutdown. Re-using it
     // gives us the warm measurement.
     assert!(
-        cache_index.exists(),
+        tokio::fs::try_exists(&cache_index).await?,
         "expected cache_index.json after cold-cache run; cache flush may be broken"
     );
 

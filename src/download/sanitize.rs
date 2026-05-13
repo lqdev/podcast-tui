@@ -14,7 +14,14 @@
 //! * Latin-1 / Latin Extended accented characters → ASCII equivalents
 //! * Misc symbols (`&` → `and`, `@` → `at`, etc.)
 //! * Windows reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`)
-//! * Length cap of 140 characters with UTF-8 boundary safety
+//! * Length cap of [`MAX_FILENAME_BYTES`] bytes with UTF-8 boundary safety
+//!
+//! This module is the canonical filename sanitizer for any file written
+//! to the local filesystem (downloads, sync targets, device-side names).
+//! For playlist *directory* names with different rules (no Unicode folding,
+//! 100-char cap), use [`crate::utils::validation::sanitize_playlist_name`].
+
+use crate::constants::filesystem::MAX_FILENAME_BYTES;
 
 /// Comprehensive cross-platform filename sanitization.
 ///
@@ -135,13 +142,13 @@ pub fn sanitize_filename(input: &str, is_folder: bool) -> String {
         };
     }
 
-    // Step 6: Enforce length limits (140 chars for safety across all systems)
-    if final_name.len() > 140 {
+    // Step 6: Enforce length limit (see `MAX_FILENAME_BYTES` for rationale).
+    if final_name.len() > MAX_FILENAME_BYTES {
         // Try to truncate at word boundary
-        if let Some(last_space) = final_name[..140].rfind(' ') {
+        if let Some(last_space) = final_name[..MAX_FILENAME_BYTES].rfind(' ') {
             final_name.truncate(last_space);
         } else {
-            final_name.truncate(140);
+            final_name.truncate(MAX_FILENAME_BYTES);
         }
 
         // Ensure we didn't cut off in the middle of a UTF-8 character
@@ -210,5 +217,24 @@ mod tests {
     #[test]
     fn test_unicode_accents_folded() {
         assert_eq!(sanitize_filename("Café", false), "Cafe");
+    }
+
+    #[test]
+    fn test_length_cap_respects_max_filename_bytes() {
+        let long = "a".repeat(MAX_FILENAME_BYTES * 2);
+        let out = sanitize_filename(&long, false);
+        assert!(out.len() <= MAX_FILENAME_BYTES);
+    }
+
+    #[test]
+    fn test_length_cap_truncates_at_word_boundary() {
+        // Build an input with a space just below the cap so the truncation
+        // logic prefers the word boundary.
+        let prefix = "word ".repeat(MAX_FILENAME_BYTES / 5);
+        let input = format!("{prefix}extra-very-long-tail-segment");
+        let out = sanitize_filename(&input, false);
+        assert!(out.len() <= MAX_FILENAME_BYTES);
+        // Should not end mid-word (no trailing partial "tail-segment")
+        assert!(!out.ends_with("segment"));
     }
 }

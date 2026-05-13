@@ -33,21 +33,20 @@ pub fn is_valid_podcast_title(title: &str) -> bool {
     !title.trim().is_empty() && title.len() <= 200
 }
 
-/// Clean and validate a filename for safe filesystem usage
-pub fn sanitize_filename(filename: &str) -> String {
-    // Remove or replace characters that are problematic in filenames
-    let invalid_chars = ['<', '>', ':', '"', '|', '?', '*', '/', '\\'];
-    let mut sanitized = filename.to_string();
-
-    for invalid_char in invalid_chars {
-        sanitized = sanitized.replace(invalid_char, "_");
-    }
-
-    // Trim whitespace and limit length
-    sanitized.trim().chars().take(255).collect()
-}
+// NOTE: A previous `sanitize_filename` helper lived here but was unused
+// and superseded by [`crate::download::sanitize::sanitize_filename`], the
+// canonical cross-platform sanitizer for any file written to disk.
+// Use that for download paths, sync targets, and device-side filenames.
+// Use [`sanitize_playlist_name`] (below) only for playlist directory names,
+// which have a distinct contract (100-char cap, underscore replacement,
+// no Unicode folding).
 
 /// Sanitize playlist names for safe filesystem directory usage.
+///
+/// Distinct from [`crate::download::sanitize::sanitize_filename`]: this
+/// helper is tailored for playlist *directories* (shorter cap, simpler
+/// replacement strategy, no Unicode folding). For audio file names, use
+/// the download sanitizer instead.
 pub fn sanitize_playlist_name(name: &str) -> String {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -122,16 +121,6 @@ mod tests {
 
         assert!(is_valid_podcast_title("Valid Podcast"));
         assert!(!is_valid_podcast_title(""));
-    }
-
-    #[test]
-    fn test_filename_sanitization() {
-        assert_eq!(
-            sanitize_filename("Normal Filename.mp3"),
-            "Normal Filename.mp3"
-        );
-        assert_eq!(sanitize_filename("File<>:Name|?.mp3"), "File___Name__.mp3");
-        assert_eq!(sanitize_filename("  Trimmed  "), "Trimmed");
     }
 
     #[test]

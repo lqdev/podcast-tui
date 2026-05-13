@@ -1,5 +1,6 @@
-use crate::config::DownloadConfig;
-use crate::podcast::{Episode, EpisodeStatus};
+use crate::config::{DeviceProfile, DownloadConfig};
+use crate::download::device_template::{self, DeviceFilenameOptions};
+use crate::podcast::{Episode, EpisodeStatus, Podcast};
 use crate::storage::{EpisodeId, PodcastId, Storage};
 use anyhow::Result;
 use chrono::Datelike;
@@ -978,6 +979,7 @@ impl<S: Storage> DownloadManager<S> {
     /// - `Complete` at the end with the full report
     ///
     /// When `progress_tx` is `None`, behavior is identical to before (backward compatible).
+    #[allow(clippy::too_many_arguments)]
     pub async fn sync_to_device(
         &self,
         device_path: PathBuf,
@@ -986,6 +988,7 @@ impl<S: Storage> DownloadManager<S> {
         dry_run: bool,
         hard_sync: bool,
         progress_tx: Option<tokio::sync::mpsc::UnboundedSender<SyncProgressEvent>>,
+        device_profile: Option<DeviceProfile>,
     ) -> Result<SyncReport, SyncError> {
         let mut report = SyncReport::new();
 
@@ -1067,6 +1070,14 @@ impl<S: Storage> DownloadManager<S> {
                 self.scan_playlists_for_sync(playlists_dir, &mut pc_files)
                     .await?;
             }
+        }
+
+        // If a device profile is active, rewrite the device-side keys for
+        // podcast files using the configured filename template. Local
+        // downloads paths (the values) remain untouched. Playlist entries
+        // are left as-is.
+        if let Some(ref profile) = device_profile {
+            pc_files = self.remap_pc_files_with_profile(pc_files, profile).await?;
         }
 
         // Step 2: Build a map of managed files already on the device.
@@ -1273,7 +1284,134 @@ impl<S: Storage> DownloadManager<S> {
         Ok(report)
     }
 
-    /// Recursively scan a directory and build a map of relative paths to (absolute path, file size)
+    /// Rewrite the device-side relative-path keys of `pc_files` for podcast
+    /// files using the active [`DeviceProfile`]'s filename template.
+    ///
+    /// Only entries under `Podcasts/` are remapped; `Playlists/` entries are
+    /// left untouched. The `Podcasts/` managed-root prefix is preserved on
+    /// the rewritten path so orphan-deletion scoping continues to work.
+    ///
+    /// Episodes whose source path cannot be matched to a known podcast in
+    /// storage (e.g. orphaned files left over from a previous app version)
+    /// are kept under their original key so they still copy through.
+    ///
+    /// Collisions between two rendered paths are resolved with
+    /// [`device_template::disambiguate`], using the [`EpisodeId`] of the
+    /// later entry.
+    async fn remap_pc_files_with_profile(
+        &self,
+        pc_files: std::collections::HashMap<PathBuf, (PathBuf, u64)>,
+        profile: &DeviceProfile,
+    ) -> Result<std::collections::HashMap<PathBuf, (PathBuf, u64)>, SyncError> {
+        // Build a source-path → (Podcast, Episode) lookup from storage.
+        // We index by the absolute, canonicalised local_path so the lookup
+        // matches what `scan_directory_with_prefix` produced.
+        let podcast_ids = self.storage.list_podcasts().await.map_err(|e| {
+            SyncError::Io(std::io::Error::other(format!(
+                "Failed to list podcasts: {}",
+                e
+            )))
+        })?;
+
+        let mut by_source: std::collections::HashMap<PathBuf, (Podcast, Episode)> =
+            std::collections::HashMap::new();
+
+        for pid in &podcast_ids {
+            let podcast = match self.storage.load_podcast(pid).await {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let episodes = match self.storage.load_episodes(pid).await {
+                Ok(eps) => eps,
+                Err(_) => continue,
+            };
+            for ep in episodes {
+                if let Some(ref local) = ep.local_path {
+                    // Use canonicalize where possible so symlinked / normalised
+                    // paths still match `pc_files` keys. Fall back to the
+                    // raw path on error (e.g. file missing).
+                    let key = fs::canonicalize(local)
+                        .await
+                        .unwrap_or_else(|_| local.clone());
+                    by_source.insert(key, (podcast.clone(), ep));
+                }
+            }
+        }
+
+        let opts = DeviceFilenameOptions {
+            max_length: profile.max_filename_length,
+            ascii_only: profile.ascii_only,
+        };
+
+        let mut remapped: std::collections::HashMap<PathBuf, (PathBuf, u64)> =
+            std::collections::HashMap::with_capacity(pc_files.len());
+
+        for (relative_path, (source_path, size)) in pc_files {
+            // Anything outside the Podcasts/ managed root (e.g. Playlists/)
+            // is forwarded verbatim.
+            let after_root = match relative_path.strip_prefix("Podcasts") {
+                Ok(rest) => rest.to_path_buf(),
+                Err(_) => {
+                    remapped.insert(relative_path, (source_path, size));
+                    continue;
+                }
+            };
+
+            // Look up the (podcast, episode) for this source. Try the
+            // canonicalised path first, then fall back to the raw source.
+            let canon_source = fs::canonicalize(&source_path)
+                .await
+                .unwrap_or_else(|_| source_path.clone());
+            let lookup = by_source
+                .get(&canon_source)
+                .or_else(|| by_source.get(&source_path));
+
+            let new_relative = match lookup {
+                Some((podcast, episode)) => {
+                    // Derive the extension from the on-disk file so the
+                    // template's `{ext}` token resolves correctly.
+                    let ext = source_path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("mp3");
+
+                    match device_template::render(
+                        &profile.filename_template,
+                        podcast,
+                        episode,
+                        ext,
+                        &opts,
+                    ) {
+                        Ok(rendered) => Path::new("Podcasts").join(rendered),
+                        Err(_) => {
+                            // Malformed template — skip remap for this
+                            // entry so the file still syncs under its
+                            // original name. The user-facing error
+                            // surfaces via dry-run / future validation.
+                            Path::new("Podcasts").join(after_root)
+                        }
+                    }
+                }
+                None => Path::new("Podcasts").join(after_root),
+            };
+
+            // Resolve collisions by disambiguating with the episode id.
+            let final_relative = if remapped.contains_key(&new_relative) {
+                if let Some((_, episode)) = lookup {
+                    device_template::disambiguate(&new_relative, &episode.id)
+                } else {
+                    new_relative
+                }
+            } else {
+                new_relative
+            };
+
+            remapped.insert(final_relative, (source_path, size));
+        }
+
+        Ok(remapped)
+    }
+
     ///
     /// # Arguments
     /// * `root_path` - The original root path for computing relative paths
@@ -1514,7 +1652,7 @@ mod tests {
 
         // Act — dry-run with progress channel
         manager
-            .sync_to_device(device_dir, None, false, true, false, Some(tx))
+            .sync_to_device(device_dir, None, false, true, false, Some(tx), None)
             .await
             .expect("Dry-run should succeed");
 
@@ -1547,7 +1685,7 @@ mod tests {
 
         let invalid_path = PathBuf::from("/nonexistent/path");
         let result = manager
-            .sync_to_device(invalid_path, None, true, false, false, None)
+            .sync_to_device(invalid_path, None, true, false, false, None, None)
             .await;
 
         assert!(result.is_err());
@@ -1581,7 +1719,7 @@ mod tests {
 
         // Run sync in dry-run mode
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, true, false, None)
+            .sync_to_device(device_path.clone(), None, false, true, false, None, None)
             .await
             .unwrap();
 
@@ -1624,7 +1762,7 @@ mod tests {
 
         // Run sync
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, false, false, None)
+            .sync_to_device(device_path.clone(), None, false, false, false, None, None)
             .await
             .unwrap();
 
@@ -1667,7 +1805,7 @@ mod tests {
 
         // Run sync
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, false, false, None)
+            .sync_to_device(device_path.clone(), None, false, false, false, None, None)
             .await
             .unwrap();
 
@@ -1704,7 +1842,7 @@ mod tests {
 
         // Run sync with delete_orphans=true
         let report = manager
-            .sync_to_device(device_path.clone(), None, true, false, false, None)
+            .sync_to_device(device_path.clone(), None, true, false, false, None, None)
             .await
             .unwrap();
 
@@ -1750,7 +1888,7 @@ mod tests {
 
         // Run sync with delete_orphans=true
         let report = manager
-            .sync_to_device(device_path.clone(), None, true, false, false, None)
+            .sync_to_device(device_path.clone(), None, true, false, false, None, None)
             .await
             .unwrap();
 
@@ -1791,7 +1929,7 @@ mod tests {
 
         // Run sync
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, false, false, None)
+            .sync_to_device(device_path.clone(), None, false, false, false, None, None)
             .await
             .unwrap();
 
@@ -1840,6 +1978,7 @@ mod tests {
                 false,
                 false,
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -1881,6 +2020,7 @@ mod tests {
                 false,
                 false,
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -1919,7 +2059,7 @@ mod tests {
         fs::create_dir_all(&device_path).await.unwrap();
 
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, false, false, None)
+            .sync_to_device(device_path.clone(), None, false, false, false, None, None)
             .await
             .unwrap();
 
@@ -1964,6 +2104,7 @@ mod tests {
                 true,
                 false,
                 false,
+                None,
                 None,
             )
             .await
@@ -2033,6 +2174,7 @@ mod tests {
                 false,
                 true,
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -2090,7 +2232,7 @@ mod tests {
         fs::write(&stale_podcast_file, b"stale").await.unwrap();
 
         let report = manager
-            .sync_to_device(device_path.clone(), None, true, true, true, None)
+            .sync_to_device(device_path.clone(), None, true, true, true, None, None)
             .await
             .unwrap();
 

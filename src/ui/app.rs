@@ -294,6 +294,11 @@ impl UIApp {
         buffer_manager.create_podcast_list_buffer(subscription_manager.clone());
         buffer_manager.create_downloads_buffer(download_manager.clone(), storage.clone());
         buffer_manager.create_sync_buffer(download_manager.clone(), storage.data_dir.clone());
+        if let Some(sync_buffer) = buffer_manager.get_sync_buffer_mut() {
+            sync_buffer.set_active_device_profile_name(
+                config.active_device_profile().map(|p| p.name.clone()),
+            );
+        }
         buffer_manager.create_playlist_list_buffer(playlist_manager.clone());
         buffer_manager.create_whats_new_buffer(
             subscription_manager.clone(),
@@ -587,6 +592,11 @@ impl UIApp {
             self.download_manager.clone(),
             self._storage.data_dir.clone(),
         );
+        if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
+            sync_buffer.set_active_device_profile_name(
+                self.config.active_device_profile().map(|p| p.name.clone()),
+            );
+        }
         self.buffer_manager.create_whats_new_buffer(
             self.subscription_manager.clone(),
             self.download_manager.clone(),
@@ -4543,6 +4553,7 @@ impl UIApp {
         } else {
             None
         };
+        let device_profile = self.config.active_device_profile().cloned();
 
         // Expand tilde and convert to PathBuf
         let expanded_path = shellexpand::tilde(&device_path_str).to_string();
@@ -4591,6 +4602,7 @@ impl UIApp {
                     dry_run,
                     hard_sync,
                     progress_tx,
+                    device_profile,
                 )
                 .await
             {

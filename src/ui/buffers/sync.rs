@@ -176,6 +176,12 @@ pub struct SyncBuffer {
 
     /// Cursor index across the flat overview list (targets then history)
     selected_index: usize,
+
+    /// Name of the active device profile (from config), shown in the status
+    /// header so users can confirm which template will rewrite filenames on
+    /// the next sync. `None` means no profile is active and filenames are
+    /// copied verbatim.
+    active_device_profile_name: Option<String>,
 }
 
 impl SyncBuffer {
@@ -194,6 +200,7 @@ impl SyncBuffer {
             sync_history: Vec::new(),
             last_sync: None,
             selected_index: 0,
+            active_device_profile_name: None,
         }
     }
 }
@@ -208,6 +215,12 @@ impl SyncBuffer {
     /// Set download manager
     pub fn set_download_manager(&mut self, dm: Arc<DownloadManager<JsonStorage>>) {
         self.download_manager = Some(dm);
+    }
+
+    /// Set the active device profile name (from `config.active_device_profile`).
+    /// Pass `None` to indicate no profile is active.
+    pub fn set_active_device_profile_name(&mut self, name: Option<String>) {
+        self.active_device_profile_name = name;
     }
 
     /// Set data directory and load persisted data
@@ -547,7 +560,7 @@ impl SyncBuffer {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(5), // Status / active target
+                Constraint::Length(6), // Status / active target / device profile
                 Constraint::Min(5),    // Flat list (targets + history)
                 Constraint::Length(3), // Hints
             ])
@@ -596,7 +609,12 @@ impl SyncBuffer {
                     .unwrap_or_else(|| "No syncs yet.".to_string())
             });
 
-        let text = format!("{}\n{}", target_line, last_line);
+        let profile_line = match &self.active_device_profile_name {
+            Some(name) => format!("Active device profile: {}", name),
+            None => "Active device profile: (none)".to_string(),
+        };
+
+        let text = format!("{}\n{}\n{}", target_line, profile_line, last_line);
         let para = Paragraph::new(text)
             .block(
                 Block::default()

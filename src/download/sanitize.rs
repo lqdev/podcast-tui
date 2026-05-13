@@ -18,8 +18,11 @@
 
 /// Comprehensive cross-platform filename sanitization.
 ///
-/// `is_folder` only affects the fallback name when sanitization yields an
-/// empty string (`"Podcast"` for folders, `"Episode"` otherwise).
+/// Empty or whitespace-only input always returns `"Untitled"` regardless of
+/// `is_folder`. `is_folder` only affects the fallback when sanitization of a
+/// non-empty input *yields* an empty string (e.g. a title that consists
+/// entirely of stripped characters): folders fall back to `"Podcast"`,
+/// non-folders to `"Episode"`.
 pub fn sanitize_filename(input: &str, is_folder: bool) -> String {
     // Step 1: Handle empty or whitespace-only input
     let trimmed = input.trim();

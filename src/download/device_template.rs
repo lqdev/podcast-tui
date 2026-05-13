@@ -13,6 +13,8 @@
 //! | `{title}`          | Episode title, sanitized                                           |
 //! | `{track}`          | Episode number (no padding); empty string if missing               |
 //! | `{track:NN}`       | Episode number, zero-padded to N digits (`{track:03}` → `007`)     |
+//! | `{episode_number}` | Alias for `{track}`                                                |
+//! | `{episode_number:NN}` | Alias for `{track:NN}`                                          |
 //! | `{date}`           | Published date, default format `YYYY-MM-DD`                        |
 //! | `{date:%fmt}`      | Published date with `chrono` strftime format                       |
 //! | `{ext}`            | File extension (e.g. `mp3`) without leading dot                    |
@@ -131,20 +133,35 @@ fn substitute_token(
 
     match (name, param) {
         ("podcast", None) => Ok(podcast.title.clone()),
-        ("podcast_short", None) => Ok(truncate_chars(&podcast.title, PODCAST_SHORT_MAX)),
+        ("podcast_short", None) => {
+            // Sanitize first, then truncate the *sanitized* string to 30
+            // characters so the doc-promised cap holds even when the
+            // sanitizer rewrites length (e.g. `&` → "and").
+            Ok(truncate_chars(
+                &sanitize_filename(&podcast.title, false),
+                PODCAST_SHORT_MAX,
+            ))
+        }
         ("title", None) => Ok(episode.title.clone()),
-        ("track", None) => Ok(episode
+        ("track" | "episode_number", None) => Ok(episode
             .episode_number
             .map(|n| n.to_string())
             .unwrap_or_default()),
-        ("track", Some(spec)) => {
-            // Spec must be NN — zero-pad width.
+        ("track" | "episode_number", Some(spec)) => {
+            // Spec must be a positive width (NN). Zero is rejected to match
+            // the documented behavior of zero-padding (`{track:0}` is meaningless).
             let width: usize = spec.parse().map_err(|_| {
                 TemplateError::Malformed(format!(
-                    "invalid width '{}' in {{track:{}}}; expected a positive integer",
-                    spec, spec
+                    "invalid width '{}' in {{{}:{}}}; expected a positive integer",
+                    spec, name, spec
                 ))
             })?;
+            if width == 0 {
+                return Err(TemplateError::Malformed(format!(
+                    "invalid width '0' in {{{}:0}}; expected a positive integer",
+                    name
+                )));
+            }
             Ok(episode
                 .episode_number
                 .map(|n| format!("{:0width$}", n, width = width))
@@ -163,8 +180,14 @@ fn truncate_chars(s: &str, max: usize) -> String {
 }
 
 /// Cap a string to `max` bytes, honoring UTF-8 boundaries.
+///
+/// `max == 0` returns an empty string — callers must enforce the cap even
+/// when extension reservation consumes the whole budget.
 fn cap_bytes(mut s: String, max: usize) -> String {
-    if max == 0 || s.len() <= max {
+    if max == 0 {
+        return String::new();
+    }
+    if s.len() <= max {
         return s;
     }
     s.truncate(max);
@@ -251,6 +274,14 @@ pub fn render(
         };
         let cap = opts.max_length.saturating_sub(reserve);
         sanitized = cap_bytes(sanitized, cap);
+
+        // If the cap consumed the entire stem (e.g. max_length too small to
+        // fit even one stem byte alongside the reserved extension), fall
+        // back to a single-character placeholder so we never emit a dotfile
+        // like ".mp3".
+        if sanitized.is_empty() {
+            sanitized = "_".to_string();
+        }
 
         let final_segment = if is_last && !ext_part.is_empty() {
             format!("{}.{}", sanitized, ext_part)
@@ -410,6 +441,81 @@ mod tests {
         let e = make_episode("Ep", Some(7));
         let out = render("{track:03}-{title}.{ext}", &p, &e, "mp3", &default_opts()).unwrap();
         assert_eq!(out, PathBuf::from("007-Ep.mp3"));
+    }
+
+    #[test]
+    fn token_track_zero_width_rejected() {
+        let p = make_podcast("Show");
+        let e = make_episode("Ep", Some(7));
+        let err = render("{track:0}.{ext}", &p, &e, "mp3", &default_opts()).unwrap_err();
+        assert!(matches!(err, TemplateError::Malformed(_)));
+    }
+
+    #[test]
+    fn token_episode_number_alias() {
+        // `{episode_number}` and `{episode_number:NN}` are aliases for `{track}`
+        // and `{track:NN}` so DeviceProfile templates can use the more readable
+        // name without breaking the engine.
+        let p = make_podcast("Show");
+        let e = make_episode("Ep", Some(7));
+        let out = render(
+            "{episode_number:03}-{title}.{ext}",
+            &p,
+            &e,
+            "mp3",
+            &default_opts(),
+        )
+        .unwrap();
+        assert_eq!(out, PathBuf::from("007-Ep.mp3"));
+
+        let out = render(
+            "{episode_number}-{title}.{ext}",
+            &p,
+            &e,
+            "mp3",
+            &default_opts(),
+        )
+        .unwrap();
+        assert_eq!(out, PathBuf::from("7-Ep.mp3"));
+    }
+
+    #[test]
+    fn token_podcast_short_truncates_after_sanitization() {
+        // Verify the doc-promised order: sanitize first, then truncate.
+        // `&` → "and" expands the string, so naive raw-truncation could
+        // either fall short or exceed 30 chars; sanitize-then-truncate
+        // gives a deterministic 30-char cap on the *output*.
+        let p = make_podcast("AAA & BBB & CCC & DDD & EEE & FFFFFFF");
+        let e = make_episode("Ep", Some(1));
+        let out = render("{podcast_short}.{ext}", &p, &e, "mp3", &default_opts()).unwrap();
+        let stem = out.file_stem().unwrap().to_string_lossy().into_owned();
+        assert!(
+            stem.chars().count() <= 30,
+            "expected ≤30 chars after sanitize+truncate, got {} ({:?})",
+            stem.chars().count(),
+            stem
+        );
+    }
+
+    #[test]
+    fn cap_smaller_than_extension_falls_back_safely() {
+        // max_length=3 with "mp3" extension reservation = "mp3" + "." = 4 bytes
+        // -> reserved bytes exceed budget; cap_bytes returns "" and the engine
+        // falls back to "_" so we never emit a hidden ".mp3" dotfile.
+        let p = make_podcast("Show");
+        let e = make_episode("Episode Title", Some(1));
+        let opts = DeviceFilenameOptions {
+            max_length: 3,
+            ascii_only: false,
+        };
+        let out = render("{title}.{ext}", &p, &e, "mp3", &opts).unwrap();
+        let file = out.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(
+            !file.starts_with('.'),
+            "must not produce a dotfile: {}",
+            file
+        );
+        assert!(file.contains(".mp3"));
     }
 
     #[test]

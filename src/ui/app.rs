@@ -5685,10 +5685,15 @@ mod tests {
     }
 
     /// Helper: build a UIApp with the given device profiles configured.
+    ///
+    /// Returns the `TempDir` alongside the app so callers can hold it for the
+    /// duration of the test — `initialize()` spawns background refresh tasks
+    /// that touch storage, and dropping the temp dir while they run causes
+    /// nondeterministic failures.
     async fn make_app_with_device_profiles(
         profiles: Vec<crate::config::DeviceProfile>,
         active: Option<String>,
-    ) -> UIApp {
+    ) -> (UIApp, tempfile::TempDir) {
         use crate::config::DownloadConfig;
         use crate::storage::JsonStorage;
         use tempfile::TempDir;
@@ -5722,7 +5727,7 @@ mod tests {
         )
         .unwrap();
         app.initialize().await.unwrap();
-        app
+        (app, temp_dir)
     }
 
     fn sample_profile(name: &str) -> crate::config::DeviceProfile {
@@ -5738,7 +5743,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_device_profile_switches_active_profile() {
-        let mut app = make_app_with_device_profiles(
+        let (mut app, _tmp) = make_app_with_device_profiles(
             vec![sample_profile("Innioasis Y1"), sample_profile("Generic")],
             None,
         )
@@ -5756,25 +5761,31 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_device_profile_unknown_name_leaves_state_unchanged() {
-        let mut app = make_app_with_device_profiles(
+        let (mut app, _tmp) = make_app_with_device_profiles(
             vec![sample_profile("Generic")],
             Some("Generic".to_string()),
         )
         .await;
+        // Seed the sync buffer header so we can verify it is unchanged after
+        // the failed set. (initialize() does not seed it from config; only the
+        // startup path in app.rs:297 does.)
+        if let Some(buf) = app.buffer_manager.get_sync_buffer_mut() {
+            buf.set_active_device_profile_name(Some("Generic".to_string()));
+        }
 
         app.set_device_profile_direct("does-not-exist");
 
+        // Both the config field and the sync buffer header must still
+        // reflect the previously active profile — not be cleared, not be
+        // set to the bogus value.
         assert_eq!(app.config.active_device_profile.as_deref(), Some("Generic"));
         let sync_buf = app.buffer_manager.get_sync_buffer_mut().unwrap();
-        assert_ne!(
-            sync_buf.active_device_profile_name(),
-            Some("does-not-exist")
-        );
+        assert_eq!(sync_buf.active_device_profile_name(), Some("Generic"));
     }
 
     #[tokio::test]
     async fn test_set_device_profile_empty_clears_active() {
-        let mut app = make_app_with_device_profiles(
+        let (mut app, _tmp) = make_app_with_device_profiles(
             vec![sample_profile("Generic")],
             Some("Generic".to_string()),
         )
@@ -5789,7 +5800,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_device_profile_completion_includes_profile_names() {
-        let app = make_app_with_device_profiles(
+        let (app, _tmp) = make_app_with_device_profiles(
             vec![sample_profile("Innioasis Y1"), sample_profile("Generic")],
             None,
         )

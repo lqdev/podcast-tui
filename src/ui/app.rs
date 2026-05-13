@@ -2716,6 +2716,15 @@ impl UIApp {
                     Ok(true)
                 }
             }
+            "set-device-profile" => {
+                let name = if parts.len() > 1 {
+                    parts[1..].join(" ")
+                } else {
+                    String::new()
+                };
+                self.set_device_profile_direct(&name);
+                Ok(true)
+            }
             "cache-rebuild" => {
                 let storage = self._storage.clone();
                 let app_event_tx = self.app_event_tx.clone();
@@ -3012,6 +3021,43 @@ impl UIApp {
         }
     }
 
+    /// Switch the active device profile at runtime (in-memory only).
+    ///
+    /// An empty `name` clears the active profile. Otherwise the name must
+    /// match one of `config.device_profiles[].name` (case-sensitive). The
+    /// Sync buffer header is updated immediately so the user sees the
+    /// switch reflected without re-opening the buffer.
+    ///
+    /// Persistence to `config.json` is intentionally **not** done here —
+    /// see issue #223 (follow-up) and the CHANGELOG entry. Behavior
+    /// matches `set_theme_direct`, which also only mutates in-memory state.
+    pub(crate) fn set_device_profile_direct(&mut self, name: &str) {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            self.config.active_device_profile = None;
+            if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
+                sync_buffer.set_active_device_profile_name(None);
+            }
+            self.show_message("Cleared active device profile".to_string());
+            return;
+        }
+
+        if self
+            .config
+            .device_profiles
+            .iter()
+            .any(|p| p.name == trimmed)
+        {
+            self.config.active_device_profile = Some(trimmed.to_string());
+            if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
+                sync_buffer.set_active_device_profile_name(Some(trimmed.to_string()));
+            }
+            self.show_message(format!("Active device profile: {}", trimmed));
+        } else {
+            self.show_error(format!("No device profile named '{}'", trimmed));
+        }
+    }
+
     /// Show list of available buffers
     fn show_buffer_list(&mut self) {
         use crate::ui::buffers::buffer_list::BufferListBuffer;
@@ -3163,6 +3209,13 @@ impl UIApp {
             "cleanup".to_string(),
             // Cache commands
             "cache-rebuild".to_string(),
+            // Device profile commands
+            "set-device-profile".to_string(),
+        ]);
+        for profile in &self.config.device_profiles {
+            commands.push(format!("set-device-profile {}", profile.name));
+        }
+        commands.extend([
             // Search & filter commands
             "search".to_string(),
             "filter-status".to_string(),
@@ -5629,6 +5682,133 @@ mod tests {
         .await;
         let name = app.buffer_manager.current_buffer_name();
         assert_eq!(name.as_deref(), Some("*Help: Keybindings*"));
+    }
+
+    /// Helper: build a UIApp with the given device profiles configured.
+    ///
+    /// Returns the `TempDir` alongside the app so callers can hold it for the
+    /// duration of the test — `initialize()` spawns background refresh tasks
+    /// that touch storage, and dropping the temp dir while they run causes
+    /// nondeterministic failures.
+    async fn make_app_with_device_profiles(
+        profiles: Vec<crate::config::DeviceProfile>,
+        active: Option<String>,
+    ) -> (UIApp, tempfile::TempDir) {
+        use crate::config::DownloadConfig;
+        use crate::storage::JsonStorage;
+        use tempfile::TempDir;
+
+        let config = Config {
+            device_profiles: profiles,
+            active_device_profile: active,
+            ..Default::default()
+        };
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let download_manager = Arc::new(
+            DownloadManager::new(
+                storage.clone(),
+                temp_dir.path().to_path_buf(),
+                DownloadConfig::default(),
+            )
+            .unwrap(),
+        );
+        let subscription_manager = Arc::new(SubscriptionManager::with_download_manager(
+            storage.clone(),
+            download_manager.clone(),
+        ));
+        let (app_event_tx, _rx) = mpsc::unbounded_channel();
+        let mut app = UIApp::new(
+            config,
+            subscription_manager,
+            download_manager,
+            storage,
+            app_event_tx,
+        )
+        .unwrap();
+        app.initialize().await.unwrap();
+        (app, temp_dir)
+    }
+
+    fn sample_profile(name: &str) -> crate::config::DeviceProfile {
+        crate::config::DeviceProfile {
+            name: name.to_string(),
+            match_path_contains: None,
+            filename_template: "{podcast}/{title}.{ext}".to_string(),
+            max_filename_length: 128,
+            ascii_only: false,
+            preserve_structure: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_set_device_profile_switches_active_profile() {
+        let (mut app, _tmp) = make_app_with_device_profiles(
+            vec![sample_profile("Innioasis Y1"), sample_profile("Generic")],
+            None,
+        )
+        .await;
+
+        app.set_device_profile_direct("Innioasis Y1");
+
+        assert_eq!(
+            app.config.active_device_profile.as_deref(),
+            Some("Innioasis Y1")
+        );
+        let sync_buf = app.buffer_manager.get_sync_buffer_mut().unwrap();
+        assert_eq!(sync_buf.active_device_profile_name(), Some("Innioasis Y1"));
+    }
+
+    #[tokio::test]
+    async fn test_set_device_profile_unknown_name_leaves_state_unchanged() {
+        let (mut app, _tmp) = make_app_with_device_profiles(
+            vec![sample_profile("Generic")],
+            Some("Generic".to_string()),
+        )
+        .await;
+        // Seed the sync buffer header so we can verify it is unchanged after
+        // the failed set. (initialize() does not seed it from config; only the
+        // startup path in app.rs:297 does.)
+        if let Some(buf) = app.buffer_manager.get_sync_buffer_mut() {
+            buf.set_active_device_profile_name(Some("Generic".to_string()));
+        }
+
+        app.set_device_profile_direct("does-not-exist");
+
+        // Both the config field and the sync buffer header must still
+        // reflect the previously active profile — not be cleared, not be
+        // set to the bogus value.
+        assert_eq!(app.config.active_device_profile.as_deref(), Some("Generic"));
+        let sync_buf = app.buffer_manager.get_sync_buffer_mut().unwrap();
+        assert_eq!(sync_buf.active_device_profile_name(), Some("Generic"));
+    }
+
+    #[tokio::test]
+    async fn test_set_device_profile_empty_clears_active() {
+        let (mut app, _tmp) = make_app_with_device_profiles(
+            vec![sample_profile("Generic")],
+            Some("Generic".to_string()),
+        )
+        .await;
+
+        app.set_device_profile_direct("");
+
+        assert!(app.config.active_device_profile.is_none());
+        let sync_buf = app.buffer_manager.get_sync_buffer_mut().unwrap();
+        assert!(sync_buf.active_device_profile_name().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_set_device_profile_completion_includes_profile_names() {
+        let (app, _tmp) = make_app_with_device_profiles(
+            vec![sample_profile("Innioasis Y1"), sample_profile("Generic")],
+            None,
+        )
+        .await;
+        let cmds = app.get_available_commands();
+        assert!(cmds.iter().any(|c| c == "set-device-profile"));
+        assert!(cmds.iter().any(|c| c == "set-device-profile Innioasis Y1"));
+        assert!(cmds.iter().any(|c| c == "set-device-profile Generic"));
     }
 
     #[tokio::test]

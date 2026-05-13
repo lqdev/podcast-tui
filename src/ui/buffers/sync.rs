@@ -223,6 +223,13 @@ impl SyncBuffer {
         self.active_device_profile_name = name;
     }
 
+    /// Read the currently displayed active device profile name (used by tests
+    /// and any future buffer that needs to query it without reaching into the
+    /// `Config` object).
+    pub fn active_device_profile_name(&self) -> Option<&str> {
+        self.active_device_profile_name.as_deref()
+    }
+
     /// Set data directory and load persisted data
     pub fn set_data_dir(&mut self, dir: PathBuf) {
         self.data_dir = Some(dir);

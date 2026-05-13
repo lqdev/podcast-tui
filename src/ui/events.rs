@@ -410,6 +410,17 @@ pub enum AppEvent {
         error: String,
     },
 
+    /// Storage cache rebuild completed
+    CacheRebuilt {
+        podcast_count: usize,
+        episode_count: usize,
+    },
+
+    /// Storage cache rebuild failed
+    CacheRebuildFailed {
+        error: String,
+    },
+
     /// Podcast tag added successfully
     PodcastTagAdded {
         podcast_id: crate::storage::PodcastId,

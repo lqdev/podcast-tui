@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::fs;
 use tokio::sync::RwLock;
 
@@ -15,9 +16,16 @@ use crate::utils::text::strip_html;
 use crate::utils::validation::sanitize_playlist_name;
 
 /// Schema version for the in-memory cache snapshot. Bumped when the snapshot
-/// shape changes incompatibly. The persistent index file (added in a follow-up
-/// issue) will reject older versions and rebuild from disk.
+/// shape changes incompatibly. The persistent index file rejects older
+/// versions and rebuilds from disk.
 pub(crate) const CACHE_SCHEMA_VERSION: u32 = 1;
+
+/// File name of the persistent cache index, stored in `data_dir`.
+pub(crate) const CACHE_FILE_NAME: &str = "cache_index.json";
+
+/// Background flush interval. The flush task only writes when the cache
+/// is dirty, so this is a worst-case write frequency.
+const CACHE_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
 
 /// In-memory snapshot of the storage data set.
 ///
@@ -242,6 +250,86 @@ impl JsonStorage {
         if self.cache_enabled {
             self.cache_dirty.store(true, Ordering::Relaxed);
         }
+    }
+
+    /// Path to the persistent cache index file.
+    fn cache_index_path(&self) -> PathBuf {
+        self.data_dir.join(CACHE_FILE_NAME)
+    }
+
+    /// Path to the in-flight cache index temp file.
+    fn cache_index_tmp_path(&self) -> PathBuf {
+        self.cache_index_path().with_extension("json.tmp")
+    }
+
+    /// Read the persistent cache index from disk if it exists. Returns
+    /// `Ok(None)` when the index file is absent (clean first launch).
+    /// Bubbles up I/O and parse errors so the caller can decide whether to
+    /// rebuild from disk.
+    async fn load_cache_from_disk(&self) -> Result<Option<CacheSnapshot>, StorageError> {
+        let path = self.cache_index_path();
+        match fs::try_exists(&path).await {
+            Ok(true) => {}
+            Ok(false) => return Ok(None),
+            Err(e) => return Err(StorageError::file_operation("stat_cache_index", &path, e)),
+        }
+        let bytes = fs::read(&path)
+            .await
+            .map_err(|e| StorageError::file_operation("read_cache_index", &path, e))?;
+        let snap: CacheSnapshot = serde_json::from_slice(&bytes)?;
+        Ok(Some(snap))
+    }
+
+    /// Spawn the background flush task. The task is fire-and-forget; it
+    /// terminates with the tokio runtime. No abort handle is stored because
+    /// `JsonStorage` is `Arc`-shared throughout the app lifetime.
+    fn spawn_flush_task(&self) {
+        let cache = self.cache.clone();
+        let dirty = self.cache_dirty.clone();
+        let data_dir = self.data_dir.clone();
+        tokio::spawn(async move {
+            // Wait one full interval before the first attempt so tests
+            // (which init then immediately exit) don't trip the flush.
+            let start = tokio::time::Instant::now() + CACHE_FLUSH_INTERVAL;
+            let mut interval = tokio::time::interval_at(start, CACHE_FLUSH_INTERVAL);
+            loop {
+                interval.tick().await;
+                if !dirty.load(Ordering::Relaxed) {
+                    continue;
+                }
+                if let Err(e) = flush_snapshot(&data_dir, &cache, &dirty).await {
+                    eprintln!("[cache] background flush failed: {e}");
+                }
+            }
+        });
+    }
+
+    /// Block until any pending in-memory changes are written to the
+    /// persistent index. Safe to call when caching is disabled (no-op).
+    /// Used by graceful shutdown.
+    pub async fn flush_cache_blocking(&self) -> Result<(), StorageError> {
+        if !self.cache_enabled {
+            return Ok(());
+        }
+        flush_snapshot(&self.data_dir, &self.cache, &self.cache_dirty).await
+    }
+
+    /// Rebuild the in-memory snapshot from disk. When caching is enabled
+    /// (the default), the freshly built snapshot is also flushed to the
+    /// persistent index immediately. When caching is disabled, only the
+    /// in-memory snapshot is replaced — there is no persistent index to write.
+    /// Returns `(podcast_count, episode_count)` for user feedback.
+    /// Used by `:cache-rebuild`.
+    pub async fn rebuild_cache(&self) -> Result<(usize, usize), StorageError> {
+        let snap = self.build_snapshot_from_disk().await?;
+        let podcast_count = snap.podcasts.len();
+        let episode_count: usize = snap.episodes.values().map(|v| v.len()).sum();
+        *self.cache.write().await = Some(snap);
+        self.cache_dirty.store(true, Ordering::Relaxed);
+        if self.cache_enabled {
+            flush_snapshot(&self.data_dir, &self.cache, &self.cache_dirty).await?;
+        }
+        Ok((podcast_count, episode_count))
     }
 
     /// Lazily build the in-memory snapshot from disk on first access.
@@ -864,6 +952,40 @@ impl Storage for JsonStorage {
                 .map_err(|e| StorageError::file_operation("create_dir_all", dir, e))?;
         }
 
+        if self.cache_enabled {
+            // Clean up any stale tmp file left over from a crash mid-flush.
+            // Safe to ignore errors — absence is the expected case.
+            let _ = fs::remove_file(self.cache_index_tmp_path()).await;
+
+            match self.load_cache_from_disk().await {
+                Ok(Some(snap)) if snap.schema_version == CACHE_SCHEMA_VERSION => {
+                    *self.cache.write().await = Some(snap);
+                }
+                Ok(Some(snap)) => {
+                    eprintln!(
+                        "[cache] Index schema {} != expected {}; rebuilding from disk",
+                        snap.schema_version, CACHE_SCHEMA_VERSION
+                    );
+                    let snap = self.build_snapshot_from_disk().await?;
+                    *self.cache.write().await = Some(snap);
+                    self.cache_dirty.store(true, Ordering::Relaxed);
+                }
+                Ok(None) => {
+                    let snap = self.build_snapshot_from_disk().await?;
+                    *self.cache.write().await = Some(snap);
+                    self.cache_dirty.store(true, Ordering::Relaxed);
+                }
+                Err(e) => {
+                    eprintln!("[cache] Could not load index ({e}); rebuilding from disk");
+                    let snap = self.build_snapshot_from_disk().await?;
+                    *self.cache.write().await = Some(snap);
+                    self.cache_dirty.store(true, Ordering::Relaxed);
+                }
+            }
+
+            self.spawn_flush_task();
+        }
+
         Ok(())
     }
 
@@ -894,6 +1016,64 @@ impl Default for JsonStorage {
     fn default() -> Self {
         Self::new().expect("Failed to create JsonStorage with default configuration")
     }
+}
+
+/// Atomically write the cache snapshot to disk via temp-file + rename.
+///
+/// Free function so the spawned background task does not need to hold a
+/// reference to `&JsonStorage` (which would couple task lifetime to the
+/// instance and complicate the async `move` closure).
+///
+/// **Concurrency contract**: claims the dirty flag with a `swap(false)`
+/// up front, snapshots the cache, then writes. If the write fails, the
+/// flag is restored to `true` so the next interval retries. If a writer
+/// re-marks dirty *after* the swap but *before* the rename completes,
+/// their flag set is preserved — we never overwrite their `true` with
+/// `false`. This avoids the race where a concurrent write could be
+/// silently dropped from the persistent index.
+async fn flush_snapshot(
+    data_dir: &Path,
+    cache: &Arc<RwLock<Option<CacheSnapshot>>>,
+    dirty: &AtomicBool,
+) -> Result<(), StorageError> {
+    // Atomically claim the dirty flag. If it was already false, another
+    // call beat us to it — nothing to do.
+    if !dirty.swap(false, Ordering::AcqRel) {
+        return Ok(());
+    }
+    let snap = match cache.read().await.clone() {
+        Some(s) => s,
+        None => {
+            // Nothing to flush. Don't restore the flag — there's literally
+            // no cache to persist, so leaving it false is correct.
+            return Ok(());
+        }
+    };
+    // From here on, any error path must restore the dirty flag so the
+    // next interval retries the flush. Use a small helper closure to keep
+    // the restore explicit at every early return.
+    let restore_on_err = |e| {
+        dirty.store(true, Ordering::Release);
+        e
+    };
+    let json = serde_json::to_vec(&snap).map_err(|e| restore_on_err(StorageError::from(e)))?;
+    let final_path = data_dir.join(CACHE_FILE_NAME);
+    let tmp_path = final_path.with_extension("json.tmp");
+    fs::write(&tmp_path, &json).await.map_err(|e| {
+        restore_on_err(StorageError::file_operation(
+            "write_cache_index",
+            &tmp_path,
+            e,
+        ))
+    })?;
+    fs::rename(&tmp_path, &final_path).await.map_err(|e| {
+        restore_on_err(StorageError::file_operation(
+            "rename_cache_index",
+            &final_path,
+            e,
+        ))
+    })?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1256,5 +1436,202 @@ mod tests {
         let disk_dir = storage.episodes_dir.join(podcast_id.to_string());
         let count = std::fs::read_dir(&disk_dir).unwrap().count();
         assert_eq!(count, 50, "all concurrent writes should be persisted");
+    }
+
+    fn make_podcast(title: &str) -> Podcast {
+        Podcast {
+            id: PodcastId::new(),
+            title: title.to_string(),
+            url: format!("https://example.com/{title}.xml"),
+            description: None,
+            author: None,
+            image_url: None,
+            language: None,
+            categories: Vec::new(),
+            explicit: false,
+            last_updated: chrono::Utc::now(),
+            episodes: Vec::new(),
+            tags: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cache_persists_across_instances() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = temp_dir.path().to_path_buf();
+
+        // Instance A: write data, then explicitly flush.
+        {
+            let a = JsonStorage::with_data_dir(data_dir.clone());
+            a.initialize().await.unwrap();
+            a.save_podcast(&make_podcast("Alpha")).await.unwrap();
+            a.save_podcast(&make_podcast("Beta")).await.unwrap();
+            a.flush_cache_blocking().await.unwrap();
+
+            // The persistent index should exist on disk now.
+            assert!(
+                data_dir.join(CACHE_FILE_NAME).exists(),
+                "cache_index.json should be written by flush_cache_blocking"
+            );
+        }
+
+        // Instance B: should load index from disk (no rebuild).
+        let b = JsonStorage::with_data_dir(data_dir.clone());
+        b.initialize().await.unwrap();
+        // After init via index load, dirty stays false (no rebuild happened).
+        assert!(
+            !b.cache_dirty.load(Ordering::Relaxed),
+            "loading a valid index should not mark dirty"
+        );
+        let podcasts = b.list_podcasts().await.unwrap();
+        assert_eq!(podcasts.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_cache_schema_mismatch_rebuilds() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = temp_dir.path().to_path_buf();
+
+        // Seed disk with one podcast via a clean storage instance.
+        {
+            let a = JsonStorage::with_data_dir(data_dir.clone());
+            a.initialize().await.unwrap();
+            a.save_podcast(&make_podcast("Gamma")).await.unwrap();
+            a.flush_cache_blocking().await.unwrap();
+        }
+
+        // Hand-write a cache index with a bogus schema version.
+        let bad = serde_json::json!({
+            "schema_version": 999,
+            "last_updated": chrono::Utc::now(),
+            "podcasts": {},
+            "episodes": {},
+            "playlists": {},
+        });
+        std::fs::write(
+            data_dir.join(CACHE_FILE_NAME),
+            serde_json::to_vec(&bad).unwrap(),
+        )
+        .unwrap();
+
+        // Initialize a new instance: must rebuild from disk and overwrite the bad index.
+        let b = JsonStorage::with_data_dir(data_dir.clone());
+        b.initialize().await.unwrap();
+        let podcasts = b.list_podcasts().await.unwrap();
+        assert_eq!(
+            podcasts.len(),
+            1,
+            "rebuild should recover the saved podcast"
+        );
+        assert!(
+            b.cache_dirty.load(Ordering::Relaxed),
+            "schema mismatch should mark cache dirty for re-flush"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cache_atomic_flush_ignores_stale_tmp() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = temp_dir.path().to_path_buf();
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        // Pre-create a stale .tmp file (simulating a crash mid-flush).
+        let tmp_path = data_dir.join("cache_index.json.tmp");
+        std::fs::write(&tmp_path, b"garbage that should be ignored").unwrap();
+
+        // Initialize: should clean up the stale tmp without crashing.
+        let storage = JsonStorage::with_data_dir(data_dir.clone());
+        storage.initialize().await.unwrap();
+        assert!(
+            !tmp_path.exists(),
+            "stale tmp file should be removed on initialize"
+        );
+
+        // A subsequent successful flush should produce a clean index.
+        storage.save_podcast(&make_podcast("Delta")).await.unwrap();
+        storage.flush_cache_blocking().await.unwrap();
+        assert!(data_dir.join(CACHE_FILE_NAME).exists());
+        assert!(!tmp_path.exists(), "tmp should not linger after rename");
+    }
+
+    #[tokio::test]
+    async fn test_cache_corrupt_index_rebuilds() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = temp_dir.path().to_path_buf();
+
+        // Seed real data and a valid index.
+        {
+            let a = JsonStorage::with_data_dir(data_dir.clone());
+            a.initialize().await.unwrap();
+            a.save_podcast(&make_podcast("Epsilon")).await.unwrap();
+            a.flush_cache_blocking().await.unwrap();
+        }
+
+        // Corrupt the index file with garbage.
+        std::fs::write(data_dir.join(CACHE_FILE_NAME), b"{not valid json at all").unwrap();
+
+        // Initialize must not error; should rebuild from disk.
+        let b = JsonStorage::with_data_dir(data_dir.clone());
+        b.initialize()
+            .await
+            .expect("init should recover from a corrupt index");
+        let podcasts = b.list_podcasts().await.unwrap();
+        assert_eq!(podcasts.len(), 1, "rebuild should recover saved podcast");
+        assert!(
+            b.cache_dirty.load(Ordering::Relaxed),
+            "corrupt index should mark cache dirty"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rebuild_cache_returns_counts() {
+        let (storage, _td) = create_test_storage();
+        storage.initialize().await.unwrap();
+        let p = make_podcast("Zeta");
+        let pid = p.id.clone();
+        storage.save_podcast(&p).await.unwrap();
+        for i in 0..3 {
+            let e = make_test_episode(&pid, &format!("ep {i}"));
+            storage.save_episode(&pid, &e).await.unwrap();
+        }
+        let (pcount, ecount) = storage.rebuild_cache().await.unwrap();
+        assert_eq!(pcount, 1);
+        assert_eq!(ecount, 3);
+    }
+
+    /// Regression test for the race documented on `flush_snapshot`: a
+    /// writer that sets `dirty = true` between the snapshot clone and the
+    /// final atomic update must not have its flag overwritten.
+    ///
+    /// We can't easily hit the "between clone and rename" window
+    /// deterministically, but we can verify the contract: after a
+    /// successful `flush_cache_blocking()`, if we immediately mark dirty
+    /// again, a *second* flush still sees and persists the new state.
+    #[tokio::test]
+    async fn test_flush_does_not_clobber_concurrent_dirty_marker() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = temp_dir.path().to_path_buf();
+
+        let storage = JsonStorage::with_data_dir(data_dir.clone());
+        storage.initialize().await.unwrap();
+        storage.save_podcast(&make_podcast("First")).await.unwrap();
+        storage.flush_cache_blocking().await.unwrap();
+        assert!(!storage.cache_dirty.load(Ordering::Relaxed));
+
+        // A new write marks dirty; the next flush must see it.
+        storage.save_podcast(&make_podcast("Second")).await.unwrap();
+        assert!(storage.cache_dirty.load(Ordering::Relaxed));
+        storage.flush_cache_blocking().await.unwrap();
+        assert!(!storage.cache_dirty.load(Ordering::Relaxed));
+
+        // Reload from disk in a fresh instance; both podcasts must be present.
+        let b = JsonStorage::with_data_dir(data_dir);
+        b.initialize().await.unwrap();
+        let podcasts = b.list_podcasts().await.unwrap();
+        assert_eq!(
+            podcasts.len(),
+            2,
+            "second write must have been persisted in the second flush"
+        );
     }
 }

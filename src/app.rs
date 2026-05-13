@@ -15,6 +15,7 @@ use tokio::sync::mpsc;
 pub struct App {
     config: Config,
     ui: UIApp,
+    storage: Arc<JsonStorage>,
 }
 
 impl App {
@@ -73,7 +74,11 @@ impl App {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize UI: {e}"))?;
 
-        Ok(Self { config, ui })
+        Ok(Self {
+            config,
+            ui,
+            storage,
+        })
     }
 
     /// Run the main application loop
@@ -144,9 +149,18 @@ impl App {
         self.ui.set_scrobbler(scrobbler);
 
         // Run the UI application with the app event receiver
-        self.ui
+        let result = self
+            .ui
             .run(app_event_rx, playback_status_rx)
             .await
-            .map_err(|e| anyhow::anyhow!("UI error: {e}"))
+            .map_err(|e| anyhow::anyhow!("UI error: {e}"));
+
+        // Graceful shutdown: persist any pending cache changes to disk so the
+        // next launch can warm-start from cache_index.json.
+        if let Err(e) = self.storage.flush_cache_blocking().await {
+            eprintln!("[cache] Final flush on shutdown failed: {e}");
+        }
+
+        result
     }
 }

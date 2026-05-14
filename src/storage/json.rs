@@ -1046,31 +1046,34 @@ impl Storage for JsonStorage {
                 .map_err(|e| StorageError::file_operation("create_dir_all", dir, e))?;
         }
 
+        // Orphan temp-file cleanup runs unconditionally: `atomic_write`
+        // (per-record saves and the cache-index flush alike) produces
+        // `*.<uuid>.tmp` files in these directories regardless of
+        // whether the in-memory cache is enabled. Gating this behind
+        // `cache_enabled` would let orphans accumulate forever on
+        // installs that have opted out of the cache.
+        //
+        // The legacy deterministic `cache_index.json.tmp` cleanup is
+        // kept for one release cycle so users upgrading from pre-#233
+        // still get their old orphan removed. It can be dropped in a
+        // later release once the migration window has elapsed.
+        let _ = fs::remove_file(self.cache_index_tmp_path()).await;
+
+        // Sweep orphan `*.<uuid>.tmp` files from a crashed write.
+        // Post-#233 every `atomic_write` (per-record + cache index)
+        // uses a unique suffix that the legacy single-path cleanup
+        // above no longer covers, so without this sweep orphans
+        // accumulate forever on each crash.
+        let mut orphans = 0;
+        orphans += cleanup_orphan_temp_files(&self.data_dir).await;
+        orphans += cleanup_orphan_temp_files(&self.podcasts_dir).await;
+        orphans += cleanup_orphan_temp_files(&self.episodes_dir).await;
+        orphans += cleanup_orphan_temp_files(&self.playlists_dir).await;
+        if orphans > 0 {
+            eprintln!("[storage] removed {orphans} orphan temp file(s) from crashed writes");
+        }
+
         if self.cache_enabled {
-            // Clean up any stale tmp file left over from a crash mid-flush.
-            // Safe to ignore errors — absence is the expected case.
-            //
-            // The legacy deterministic `cache_index.json.tmp` cleanup is
-            // kept here for one release cycle so users upgrading from
-            // pre-#233 still get their old orphan removed. It can be
-            // dropped in a later release once the migration window has
-            // elapsed.
-            let _ = fs::remove_file(self.cache_index_tmp_path()).await;
-
-            // Sweep orphan `*.<uuid>.tmp` files from a crashed write.
-            // Post-#233 every `atomic_write` (per-record + cache index)
-            // uses a unique suffix that the legacy single-path cleanup
-            // above no longer covers, so without this sweep orphans
-            // accumulate forever on each crash.
-            let mut orphans = 0;
-            orphans += cleanup_orphan_temp_files(&self.data_dir).await;
-            orphans += cleanup_orphan_temp_files(&self.podcasts_dir).await;
-            orphans += cleanup_orphan_temp_files(&self.episodes_dir).await;
-            orphans += cleanup_orphan_temp_files(&self.playlists_dir).await;
-            if orphans > 0 {
-                eprintln!("[storage] removed {orphans} orphan temp file(s) from crashed writes");
-            }
-
             match self.load_cache_from_disk().await {
                 Ok(Some(snap)) if snap.schema_version == CACHE_SCHEMA_VERSION => {
                     *self.cache.write().await = Some(snap);
@@ -2059,6 +2062,35 @@ mod tests {
         assert!(
             unrelated_tmp.exists(),
             "non-uuid `.tmp` file must survive sweep"
+        );
+    }
+
+    /// Regression guard for the cache-gating bug: orphan temp files are
+    /// produced by `atomic_write` regardless of whether the in-memory
+    /// cache is enabled, so the startup sweep must run even when the
+    /// user has set `storage.cache_enabled = false`.
+    #[tokio::test]
+    async fn test_initialize_cleans_orphans_with_cache_disabled() {
+        let td = tempfile::tempdir().unwrap();
+        let storage = JsonStorage::with_data_dir(td.path().to_path_buf()).with_cache(false);
+        storage.initialize().await.unwrap();
+
+        let orphan = storage
+            .podcasts_dir
+            .join(format!("abc.{}.tmp", uuid::Uuid::new_v4().simple()));
+        let legacy = storage.data_dir.join("cache_index.json.tmp");
+        std::fs::write(&orphan, b"x").unwrap();
+        std::fs::write(&legacy, b"x").unwrap();
+
+        storage.initialize().await.unwrap();
+
+        assert!(
+            !orphan.exists(),
+            "orphan `.uuid.tmp` must be removed even when cache is disabled"
+        );
+        assert!(
+            !legacy.exists(),
+            "legacy `cache_index.json.tmp` must be removed even when cache is disabled"
         );
     }
 }

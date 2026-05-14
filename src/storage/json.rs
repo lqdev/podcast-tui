@@ -183,17 +183,27 @@ pub struct JsonStorage {
     /// each save/delete and hold it across both the write and the
     /// cache mutation, guaranteeing matching commit orders. See #234.
     ///
-    /// The map grows monotonically — bounded by total podcast/episode
-    /// /playlist cardinality in the user's library (typically thousands
-    /// of entries × ~48 bytes/entry). Eviction is unnecessary at this
-    /// scale and would only add complexity.
+    /// The map grows monotonically — bounded by the number of distinct
+    /// record ids ever passed to `save_*`/`delete_*` for the lifetime
+    /// of the process (so it tracks total podcast/episode/playlist
+    /// cardinality in the user's library plus any stale ids from
+    /// no-op deletes). At ~48 bytes/entry this is negligible at
+    /// expected library sizes; eviction would add complexity for no
+    /// measurable benefit.
     record_locks: Arc<RecordLocks>,
 }
 
-/// Sharded per-id mutex map used by `JsonStorage` to serialize the
+/// Per-id mutex map used by `JsonStorage` to serialize the
 /// (file write + cache update) critical section per record. Keys are
 /// short string-typed identifiers like `"podcast:<id>"`,
 /// `"episode:<podcast_id>:<episode_id>"`, and `"playlist:<id>"`.
+///
+/// The outer `StdMutex` is held only for the brief HashMap lookup/
+/// insert that returns the per-id `Arc<AsyncMutex<()>>`. The actual
+/// (write + cache) critical section is gated by the inner async
+/// mutex, so contention between operations on distinct ids is bounded
+/// to that short lookup window. Operations on the same id serialize
+/// fully on the inner async mutex.
 #[derive(Default)]
 struct RecordLocks {
     inner: StdMutex<HashMap<String, Arc<AsyncMutex<()>>>>,
@@ -201,10 +211,14 @@ struct RecordLocks {
 
 impl RecordLocks {
     fn lock_for(&self, key: &str) -> Arc<AsyncMutex<()>> {
-        let mut map = self
-            .inner
-            .lock()
-            .expect("record_locks mutex poisoned — another thread panicked while holding it");
+        // Recover from poisoning rather than panic: the only code that
+        // holds this mutex is the HashMap entry-or-insert below, which
+        // is panic-free in practice. If poisoning ever happens we lose
+        // no real invariants by reusing the inner map.
+        let mut map = match self.inner.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         map.entry(key.to_string())
             .or_insert_with(|| Arc::new(AsyncMutex::new(())))
             .clone()
@@ -2166,10 +2180,10 @@ mod tests {
     // Strategy: spawn N concurrent `save_*` calls that target the same
     // record id but with different payloads. After all complete, assert
     // that the cached value (returned from `load_*`, which hits the
-    // cache when `cache_enabled = true`) byte-equals the value freshly
-    // parsed off disk. Without per-record serialization, the cached
-    // value can be from a different writer than the one whose rename
-    // landed last on disk.
+    // cache when `cache_enabled = true`) equals the value freshly
+    // parsed off disk on the full deserialized record. Without
+    // per-record serialization, the cached value can be from a
+    // different writer than the one whose rename landed last on disk.
     // ----------------------------------------------------------------
 
     fn make_episode_for_concurrent_test(podcast_id: &PodcastId, title: &str) -> Episode {
@@ -2204,9 +2218,13 @@ mod tests {
         let on_disk: Podcast =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
 
+        // Compare full deserialized records via serde_json::Value so the
+        // assertion catches any field divergence, not just the mutated one.
+        let cache_json = serde_json::to_value(&from_cache).unwrap();
+        let disk_json = serde_json::to_value(&on_disk).unwrap();
         assert_eq!(
-            from_cache.title, on_disk.title,
-            "cache must reflect the same writer that won the rename race"
+            cache_json, disk_json,
+            "cache must reflect the same writer that won the rename race (full record)"
         );
     }
 
@@ -2245,9 +2263,11 @@ mod tests {
         let on_disk: Episode =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
 
+        let cache_json = serde_json::to_value(&from_cache).unwrap();
+        let disk_json = serde_json::to_value(&on_disk).unwrap();
         assert_eq!(
-            from_cache.title, on_disk.title,
-            "cache must reflect the same writer that won the rename race"
+            cache_json, disk_json,
+            "cache must reflect the same writer that won the rename race (full record)"
         );
     }
 
@@ -2283,9 +2303,82 @@ mod tests {
         let on_disk: Playlist =
             serde_json::from_str(&std::fs::read_to_string(&metadata_path).unwrap()).unwrap();
 
+        let cache_json = serde_json::to_value(&from_cache).unwrap();
+        let disk_json = serde_json::to_value(&on_disk).unwrap();
         assert_eq!(
-            from_cache.description, on_disk.description,
-            "cache must reflect the same writer that won the rename race"
+            cache_json, disk_json,
+            "cache must reflect the same writer that won the rename race (full record)"
         );
+    }
+
+    /// Save-vs-delete coverage for #234. Spawn concurrent saves and a
+    /// delete on the same episode id; once everything settles the cache
+    /// and disk must agree on whether the episode exists (both present
+    /// with the same content, or both absent — but never one without
+    /// the other).
+    #[tokio::test]
+    async fn test_concurrent_save_and_delete_episode_cache_matches_disk() {
+        let (storage, _td) = create_test_storage();
+        storage.initialize().await.unwrap();
+
+        let podcast = make_podcast("P");
+        storage.save_podcast(&podcast).await.unwrap();
+        let episode = make_test_episode(&podcast.id, "ep");
+        storage.save_episode(&podcast.id, &episode).await.unwrap();
+        let podcast_id = podcast.id.clone();
+        let episode_id = episode.id.clone();
+        let storage = Arc::new(storage);
+
+        let mut handles = Vec::new();
+        // Mix saves and deletes spawned concurrently. Their relative
+        // ordering is non-deterministic; what we care about is that
+        // whichever lands last on disk also lands last in the cache.
+        for i in 0..16 {
+            let storage = storage.clone();
+            let podcast_id = podcast_id.clone();
+            let mut e = episode.clone();
+            e.title = format!("Episode {i}");
+            handles.push(tokio::spawn(async move {
+                let _ = storage.save_episode(&podcast_id, &e).await;
+            }));
+        }
+        for _ in 0..4 {
+            let storage = storage.clone();
+            let podcast_id = podcast_id.clone();
+            let episode_id = episode_id.clone();
+            handles.push(tokio::spawn(async move {
+                let _ = storage.delete_episode(&podcast_id, &episode_id).await;
+            }));
+        }
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        // Final consistency check: cache side and disk side must agree.
+        let path = storage.episode_path(&podcast_id, &episode_id);
+        let cache_result = storage.load_episode(&podcast_id, &episode_id).await;
+        match cache_result {
+            Ok(cached) => {
+                assert!(
+                    path.exists(),
+                    "cache returned an episode but the disk file is gone"
+                );
+                let on_disk: Episode =
+                    serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+                let cache_json = serde_json::to_value(&cached).unwrap();
+                let disk_json = serde_json::to_value(&on_disk).unwrap();
+                assert_eq!(
+                    cache_json, disk_json,
+                    "cache contents must match disk contents after concurrent save/delete"
+                );
+            }
+            Err(StorageError::EpisodeNotFound { .. }) => {
+                assert!(
+                    !path.exists(),
+                    "cache reports NotFound but the disk file still exists"
+                );
+            }
+            Err(e) => panic!("unexpected storage error after concurrent save/delete: {e:?}"),
+        }
     }
 }

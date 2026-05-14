@@ -1679,6 +1679,7 @@ mod tests {
                 files_skipped_count: 10,
                 error_count: 0,
                 errors: vec![],
+                warnings: vec![],
             },
             dry_run: false,
         };

@@ -64,6 +64,25 @@ impl App {
             download_manager.clone(),
         ));
 
+        // One-time migration for #231: scan every podcast and renumber any
+        // whose episode_number field is in the broken state (snowballed
+        // values, mixed null+Some, gaps). Cheap on healthy data — only
+        // touches disk for podcasts that actually need fixing.
+        match subscription_manager.migrate_episode_numbering().await {
+            Ok((podcasts_fixed, episodes_fixed)) if podcasts_fixed > 0 => {
+                eprintln!(
+                    "[migration] Renumbered {episodes_fixed} episodes across \
+                     {podcasts_fixed} podcasts (episode_number was inconsistent — \
+                     see #231)."
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                // Migration failure should not block startup. Log and continue.
+                eprintln!("[migration] episode_number migration failed: {e}");
+            }
+        }
+
         // Create app event channel for async communication
         let (app_event_tx, _app_event_rx) = mpsc::unbounded_channel();
 

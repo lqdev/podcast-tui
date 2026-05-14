@@ -15,7 +15,22 @@ use crate::storage::{EpisodeId, PodcastId, Storage, StorageError};
 use crate::utils::text::strip_html;
 use crate::utils::validation::sanitize_playlist_name;
 
-/// Schema version for the in-memory cache snapshot. Bumped when the snapshot
+/// Build a unique temp path adjacent to `path` so concurrent writers
+/// targeting the same destination cannot race on the same temp file.
+///
+/// The returned path lives in the same directory as `path` (so the
+/// subsequent `rename` is on the same filesystem and stays atomic) and
+/// embeds a fresh UUID to guarantee uniqueness across concurrent calls.
+/// Format: `<original_filename>.<uuid>.tmp` — e.g.,
+/// `41f3ed28-cash-daddies.json` → `41f3ed28-cash-daddies.json.<uuid>.tmp`.
+fn unique_temp_path(path: &Path) -> PathBuf {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let base = path.file_name().and_then(|s| s.to_str()).unwrap_or("file");
+    let suffix = uuid::Uuid::new_v4().simple();
+    parent.join(format!("{base}.{suffix}.tmp"))
+}
+
+/// Schema version of the persistent cache index. Bump whenever the on-disk
 /// shape changes incompatibly. The persistent index file rejects older
 /// versions and rebuilds from disk.
 pub(crate) const CACHE_SCHEMA_VERSION: u32 = 1;
@@ -220,7 +235,14 @@ impl JsonStorage {
         Ok(None)
     }
 
-    /// Atomic write operation to prevent data corruption
+    /// Atomic write operation to prevent data corruption.
+    ///
+    /// Writes `content` to a unique temp file in the same directory, then
+    /// atomically renames it onto `path`. The temp filename includes a
+    /// random UUID so concurrent saves of the same target file cannot race
+    /// on the same temp path (the cause of the torn-write corruption
+    /// observed in production — see issue #230). On rename failure the
+    /// temp file is best-effort cleaned up to avoid leaks.
     async fn atomic_write(&self, path: &Path, content: &str) -> Result<(), StorageError> {
         // Create parent directory if it doesn't exist
         if let Some(parent) = path.parent() {
@@ -229,16 +251,24 @@ impl JsonStorage {
                 .map_err(|e| StorageError::file_operation("create_dir_all", parent, e))?;
         }
 
-        // Write to temporary file first
-        let temp_path = path.with_extension("tmp");
-        fs::write(&temp_path, content)
-            .await
-            .map_err(|e| StorageError::file_operation("write_temp", &temp_path, e))?;
+        let temp_path = unique_temp_path(path);
 
-        // Atomically move to final location
-        fs::rename(&temp_path, path)
-            .await
-            .map_err(|e| StorageError::file_operation("rename", path, e))?;
+        // Write the full content to the temp file. If a previous run left a
+        // file with the same name (impossible in practice given the UUID,
+        // but defensive), `fs::write` truncates and overwrites.
+        if let Err(e) = fs::write(&temp_path, content).await {
+            // Best-effort cleanup of the partial temp file.
+            let _ = fs::remove_file(&temp_path).await;
+            return Err(StorageError::file_operation("write_temp", &temp_path, e));
+        }
+
+        // Atomically replace the destination. On Windows this uses
+        // MoveFileExW with MOVEFILE_REPLACE_EXISTING semantics; on POSIX
+        // rename(2) is atomic on the same filesystem.
+        if let Err(e) = fs::rename(&temp_path, path).await {
+            let _ = fs::remove_file(&temp_path).await;
+            return Err(StorageError::file_operation("rename", path, e));
+        }
 
         Ok(())
     }
@@ -1058,21 +1088,23 @@ async fn flush_snapshot(
     };
     let json = serde_json::to_vec(&snap).map_err(|e| restore_on_err(StorageError::from(e)))?;
     let final_path = data_dir.join(CACHE_FILE_NAME);
-    let tmp_path = final_path.with_extension("json.tmp");
-    fs::write(&tmp_path, &json).await.map_err(|e| {
-        restore_on_err(StorageError::file_operation(
+    let tmp_path = unique_temp_path(&final_path);
+    if let Err(e) = fs::write(&tmp_path, &json).await {
+        let _ = fs::remove_file(&tmp_path).await;
+        return Err(restore_on_err(StorageError::file_operation(
             "write_cache_index",
             &tmp_path,
             e,
-        ))
-    })?;
-    fs::rename(&tmp_path, &final_path).await.map_err(|e| {
-        restore_on_err(StorageError::file_operation(
+        )));
+    }
+    if let Err(e) = fs::rename(&tmp_path, &final_path).await {
+        let _ = fs::remove_file(&tmp_path).await;
+        return Err(restore_on_err(StorageError::file_operation(
             "rename_cache_index",
             &final_path,
             e,
-        ))
-    })?;
+        )));
+    }
     Ok(())
 }
 
@@ -1632,6 +1664,199 @@ mod tests {
             podcasts.len(),
             2,
             "second write must have been persisted in the second flush"
+        );
+    }
+
+    // ─── Atomic-write regression tests (issue #230) ───────────────────────
+
+    #[test]
+    fn test_unique_temp_path_is_unique_per_call() {
+        let target = Path::new("/tmp/data/podcasts/abc.json");
+        let a = unique_temp_path(target);
+        let b = unique_temp_path(target);
+        assert_ne!(a, b, "two calls must produce distinct temp paths");
+        // Sibling of target so rename stays on the same filesystem.
+        assert_eq!(a.parent(), target.parent());
+        assert_eq!(b.parent(), target.parent());
+        // Distinguishable as a temp file.
+        assert!(a.to_string_lossy().ends_with(".tmp"));
+        assert!(b.to_string_lossy().ends_with(".tmp"));
+        // Original filename preserved as the prefix so debugging is easy.
+        let a_name = a.file_name().unwrap().to_string_lossy();
+        assert!(a_name.starts_with("abc.json."), "got {a_name}");
+    }
+
+    /// Direct reproduction of the production bug: a long file is replaced
+    /// with shorter content. Before the fix, a torn write could leave the
+    /// trailing bytes of the longer file appended after the new shorter
+    /// JSON, producing the `trailing characters at line N column M` error
+    /// the user hit on launch. After the fix, the rename always replaces
+    /// the destination wholesale.
+    #[tokio::test]
+    async fn test_atomic_write_long_to_short_no_trailing_bytes() {
+        let (storage, _td) = create_test_storage();
+        storage.initialize().await.unwrap();
+
+        // Save a "long" podcast: many categories blow up the serialized size.
+        let mut long = make_podcast("Long Podcast");
+        long.categories = (0..500)
+            .map(|i| format!("Category number {i:04} with some padding text"))
+            .collect();
+        storage.save_podcast(&long).await.unwrap();
+
+        let path = storage.podcast_path(&long.id);
+        let long_size = std::fs::metadata(&path).unwrap().len();
+        assert!(long_size > 1000, "sanity: long podcast should be >1KB");
+
+        // Save a "short" version of the same podcast (same id, no categories).
+        let mut short = long.clone();
+        short.categories.clear();
+        storage.save_podcast(&short).await.unwrap();
+
+        // The file on disk must be exactly the new content, with no
+        // trailing bytes from the previous longer write.
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        let parsed: Podcast =
+            serde_json::from_str(&on_disk).expect("file must be parseable JSON, no trailing bytes");
+        assert_eq!(parsed.id, long.id);
+        assert!(parsed.categories.is_empty());
+
+        // serde_json must consume the entire file (tail-strict parse).
+        let mut de = serde_json::Deserializer::from_str(&on_disk);
+        let _: Podcast = serde::Deserialize::deserialize(&mut de).unwrap();
+        de.end()
+            .expect("no trailing characters after the JSON value");
+    }
+
+    /// Concurrent saves of the SAME podcast id used to race on the same
+    /// deterministic temp path (`<id>.tmp`), interleaving bytes from
+    /// different writers and producing a torn file. With per-call unique
+    /// temp paths the final file is always one writer's complete output.
+    #[tokio::test]
+    async fn test_atomic_write_concurrent_saves_same_target_no_corruption() {
+        let (storage, _td) = create_test_storage();
+        storage.initialize().await.unwrap();
+        let storage = Arc::new(storage);
+
+        let base = make_podcast("Race Target");
+        let id = base.id.clone();
+
+        // Spawn many concurrent saves of the same podcast with different
+        // payload sizes — the sweet spot for triggering torn-write.
+        let mut handles = Vec::new();
+        for i in 0..32 {
+            let storage = storage.clone();
+            let mut p = base.clone();
+            p.title = format!("Race Target #{i:03}");
+            p.categories = (0..(i * 5))
+                .map(|j| format!("cat-{j:04}-padding"))
+                .collect();
+            handles.push(tokio::spawn(async move { storage.save_podcast(&p).await }));
+        }
+        for h in handles {
+            h.await.unwrap().unwrap();
+        }
+
+        // Whichever writer won the rename race, the resulting file must
+        // be a single complete podcast — never a torn mix of two writes.
+        let path = storage.podcast_path(&id);
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        let _parsed: Podcast = serde_json::from_str(&on_disk)
+            .expect("concurrent saves must never produce unparseable JSON");
+        let mut de = serde_json::Deserializer::from_str(&on_disk);
+        let _: Podcast = serde::Deserialize::deserialize(&mut de).unwrap();
+        de.end()
+            .expect("no trailing characters after concurrent saves");
+
+        // Loading via the storage API must also succeed (covers cache path).
+        let loaded = storage.load_podcast(&id).await.unwrap();
+        assert_eq!(loaded.id, id);
+    }
+
+    /// Same race but for episodes — they share the atomic_write helper
+    /// but go through a different per-record path, so cover them too.
+    #[tokio::test]
+    async fn test_atomic_write_concurrent_episode_saves_no_corruption() {
+        use crate::podcast::Episode;
+        let (storage, _td) = create_test_storage();
+        storage.initialize().await.unwrap();
+        let storage = Arc::new(storage);
+
+        let podcast = make_podcast("Ep Host");
+        storage.save_podcast(&podcast).await.unwrap();
+
+        let ep = Episode::new(
+            podcast.id.clone(),
+            "Concurrent Episode".to_string(),
+            "https://example.com/a.mp3".to_string(),
+            chrono::Utc::now(),
+        );
+
+        let mut handles = Vec::new();
+        for i in 0..16 {
+            let storage = storage.clone();
+            let podcast_id = podcast.id.clone();
+            let mut e = ep.clone();
+            e.title = format!("Concurrent Episode {i:03}");
+            e.description = Some("padding ".repeat(i * 20));
+            handles.push(tokio::spawn(async move {
+                storage.save_episode(&podcast_id, &e).await
+            }));
+        }
+        for h in handles {
+            h.await.unwrap().unwrap();
+        }
+
+        let path = storage.episode_path(&podcast.id, &ep.id);
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        let _: Episode = serde_json::from_str(&on_disk)
+            .expect("concurrent episode saves must never produce unparseable JSON");
+    }
+
+    /// If the final `rename` step fails (e.g., destination is a non-empty
+    /// directory on POSIX, or otherwise unreplaceable), `atomic_write` must
+    /// (1) return an error, (2) leave the original destination untouched,
+    /// and (3) clean up the partial temp file rather than leaking it.
+    #[tokio::test]
+    async fn test_atomic_write_rename_failure_cleans_up_temp_and_preserves_dest() {
+        let (storage, td) = create_test_storage();
+        storage.initialize().await.unwrap();
+
+        // Create a destination path that is itself a non-empty directory.
+        // `rename(file, non_empty_dir)` fails on both POSIX and Windows.
+        let dest = td.path().join("blocked_target.json");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("sentinel.txt"), b"do not touch").unwrap();
+
+        let result = storage.atomic_write(&dest, "{\"new\":true}").await;
+        assert!(
+            result.is_err(),
+            "atomic_write must surface the rename failure as an error"
+        );
+
+        // Original destination must be intact (still a directory with the
+        // sentinel file inside, untouched by the failed write).
+        assert!(dest.is_dir(), "original destination must be preserved");
+        let sentinel = std::fs::read_to_string(dest.join("sentinel.txt")).unwrap();
+        assert_eq!(sentinel, "do not touch");
+
+        // Temp file must have been cleaned up — no orphan `*.tmp` files
+        // should be left in the parent directory.
+        let leftover_tmps: Vec<_> = std::fs::read_dir(td.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s == "tmp")
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert!(
+            leftover_tmps.is_empty(),
+            "rename-failure cleanup must remove the temp file, found: {:?}",
+            leftover_tmps.iter().map(|e| e.path()).collect::<Vec<_>>()
         );
     }
 }

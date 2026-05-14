@@ -107,15 +107,18 @@ pub fn sanitize_filename(input: &str, is_folder: bool) -> String {
     }
 
     // Step 3: Clean up multiple consecutive separators
+    //
+    // Note: we intentionally do *not* collapse " - " → "-" or " _ " → "_".
+    // Those collapses produced inconsistent visual output across episodes and
+    // silently rewrote user-supplied template separators (see #232). A bare
+    // "--" or "__" run is still collapsed because it usually comes from
+    // back-to-back substitutions (e.g. ":" → "-" next to an existing dash).
     let cleaned = sanitized
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
-        .replace("  ", " ")
         .replace("--", "-")
-        .replace("__", "_")
-        .replace(" - ", "-")
-        .replace(" _ ", "_");
+        .replace("__", "_");
 
     // Step 4: Trim and handle edge cases
     let mut final_name = cleaned.trim().to_string();
@@ -236,5 +239,59 @@ mod tests {
         assert!(out.len() <= MAX_FILENAME_BYTES);
         // Should not end mid-word (no trailing partial "tail-segment")
         assert!(!out.ends_with("segment"));
+    }
+
+    // ─── #232: dash/underscore separator preservation ──────────────────
+
+    /// User-supplied " - " separators (from titles or templates) must
+    /// survive sanitization unchanged. Previously this was collapsed to
+    /// "-", producing inconsistent device filenames.
+    #[test]
+    fn test_dash_separator_spacing_preserved() {
+        assert_eq!(sanitize_filename("Foo - Bar", false), "Foo - Bar");
+        assert_eq!(
+            sanitize_filename("#123 - Episode Title", false),
+            "number123 - Episode Title"
+        );
+    }
+
+    /// Underscore separator with surrounding spaces must also survive.
+    #[test]
+    fn test_underscore_separator_spacing_preserved() {
+        assert_eq!(sanitize_filename("Foo _ Bar", false), "Foo _ Bar");
+    }
+
+    /// Multiple consecutive whitespace characters still collapse to a
+    /// single space (handled by `split_whitespace()`), but the dash
+    /// itself is left alone.
+    #[test]
+    fn test_multi_space_collapses_but_dash_preserved() {
+        assert_eq!(sanitize_filename("Foo  -  Bar", false), "Foo - Bar");
+    }
+
+    /// "--" and "__" runs (typically from back-to-back substitutions
+    /// like ":" → "-" next to an existing dash) still collapse.
+    #[test]
+    fn test_double_dash_and_underscore_still_collapse() {
+        assert_eq!(sanitize_filename("Foo--Bar", false), "Foo-Bar");
+        assert_eq!(sanitize_filename("Foo__Bar", false), "Foo_Bar");
+    }
+
+    /// Title-internal ":" → "-" substitution still produces the
+    /// expected (slightly awkward but predictable) "- " pattern. This
+    /// behavior is unchanged by the #232 fix.
+    #[test]
+    fn test_colon_substitution_unchanged() {
+        assert_eq!(sanitize_filename("Foo: Bar", false), "Foo- Bar");
+    }
+
+    /// Template-style render `{date} - {title}` keeps its dash visible
+    /// in the final filename instead of being silently collapsed.
+    #[test]
+    fn test_template_dash_separator_preserved() {
+        assert_eq!(
+            sanitize_filename("20260417 - Episode Title", false),
+            "20260417 - Episode Title"
+        );
     }
 }

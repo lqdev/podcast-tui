@@ -30,6 +30,70 @@ fn unique_temp_path(path: &Path) -> PathBuf {
     parent.join(format!("{base}.{suffix}.tmp"))
 }
 
+/// Returns `true` if `name` matches the unique-temp-file naming
+/// convention `<original>.<32-hex-uuid>.tmp` produced by
+/// [`unique_temp_path`]. Used by startup cleanup to identify orphan
+/// temp files left over from a crash mid-write without touching legit
+/// `.json` files that happen to share a directory.
+fn is_orphan_temp_filename(name: &str) -> bool {
+    let Some(stem) = name.strip_suffix(".tmp") else {
+        return false;
+    };
+    let Some(idx) = stem.rfind('.') else {
+        return false;
+    };
+    let suffix = &stem[idx + 1..];
+    suffix.len() == 32 && suffix.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Remove orphan `*.<uuid>.tmp` files left in `dir` from a crashed
+/// `atomic_write`. Recurses one level deep to cover nested layouts
+/// (`episodes_dir/<podcast_id>/`, `playlists_dir/<name>/`).
+///
+/// Returns the count of orphans removed. All errors are swallowed —
+/// orphan cleanup is best-effort and must never block startup.
+async fn cleanup_orphan_temp_files(dir: &Path) -> usize {
+    let mut removed = 0;
+    let Ok(mut entries) = fs::read_dir(dir).await else {
+        return 0;
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type().await else {
+            continue;
+        };
+        if file_type.is_file() {
+            if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                if is_orphan_temp_filename(name) && fs::remove_file(&path).await.is_ok() {
+                    removed += 1;
+                }
+            }
+        } else if file_type.is_dir() {
+            // One level of recursion: episodes_dir/<podcast_id>/
+            // and playlists_dir/<name>/ are the only nested write
+            // targets that produce uniquely-suffixed temp files.
+            if let Ok(mut sub_entries) = fs::read_dir(&path).await {
+                while let Ok(Some(sub)) = sub_entries.next_entry().await {
+                    let sub_path = sub.path();
+                    let Ok(sub_type) = sub.file_type().await else {
+                        continue;
+                    };
+                    if !sub_type.is_file() {
+                        continue;
+                    }
+                    if let Some(name) = sub_path.file_name().and_then(|s| s.to_str()) {
+                        if is_orphan_temp_filename(name) && fs::remove_file(&sub_path).await.is_ok()
+                        {
+                            removed += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    removed
+}
+
 /// Schema version of the persistent cache index. Bump whenever the on-disk
 /// shape changes incompatibly. The persistent index file rejects older
 /// versions and rebuilds from disk.
@@ -985,7 +1049,27 @@ impl Storage for JsonStorage {
         if self.cache_enabled {
             // Clean up any stale tmp file left over from a crash mid-flush.
             // Safe to ignore errors — absence is the expected case.
+            //
+            // The legacy deterministic `cache_index.json.tmp` cleanup is
+            // kept here for one release cycle so users upgrading from
+            // pre-#233 still get their old orphan removed. It can be
+            // dropped in a later release once the migration window has
+            // elapsed.
             let _ = fs::remove_file(self.cache_index_tmp_path()).await;
+
+            // Sweep orphan `*.<uuid>.tmp` files from a crashed write.
+            // Post-#233 every `atomic_write` (per-record + cache index)
+            // uses a unique suffix that the legacy single-path cleanup
+            // above no longer covers, so without this sweep orphans
+            // accumulate forever on each crash.
+            let mut orphans = 0;
+            orphans += cleanup_orphan_temp_files(&self.data_dir).await;
+            orphans += cleanup_orphan_temp_files(&self.podcasts_dir).await;
+            orphans += cleanup_orphan_temp_files(&self.episodes_dir).await;
+            orphans += cleanup_orphan_temp_files(&self.playlists_dir).await;
+            if orphans > 0 {
+                eprintln!("[storage] removed {orphans} orphan temp file(s) from crashed writes");
+            }
 
             match self.load_cache_from_disk().await {
                 Ok(Some(snap)) if snap.schema_version == CACHE_SCHEMA_VERSION => {
@@ -1857,6 +1941,124 @@ mod tests {
             leftover_tmps.is_empty(),
             "rename-failure cleanup must remove the temp file, found: {:?}",
             leftover_tmps.iter().map(|e| e.path()).collect::<Vec<_>>()
+        );
+    }
+
+    // ─── Orphan temp-file cleanup tests (issue #235) ──────────────────────
+
+    #[test]
+    fn test_is_orphan_temp_filename_matches_unique_pattern() {
+        // Real output of unique_temp_path uses the simple (no-dash) UUID
+        // form, which is exactly 32 lowercase hex chars.
+        assert!(is_orphan_temp_filename(
+            "abc.json.0123456789abcdef0123456789abcdef.tmp"
+        ));
+        assert!(is_orphan_temp_filename(
+            "cache_index.json.deadbeefdeadbeefdeadbeefdeadbeef.tmp"
+        ));
+    }
+
+    #[test]
+    fn test_is_orphan_temp_filename_rejects_legit_files() {
+        assert!(!is_orphan_temp_filename("abc.json"));
+        assert!(!is_orphan_temp_filename("abc.tmp"));
+        // Legacy short suffix — too short to be a UUID.
+        assert!(!is_orphan_temp_filename("cache_index.json.tmp"));
+        // Right length but non-hex.
+        assert!(!is_orphan_temp_filename(
+            "abc.json.zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.tmp"
+        ));
+        // Wrong length.
+        assert!(!is_orphan_temp_filename("abc.json.beef.tmp"));
+        // Wrong extension.
+        assert!(!is_orphan_temp_filename(
+            "abc.json.0123456789abcdef0123456789abcdef.bak"
+        ));
+    }
+
+    /// Pre-create an orphan `*.<uuid>.tmp` in each storage directory
+    /// (and one nested in the per-podcast episodes subdir) and confirm
+    /// `initialize` sweeps them all on the next launch.
+    #[tokio::test]
+    async fn test_initialize_removes_orphan_temp_files_in_all_dirs() {
+        let (storage, _td) = create_test_storage();
+        // Need the directory tree to exist before we plant orphans.
+        storage.initialize().await.unwrap();
+
+        let uuid = uuid::Uuid::new_v4().simple().to_string();
+        let podcast_orphan = storage
+            .podcasts_dir
+            .join(format!("some-id.json.{uuid}.tmp"));
+        let cache_orphan = storage
+            .data_dir
+            .join(format!("cache_index.json.{uuid}.tmp"));
+        let nested_episode_dir = storage.episodes_dir.join("podcast-A");
+        std::fs::create_dir_all(&nested_episode_dir).unwrap();
+        let episode_orphan = nested_episode_dir.join(format!("ep-1.json.{uuid}.tmp"));
+        let nested_playlist_dir = storage.playlists_dir.join("My-Playlist");
+        std::fs::create_dir_all(&nested_playlist_dir).unwrap();
+        let playlist_orphan = nested_playlist_dir.join(format!("playlist.json.{uuid}.tmp"));
+
+        for p in [
+            &podcast_orphan,
+            &cache_orphan,
+            &episode_orphan,
+            &playlist_orphan,
+        ] {
+            std::fs::write(p, b"partial-write").unwrap();
+            assert!(p.exists(), "precondition: orphan must exist before sweep");
+        }
+
+        // Re-run initialize on the same data dir to trigger the sweep.
+        storage.initialize().await.unwrap();
+
+        for p in [
+            &podcast_orphan,
+            &cache_orphan,
+            &episode_orphan,
+            &playlist_orphan,
+        ] {
+            assert!(
+                !p.exists(),
+                "orphan must be removed after initialize: {}",
+                p.display()
+            );
+        }
+    }
+
+    /// Regression guard: orphan cleanup must never touch legit `*.json`
+    /// files or non-matching temp-like files (e.g., the legacy
+    /// deterministic `cache_index.json.tmp` is removed by a separate
+    /// path, not by this sweep).
+    #[tokio::test]
+    async fn test_initialize_preserves_non_orphan_files() {
+        let (storage, _td) = create_test_storage();
+        storage.initialize().await.unwrap();
+
+        // Save a real podcast through the public API so the on-disk
+        // file is well-formed and the cache rebuild on the next
+        // initialize call doesn't choke on it.
+        let podcast = make_podcast("Real Podcast");
+        let podcast_id = podcast.id.clone();
+        storage.save_podcast(&podcast).await.unwrap();
+        let podcast_json = storage.podcasts_dir.join(format!("{podcast_id}.json"));
+        assert!(podcast_json.exists(), "precondition: podcast file written");
+
+        // A `.tmp` file that is NOT a unique-suffix orphan — the sweep
+        // must leave it alone (it could be a user backup, an in-flight
+        // legacy cache temp handled elsewhere, etc.).
+        let unrelated_tmp = storage.data_dir.join("user-backup.tmp");
+        std::fs::write(&unrelated_tmp, b"keep me").unwrap();
+
+        storage.initialize().await.unwrap();
+
+        assert!(
+            podcast_json.exists(),
+            "real podcast file must survive sweep"
+        );
+        assert!(
+            unrelated_tmp.exists(),
+            "non-uuid `.tmp` file must survive sweep"
         );
     }
 }

@@ -184,24 +184,20 @@ impl<S: Storage> SubscriptionManager<S> {
             .get_episodes(&podcast.url, podcast_id)
             .await?;
 
-        // Assign track numbers to episodes
-        let episodes_with_tracks = self
-            .assign_track_numbers(podcast_id, feed_episodes, hard_refresh)
-            .await?;
-
-        // Load existing episodes to check for duplicates
+        // Load existing episodes once. We use this both for dedup and as the
+        // source of truth for chronological renumbering.
         let existing_episodes = self
             .storage
             .load_episodes(podcast_id)
             .await
             .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
 
-        // Filter out episodes we already have, or update existing ones if hard_refresh
-        let mut new_episodes = Vec::new();
-        let mut updated_episodes = Vec::new();
+        // Classify each feed episode as truly new vs. an update of an
+        // existing one (via the multi-strategy dedup below).
+        let mut new_episodes: Vec<Episode> = Vec::new();
+        let mut updated_episodes: Vec<Episode> = Vec::new();
 
-        for episode in episodes_with_tracks {
-            // Check if episode already exists using multiple strategies
+        for episode in feed_episodes {
             let existing_episode = existing_episodes.iter().find(|existing_episode| {
                 // Strategy 1: Compare deterministic IDs (based on GUID)
                 if episode.id == existing_episode.id {
@@ -258,25 +254,76 @@ impl<S: Storage> SubscriptionManager<S> {
             }
         }
 
-        // Save new episodes
-        for episode in &new_episodes {
-            self.storage
-                .save_episode(podcast_id, episode)
-                .await
-                .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
+        // Build the unified list: start from existing, apply hard-refresh
+        // updates in place, then append truly new episodes. This is the
+        // *complete* episode set we'll renumber against.
+        let mut unified: Vec<Episode> = existing_episodes.clone();
+        for upd in &updated_episodes {
+            if let Some(pos) = unified.iter().position(|e| e.id == upd.id) {
+                unified[pos] = upd.clone();
+            }
+        }
+        for new_ep in &new_episodes {
+            unified.push(new_ep.clone());
         }
 
-        // Save updated episodes (for hard refresh)
-        for episode in &updated_episodes {
-            self.storage
-                .save_episode(podcast_id, episode)
-                .await
-                .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
+        // Renumber 1..N in chronological order on every refresh. Doing this
+        // unconditionally (rather than only on hard_refresh) is what fixes
+        // the snowballing-track-numbers bug (#231): the previous incremental
+        // path used `max_track + index` and compounded every time dedup
+        // misclassified a re-published episode as "new", producing
+        // `episode_number` values 60-70x the real episode count.
+        unified.sort_by_key(|e| e.published);
+        for (index, episode) in unified.iter_mut().enumerate() {
+            episode.episode_number = Some((index + 1) as u32);
+        }
+
+        // Save anything that changed: every truly-new episode, every
+        // hard-refresh-updated episode, and any existing episode whose
+        // `episode_number` differs from what's on disk (renumbering can
+        // shift older episodes' positions when older items are added late).
+        let new_ids: std::collections::HashSet<_> =
+            new_episodes.iter().map(|e| e.id.clone()).collect();
+        let updated_ids: std::collections::HashSet<_> =
+            updated_episodes.iter().map(|e| e.id.clone()).collect();
+        let existing_by_id: std::collections::HashMap<_, _> = existing_episodes
+            .iter()
+            .map(|e| (e.id.clone(), e))
+            .collect();
+
+        // Re-derive new_episodes and updated_episodes from the unified
+        // (renumbered) list so callers see the corrected episode_number
+        // on each returned record.
+        let mut new_with_tracks = Vec::new();
+        let mut updated_with_tracks = Vec::new();
+
+        for ep in &unified {
+            let needs_save = if new_ids.contains(&ep.id) {
+                new_with_tracks.push(ep.clone());
+                true
+            } else if updated_ids.contains(&ep.id) {
+                updated_with_tracks.push(ep.clone());
+                true
+            } else {
+                // Existing episode that wasn't touched by this feed pull —
+                // save only if its track number actually changed.
+                existing_by_id
+                    .get(&ep.id)
+                    .map(|orig| orig.episode_number != ep.episode_number)
+                    .unwrap_or(false)
+            };
+
+            if needs_save {
+                self.storage
+                    .save_episode(podcast_id, ep)
+                    .await
+                    .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
+            }
         }
 
         // Combine new and updated episodes for return value
-        let mut all_changes = new_episodes.clone();
-        all_changes.extend(updated_episodes);
+        let mut all_changes = new_with_tracks;
+        all_changes.extend(updated_with_tracks);
 
         // Update podcast's last_updated timestamp
         podcast.last_updated = Utc::now();
@@ -317,63 +364,96 @@ impl<S: Storage> SubscriptionManager<S> {
             .unwrap_or(false)
     }
 
-    /// Assign track numbers to episodes based on chronological order
-    async fn assign_track_numbers(
+    /// Renumber a podcast's episodes 1..N in chronological order if and
+    /// only if the current numbering is broken. Returns the count of
+    /// episodes whose `episode_number` was changed.
+    ///
+    /// "Broken" means any of:
+    /// - At least one episode has `episode_number == None` while at least
+    ///   one other has `Some(_)`. (Sub-#231 podcasts had this — older
+    ///   episodes were left null while newer ones were numbered.)
+    /// - `max(episode_number) > episode_count`. The pre-fix incremental
+    ///   refresh path used `max + index` and snowballed this far above
+    ///   the actual count — real user data: JRE #2486 had
+    ///   `episode_number: 168025` against ~2,500 real episodes.
+    /// - The numbers don't form a dense, gap-free `1..=N` after sorting
+    ///   chronologically by `published`. (Catches less-extreme drift.)
+    ///
+    /// On any of those, every affected episode is re-saved with the
+    /// corrected number. Cheap O(N) check; only writes the episodes
+    /// whose number actually changes.
+    ///
+    /// Used by the one-time startup migration after upgrade. Idempotent:
+    /// a second call on the same podcast is effectively a no-op.
+    pub async fn renumber_podcast_episodes(
         &self,
         podcast_id: &PodcastId,
-        mut new_episodes: Vec<Episode>,
-        hard_refresh: bool,
-    ) -> Result<Vec<Episode>, SubscriptionError> {
-        if hard_refresh {
-            // Renumber all episodes for consistency
-            let existing_episodes = self
-                .storage
-                .load_episodes(podcast_id)
-                .await
-                .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
+    ) -> Result<usize, SubscriptionError> {
+        let mut episodes = self
+            .storage
+            .load_episodes(podcast_id)
+            .await
+            .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
 
-            // Combine and deduplicate by ID
-            let mut all_episodes = existing_episodes;
-            for new_ep in new_episodes {
-                if !all_episodes.iter().any(|existing| existing.id == new_ep.id) {
-                    all_episodes.push(new_ep);
-                }
-            }
+        if episodes.is_empty() {
+            return Ok(0);
+        }
 
-            // Sort chronologically (oldest first for track numbering)
-            all_episodes.sort_by_key(|e| e.published);
+        // Sort chronologically once. The "expected" numbering is then
+        // simply 1..=N along this sorted order.
+        episodes.sort_by_key(|e| e.published);
 
-            // Assign sequential track numbers
-            for (index, episode) in all_episodes.iter_mut().enumerate() {
-                episode.episode_number = Some((index + 1) as u32);
-            }
+        let already_correct = episodes
+            .iter()
+            .enumerate()
+            .all(|(i, e)| e.episode_number == Some((i + 1) as u32));
 
-            new_episodes = all_episodes;
-        } else {
-            // Only assign track numbers to new episodes
-            let existing_episodes = self
-                .storage
-                .load_episodes(podcast_id)
-                .await
-                .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
+        if already_correct {
+            return Ok(0);
+        }
 
-            // Find highest existing track number
-            let max_track = existing_episodes
-                .iter()
-                .filter_map(|e| e.episode_number)
-                .max()
-                .unwrap_or(0);
-
-            // Sort new episodes chronologically (oldest first)
-            new_episodes.sort_by_key(|e| e.published);
-
-            // Assign sequential track numbers starting after max
-            for (index, episode) in new_episodes.iter_mut().enumerate() {
-                episode.episode_number = Some(max_track + (index + 1) as u32);
+        let mut changed = 0usize;
+        for (index, episode) in episodes.iter_mut().enumerate() {
+            let new_number = Some((index + 1) as u32);
+            if episode.episode_number != new_number {
+                episode.episode_number = new_number;
+                self.storage
+                    .save_episode(podcast_id, episode)
+                    .await
+                    .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
+                changed += 1;
             }
         }
 
-        Ok(new_episodes)
+        Ok(changed)
+    }
+
+    /// One-time startup migration: scan every subscribed podcast and
+    /// renumber any whose `episode_number` field is in the broken state
+    /// described in `renumber_podcast_episodes`. Returns
+    /// `(podcasts_renumbered, total_episodes_renumbered)`.
+    ///
+    /// Cheap on healthy data (one O(N) scan per podcast, no writes); only
+    /// touches disk for podcasts that actually need fixing.
+    pub async fn migrate_episode_numbering(&self) -> Result<(usize, usize), SubscriptionError> {
+        let podcast_ids = self
+            .storage
+            .list_podcasts()
+            .await
+            .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
+
+        let mut podcasts_renumbered = 0usize;
+        let mut total_episodes_renumbered = 0usize;
+
+        for podcast_id in podcast_ids {
+            let changed = self.renumber_podcast_episodes(&podcast_id).await?;
+            if changed > 0 {
+                podcasts_renumbered += 1;
+                total_episodes_renumbered += changed;
+            }
+        }
+
+        Ok((podcasts_renumbered, total_episodes_renumbered))
     }
 
     /// Get subscription count
@@ -647,5 +727,212 @@ mod tests {
         // Test is_subscribed for non-existent podcast
         let subscribed = manager.is_subscribed("https://example.com/feed.xml").await;
         assert!(!subscribed);
+    }
+
+    // ─── Renumber tests for #231 ────────────────────────────────────────
+
+    fn make_podcast(title: &str) -> Podcast {
+        Podcast::new(
+            format!("https://example.com/{}.rss", title.to_lowercase()),
+            title.to_string(),
+        )
+    }
+
+    fn make_episode(podcast_id: &PodcastId, title: &str, days_ago: i64) -> Episode {
+        Episode::new(
+            podcast_id.clone(),
+            title.to_string(),
+            format!("https://example.com/{}.mp3", title.to_lowercase()),
+            Utc::now() - chrono::Duration::days(days_ago),
+        )
+    }
+
+    async fn renumber_test_setup() -> (
+        SubscriptionManager<JsonStorage>,
+        TempDir,
+        Podcast,
+        Vec<Episode>,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = JsonStorage::with_data_dir(temp_dir.path().to_path_buf());
+        storage.initialize().await.unwrap();
+        let storage = Arc::new(storage);
+
+        let podcast = make_podcast("Test Show");
+        storage.save_podcast(&podcast).await.unwrap();
+
+        // 5 episodes: oldest first by days_ago
+        let episodes = vec![
+            make_episode(&podcast.id, "Ep1 oldest", 50),
+            make_episode(&podcast.id, "Ep2", 40),
+            make_episode(&podcast.id, "Ep3", 30),
+            make_episode(&podcast.id, "Ep4", 20),
+            make_episode(&podcast.id, "Ep5 newest", 10),
+        ];
+        let manager = SubscriptionManager::new(storage);
+        (manager, temp_dir, podcast, episodes)
+    }
+
+    /// Healthy podcast with all episodes already numbered 1..N must be
+    /// a no-op (no writes, returns 0).
+    #[tokio::test]
+    async fn test_renumber_noop_when_already_dense() {
+        let (manager, _td, podcast, mut episodes) = renumber_test_setup().await;
+        for (i, ep) in episodes.iter_mut().enumerate() {
+            ep.episode_number = Some((i + 1) as u32);
+            manager.storage.save_episode(&podcast.id, ep).await.unwrap();
+        }
+
+        let changed = manager
+            .renumber_podcast_episodes(&podcast.id)
+            .await
+            .unwrap();
+        assert_eq!(changed, 0, "dense 1..N must be a no-op");
+    }
+
+    /// JRE-style snowballed numbers (max far exceeds count) must be
+    /// reset to dense 1..N.
+    #[tokio::test]
+    async fn test_renumber_fixes_snowballed_numbers() {
+        let (manager, _td, podcast, mut episodes) = renumber_test_setup().await;
+        // Simulate the bug: 5 episodes with bogus high numbers.
+        for (i, ep) in episodes.iter_mut().enumerate() {
+            ep.episode_number = Some(168000 + i as u32);
+            manager.storage.save_episode(&podcast.id, ep).await.unwrap();
+        }
+
+        let changed = manager
+            .renumber_podcast_episodes(&podcast.id)
+            .await
+            .unwrap();
+        assert_eq!(changed, 5, "all 5 episodes should be renumbered");
+
+        // Verify the on-disk state is now dense 1..N in chronological order.
+        let mut after = manager.storage.load_episodes(&podcast.id).await.unwrap();
+        after.sort_by_key(|e| e.published);
+        for (i, ep) in after.iter().enumerate() {
+            assert_eq!(
+                ep.episode_number,
+                Some((i + 1) as u32),
+                "episode at chronological index {i} must have number {}",
+                i + 1
+            );
+        }
+    }
+
+    /// Mixed null + Some state (some old episodes never got numbers,
+    /// newer ones were assigned). Renumber must produce dense 1..N
+    /// with no nulls.
+    #[tokio::test]
+    async fn test_renumber_fixes_mixed_null_and_some() {
+        let (manager, _td, podcast, mut episodes) = renumber_test_setup().await;
+        // First 3 are null, last 2 have small (but wrong) numbers.
+        episodes[0].episode_number = None;
+        episodes[1].episode_number = None;
+        episodes[2].episode_number = None;
+        episodes[3].episode_number = Some(100);
+        episodes[4].episode_number = Some(101);
+        for ep in &episodes {
+            manager.storage.save_episode(&podcast.id, ep).await.unwrap();
+        }
+
+        let changed = manager
+            .renumber_podcast_episodes(&podcast.id)
+            .await
+            .unwrap();
+        assert_eq!(changed, 5);
+
+        let mut after = manager.storage.load_episodes(&podcast.id).await.unwrap();
+        after.sort_by_key(|e| e.published);
+        for (i, ep) in after.iter().enumerate() {
+            assert_eq!(ep.episode_number, Some((i + 1) as u32));
+        }
+        assert!(
+            after.iter().all(|e| e.episode_number.is_some()),
+            "no nulls allowed after renumber"
+        );
+    }
+
+    /// Renumber must be idempotent: running it twice on the same broken
+    /// state changes 0 episodes the second time.
+    #[tokio::test]
+    async fn test_renumber_is_idempotent() {
+        let (manager, _td, podcast, mut episodes) = renumber_test_setup().await;
+        for ep in &mut episodes {
+            ep.episode_number = Some(99999);
+            manager.storage.save_episode(&podcast.id, ep).await.unwrap();
+        }
+
+        let first = manager
+            .renumber_podcast_episodes(&podcast.id)
+            .await
+            .unwrap();
+        assert!(first > 0);
+        let second = manager
+            .renumber_podcast_episodes(&podcast.id)
+            .await
+            .unwrap();
+        assert_eq!(second, 0, "second call must be a no-op");
+    }
+
+    /// Empty podcast: no episodes, no error, no writes.
+    #[tokio::test]
+    async fn test_renumber_empty_podcast() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = JsonStorage::with_data_dir(temp_dir.path().to_path_buf());
+        storage.initialize().await.unwrap();
+        let storage = Arc::new(storage);
+
+        let podcast = make_podcast("Empty");
+        storage.save_podcast(&podcast).await.unwrap();
+
+        let manager = SubscriptionManager::new(storage);
+        let changed = manager
+            .renumber_podcast_episodes(&podcast.id)
+            .await
+            .unwrap();
+        assert_eq!(changed, 0);
+    }
+
+    /// migrate_episode_numbering walks every podcast and reports
+    /// aggregate counts.
+    #[tokio::test]
+    async fn test_migrate_aggregates_across_podcasts() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = JsonStorage::with_data_dir(temp_dir.path().to_path_buf());
+        storage.initialize().await.unwrap();
+        let storage = Arc::new(storage);
+
+        // Healthy podcast: 3 episodes, already numbered 1..3.
+        let healthy = make_podcast("Healthy");
+        storage.save_podcast(&healthy).await.unwrap();
+        let mut healthy_eps = [
+            make_episode(&healthy.id, "h1", 30),
+            make_episode(&healthy.id, "h2", 20),
+            make_episode(&healthy.id, "h3", 10),
+        ];
+        for (i, ep) in healthy_eps.iter_mut().enumerate() {
+            ep.episode_number = Some((i + 1) as u32);
+            storage.save_episode(&healthy.id, ep).await.unwrap();
+        }
+
+        // Broken podcast: 4 episodes with snowballed numbers.
+        let broken = make_podcast("Broken");
+        storage.save_podcast(&broken).await.unwrap();
+        let mut broken_eps = [
+            make_episode(&broken.id, "b1", 40),
+            make_episode(&broken.id, "b2", 30),
+            make_episode(&broken.id, "b3", 20),
+            make_episode(&broken.id, "b4", 10),
+        ];
+        for (i, ep) in broken_eps.iter_mut().enumerate() {
+            ep.episode_number = Some(50000 + i as u32);
+            storage.save_episode(&broken.id, ep).await.unwrap();
+        }
+
+        let manager = SubscriptionManager::new(storage);
+        let (podcasts_fixed, episodes_fixed) = manager.migrate_episode_numbering().await.unwrap();
+        assert_eq!(podcasts_fixed, 1, "only the broken podcast counts");
+        assert_eq!(episodes_fixed, 4, "all 4 broken episodes renumbered");
     }
 }

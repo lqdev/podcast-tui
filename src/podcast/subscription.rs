@@ -273,7 +273,14 @@ impl<S: Storage> SubscriptionManager<S> {
         // path used `max_track + index` and compounded every time dedup
         // misclassified a re-published episode as "new", producing
         // `episode_number` values 60-70x the real episode count.
-        unified.sort_by_key(|e| e.published);
+        // Tie-break on episode id so podcasts with multiple episodes sharing
+        // the same `published` timestamp produce a stable, deterministic order
+        // (avoids repeated re-numbering on every refresh — see PR #236 review).
+        unified.sort_by(|a, b| {
+            a.published
+                .cmp(&b.published)
+                .then_with(|| a.id.0.cmp(&b.id.0))
+        });
         for (index, episode) in unified.iter_mut().enumerate() {
             episode.episode_number = Some((index + 1) as u32);
         }
@@ -399,9 +406,14 @@ impl<S: Storage> SubscriptionManager<S> {
             return Ok(0);
         }
 
-        // Sort chronologically once. The "expected" numbering is then
-        // simply 1..=N along this sorted order.
-        episodes.sort_by_key(|e| e.published);
+        // Sort chronologically once, with episode id as a deterministic
+        // tie-breaker so episodes sharing a `published` timestamp produce
+        // stable numbering across runs (see PR #236 review).
+        episodes.sort_by(|a, b| {
+            a.published
+                .cmp(&b.published)
+                .then_with(|| a.id.0.cmp(&b.id.0))
+        });
 
         let already_correct = episodes
             .iter()

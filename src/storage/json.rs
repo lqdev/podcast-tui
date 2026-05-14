@@ -30,6 +30,7 @@ fn unique_temp_path(path: &Path) -> PathBuf {
     parent.join(format!("{base}.{suffix}.tmp"))
 }
 
+/// Schema version of the persistent cache index. Bump whenever the on-disk
 /// shape changes incompatibly. The persistent index file rejects older
 /// versions and rebuilds from disk.
 pub(crate) const CACHE_SCHEMA_VERSION: u32 = 1;
@@ -1810,5 +1811,52 @@ mod tests {
         let on_disk = std::fs::read_to_string(&path).unwrap();
         let _: Episode = serde_json::from_str(&on_disk)
             .expect("concurrent episode saves must never produce unparseable JSON");
+    }
+
+    /// If the final `rename` step fails (e.g., destination is a non-empty
+    /// directory on POSIX, or otherwise unreplaceable), `atomic_write` must
+    /// (1) return an error, (2) leave the original destination untouched,
+    /// and (3) clean up the partial temp file rather than leaking it.
+    #[tokio::test]
+    async fn test_atomic_write_rename_failure_cleans_up_temp_and_preserves_dest() {
+        let (storage, td) = create_test_storage();
+        storage.initialize().await.unwrap();
+
+        // Create a destination path that is itself a non-empty directory.
+        // `rename(file, non_empty_dir)` fails on both POSIX and Windows.
+        let dest = td.path().join("blocked_target.json");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("sentinel.txt"), b"do not touch").unwrap();
+
+        let result = storage.atomic_write(&dest, "{\"new\":true}").await;
+        assert!(
+            result.is_err(),
+            "atomic_write must surface the rename failure as an error"
+        );
+
+        // Original destination must be intact (still a directory with the
+        // sentinel file inside, untouched by the failed write).
+        assert!(dest.is_dir(), "original destination must be preserved");
+        let sentinel = std::fs::read_to_string(dest.join("sentinel.txt")).unwrap();
+        assert_eq!(sentinel, "do not touch");
+
+        // Temp file must have been cleaned up — no orphan `*.tmp` files
+        // should be left in the parent directory.
+        let leftover_tmps: Vec<_> = std::fs::read_dir(td.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s == "tmp")
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert!(
+            leftover_tmps.is_empty(),
+            "rename-failure cleanup must remove the temp file, found: {:?}",
+            leftover_tmps.iter().map(|e| e.path()).collect::<Vec<_>>()
+        );
     }
 }

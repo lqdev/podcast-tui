@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Release automation: winget submit no longer fails when the maintainer's fork has drifted** — `post-release-version-sync.yml` now fast-forwards `lqdev/winget-pkgs:master` from `microsoft/winget-pkgs:master` via the GitHub `merge-upstream` API immediately before invoking `wingetcreate submit`. `wingetcreate`'s internal sync fails closed when the fork has accumulated upstream commits (typical between releases — the v1.13.0 submission failed after ~1 month of drift), aborting the submit and leaving the package half-released (code shipped, winget catalog stale). The new step is idempotent (no-op when already in sync), fails loudly on genuine conflicts, and uses the existing `WINGET_SUBMIT_TOKEN` secret. `docs/WINGET_PUBLISHING.md` updated with the recovery procedure for the rare case manual intervention is still needed. Closes #244.
+
 ---
 
 ## [1.13.0] - 2026-05-14

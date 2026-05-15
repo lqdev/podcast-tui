@@ -98,6 +98,26 @@ jobs:
             Write-Host "Nothing to commit — version already in sync with ${{ steps.version.outputs.VERSION }}"
           }
 
+      - name: Sync winget-pkgs fork with upstream
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_SUBMIT_TOKEN }}
+        shell: pwsh
+        run: |
+          # Fast-forward lqdev/winget-pkgs:master from microsoft/winget-pkgs:master
+          # before submitting. wingetcreate's internal sync attempt fails closed when
+          # the fork has drifted between releases (~1 month of upstream commits is
+          # enough), aborting the submit and leaving the package half-released.
+          # The merge-upstream API is idempotent: returns merge_type=none if already
+          # in sync, fast-forward if behind, and conflict (error) if the fork has
+          # local changes (which it should never have for a release-bot fork).
+          # See issue #244 / run 25892737496.
+          Write-Host "Fast-forwarding lqdev/winget-pkgs:master from microsoft/winget-pkgs:master..."
+          gh api -X POST repos/lqdev/winget-pkgs/merge-upstream -f branch=master
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Fork sync failed; wingetcreate submit will not succeed until lqdev/winget-pkgs:master is reconciled with microsoft/winget-pkgs:master."
+            exit 1
+          }
+
       - name: Submit to winget-pkgs
         shell: pwsh
         run: |

@@ -108,8 +108,18 @@ A GitHub Actions workflow at `.github/workflows/post-release-version-sync.yml` a
 1. Updates `Cargo.toml` version to match the release tag
 2. Runs `wingetcreate update` to generate new manifests
 3. Commits and pushes both changes to `main`
+4. Fast-forwards `lqdev/winget-pkgs:master` from `microsoft/winget-pkgs:master` (via the GitHub `merge-upstream` API) so the maintainer's fork is current
+5. Submits the new manifest to `microsoft/winget-pkgs` via `wingetcreate submit`
 
 **Prerequisite**: `lqdev.PodcastTUI` must be submitted to and accepted in `microsoft/winget-pkgs` before the manifest generation step will succeed. Until then, use the manual post-release checklist below.
+
+**Fork-sync note**: Step 4 was added after the v1.13.0 release failed to submit because the maintainer's fork had drifted ~1 month behind upstream (issue #244). `wingetcreate` fails closed when its internal sync attempt errors. With the explicit pre-sync, the only manual recovery needed is for genuine conflicts (which should never occur on a release-bot fork that holds no local changes). If recovery is ever needed, run:
+
+```bash
+gh api -X POST repos/lqdev/winget-pkgs/merge-upstream -f branch=master
+```
+
+then re-run the failed workflow job.
 
 ---
 

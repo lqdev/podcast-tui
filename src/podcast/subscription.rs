@@ -178,11 +178,54 @@ impl<S: Storage> SubscriptionManager<S> {
         // Load the podcast
         let mut podcast = self.get_podcast(podcast_id).await?;
 
-        // Get episodes from the feed
-        let feed_episodes = self
+        // Hard refresh bypasses the HTTP cache: send no conditional headers
+        // so the server always returns a full body and we re-process every
+        // entry (e.g., to pick up corrected metadata or descriptions).
+        let (etag_in, lm_in) = if hard_refresh {
+            (None, None)
+        } else {
+            (
+                podcast.last_etag.as_deref(),
+                podcast.last_modified.as_deref(),
+            )
+        };
+
+        // Get episodes from the feed using a conditional GET. `None` means
+        // the server responded 304 Not Modified — we can skip parse, dedup,
+        // renumber, and per-episode save entirely.
+        let fetch_result = self
             .feed_parser
-            .get_episodes(&podcast.url, podcast_id)
+            .get_episodes_conditional(&podcast.url, podcast_id, etag_in, lm_in)
             .await?;
+
+        let crate::podcast::EpisodeFetchResult {
+            episodes: feed_episodes,
+            etag: new_etag,
+            last_modified: new_lm,
+        } = match fetch_result {
+            Some(r) => r,
+            None => {
+                // 304 path: nothing changed upstream. Bump last_updated so
+                // the UI shows a recent refresh time, but do not touch
+                // episodes. Cache validators stay as they are.
+                podcast.last_updated = Utc::now();
+                self.storage
+                    .save_podcast(&podcast)
+                    .await
+                    .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
+                return Ok(Vec::new());
+            }
+        };
+
+        // 200 path: capture the new cache validators before we save the
+        // podcast at the bottom of this function. Servers may return
+        // either, both, or neither header — only overwrite when present.
+        if new_etag.is_some() {
+            podcast.last_etag = new_etag;
+        }
+        if new_lm.is_some() {
+            podcast.last_modified = new_lm;
+        }
 
         // Load existing episodes once. We use this both for dedup and as the
         // source of truth for chronological renumbering.

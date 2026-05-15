@@ -362,6 +362,8 @@ mod tests {
             last_updated: chrono::Utc::now(),
             episodes: vec![],
             tags: vec![],
+            last_etag: None,
+            last_modified: None,
         }
     }
 

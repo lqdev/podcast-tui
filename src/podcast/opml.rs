@@ -588,6 +588,8 @@ mod tests {
             last_updated: Utc::now(),
             episodes: vec![],
             tags: vec![],
+            last_etag: None,
+            last_modified: None,
         }];
 
         let temp_dir = tempfile::tempdir().unwrap();

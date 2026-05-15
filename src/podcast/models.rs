@@ -21,6 +21,20 @@ pub struct Podcast {
     /// Defaults to empty for backward compatibility with existing data files.
     #[serde(default)]
     pub tags: Vec<String>,
+
+    /// Last seen `ETag` response header from the feed server.
+    /// Sent as `If-None-Match` on the next refresh to enable RFC 7232
+    /// conditional GET. `None` means we have not yet captured an ETag (first
+    /// refresh after subscribe / after upgrade from a pre-conditional-GET
+    /// version of podcast-tui).
+    #[serde(default)]
+    pub last_etag: Option<String>,
+
+    /// Last seen `Last-Modified` response header from the feed server.
+    /// Sent as `If-Modified-Since` on the next refresh.
+    /// `None` means we have not yet captured a value.
+    #[serde(default)]
+    pub last_modified: Option<String>,
 }
 
 impl Podcast {
@@ -39,6 +53,8 @@ impl Podcast {
             last_updated: Utc::now(),
             episodes: Vec::new(),
             tags: Vec::new(),
+            last_etag: None,
+            last_modified: None,
         }
     }
 

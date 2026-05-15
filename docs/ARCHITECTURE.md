@@ -584,7 +584,7 @@ mod tests {
 
 **Storage Mocking**: Use in-memory or temporary directory storage for tests
 
-**Network Mocking**: Use `mockito` or similar for HTTP mocking (planned)
+**Network Mocking**: Use `wiremock` for HTTP mocking (see `tests/test_refresh_conditional.rs` and feed parser unit tests for examples)
 
 **UI Testing**: Manual testing (TUI testing is challenging to automate)
 

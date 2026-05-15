@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **Incremental refresh via HTTP conditional GET** — `SubscriptionManager::refresh_feed` now sends `If-None-Match` (ETag) and `If-Modified-Since` headers on every refresh, persisting whatever validators the server returned on the previous 200. When the server responds `304 Not Modified` (the dominant case for unchanged feeds), the refresh short-circuits before parse/dedup/renumber/save — only `last_updated` is bumped — turning a typical ~1–3s of work per podcast into a ~50ms round-trip. Hard refresh (`C-r`) bypasses the cache by sending no conditional headers, preserving the existing "force fetch + reprocess everything" semantics. Schema-additive: existing `podcasts.json` files load unchanged (`last_etag`/`last_modified` default to `None`) and populate naturally on the first refresh after upgrade. Twelve tests cover the wire-level header round-trip (9 unit tests against `FeedParser` using `wiremock`) and end-to-end refresh integration (3 tests against `SubscriptionManager` + `JsonStorage`). Closes #246.
+
 ### Fixed
 
 - **Release automation: winget submit no longer fails when the maintainer's fork has drifted** — `post-release-version-sync.yml` now fast-forwards `lqdev/winget-pkgs:master` from `microsoft/winget-pkgs:master` via the GitHub `merge-upstream` API immediately before invoking `wingetcreate submit`. `wingetcreate`'s internal sync fails closed when the fork has accumulated upstream commits (typical between releases — the v1.13.0 submission failed after ~1 month of drift), aborting the submit and leaving the package half-released (code shipped, winget catalog stale). The new step is idempotent (no-op when already in sync), fails loudly on genuine conflicts, and uses the existing `WINGET_SUBMIT_TOKEN` secret. `docs/WINGET_PUBLISHING.md` updated with the recovery procedure for the rare case manual intervention is still needed. Closes #244.

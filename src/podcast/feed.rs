@@ -33,6 +33,27 @@ pub struct FeedMetadata {
     pub total_episodes: usize,
 }
 
+/// Result of a successful feed download. `body` is the raw response body.
+/// `etag` and `last_modified` carry the cache validators returned by the
+/// server (if any) so callers can persist them and send them back on the
+/// next refresh as `If-None-Match` / `If-Modified-Since`.
+#[derive(Debug, Clone)]
+pub struct FeedFetchResult {
+    pub body: String,
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+}
+
+/// Result of a successful episode fetch from a feed. `None` for the whole
+/// `Option` (returned by `get_episodes_conditional`) means the server
+/// responded with `304 Not Modified` and no body was downloaded.
+#[derive(Debug, Clone)]
+pub struct EpisodeFetchResult {
+    pub episodes: Vec<Episode>,
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+}
+
 /// Errors that can occur during feed parsing
 #[derive(Debug, thiserror::Error)]
 pub enum FeedError {
@@ -110,21 +131,58 @@ impl FeedParser {
             last_updated: Utc::now(),
             episodes: Vec::new(), // Episodes IDs will be added as they're saved
             tags: Vec::new(),
+            // Cache validators are captured on refresh, not subscribe.
+            // The first refresh will receive the ETag and persist it then.
+            last_etag: None,
+            last_modified: None,
         };
 
         Ok(podcast)
     }
 
-    /// Get just the episodes from a feed (for updates)
+    /// Get just the episodes from a feed (for updates).
+    ///
+    /// Backwards-compatible wrapper that always sends an unconditional GET.
+    /// New callers that want conditional-GET semantics should use
+    /// [`Self::get_episodes_conditional`].
     pub async fn get_episodes(
         &self,
         feed_url: &str,
         podcast_id: &PodcastId,
     ) -> Result<Vec<Episode>, FeedError> {
+        // Unwrap is safe: passing `None, None` cannot produce a 304.
+        Ok(self
+            .get_episodes_conditional(feed_url, podcast_id, None, None)
+            .await?
+            .expect("unconditional GET cannot return 304")
+            .episodes)
+    }
+
+    /// Get episodes from a feed using HTTP conditional GET (RFC 7232).
+    ///
+    /// When `if_none_match` and/or `if_modified_since` are `Some`, sends
+    /// the corresponding request headers. If the server responds with
+    /// `304 Not Modified`, returns `Ok(None)` without downloading or
+    /// parsing any body. Otherwise returns `Ok(Some(EpisodeFetchResult))`
+    /// with the parsed episodes plus any new cache validators from the
+    /// response headers.
+    pub async fn get_episodes_conditional(
+        &self,
+        feed_url: &str,
+        podcast_id: &PodcastId,
+        if_none_match: Option<&str>,
+        if_modified_since: Option<&str>,
+    ) -> Result<Option<EpisodeFetchResult>, FeedError> {
         validate_feed_url(feed_url).map_err(FeedError::ValidationError)?;
 
-        let feed_content = self.download_feed(feed_url).await?;
-        let feed = parser::parse(feed_content.as_bytes())
+        let Some(fetch) = self
+            .download_feed_conditional(feed_url, if_none_match, if_modified_since)
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        let feed = parser::parse(fetch.body.as_bytes())
             .map_err(|e| FeedError::ParseError(e.to_string()))?;
 
         let mut episodes = Vec::new();
@@ -134,7 +192,11 @@ impl FeedParser {
             }
         }
 
-        Ok(episodes)
+        Ok(Some(EpisodeFetchResult {
+            episodes,
+            etag: fetch.etag,
+            last_modified: fetch.last_modified,
+        }))
     }
 
     /// Check if a feed URL is valid and accessible
@@ -148,36 +210,90 @@ impl FeedParser {
         Ok(self.extract_feed_metadata(&feed))
     }
 
-    /// Download feed content from URL
+    /// Download feed content from URL (unconditional GET).
+    ///
+    /// Backwards-compatible wrapper around [`Self::download_feed_conditional`]
+    /// that never sends conditional headers and therefore can never receive
+    /// a 304 response. Used by `parse_feed` (initial subscribe) and
+    /// `validate_feed`.
     async fn download_feed(&self, feed_url: &str) -> Result<String, FeedError> {
-        let response = self
+        Ok(self
+            .download_feed_conditional(feed_url, None, None)
+            .await?
+            .expect("unconditional GET cannot return 304")
+            .body)
+    }
+
+    /// Download feed content with optional HTTP conditional-GET headers.
+    ///
+    /// Sends `If-None-Match` and/or `If-Modified-Since` when the
+    /// corresponding parameter is `Some`. Returns `Ok(None)` if the server
+    /// responded with `304 Not Modified` (no body to read). Returns
+    /// `Ok(Some(FeedFetchResult))` on `200 OK`, capturing the response's
+    /// `ETag` and `Last-Modified` headers (if any) so they can be persisted
+    /// for the next refresh.
+    async fn download_feed_conditional(
+        &self,
+        feed_url: &str,
+        if_none_match: Option<&str>,
+        if_modified_since: Option<&str>,
+    ) -> Result<Option<FeedFetchResult>, FeedError> {
+        let mut req = self
             .http_client
             .get(feed_url)
-            .header("Accept", "application/rss+xml, application/rdf+xml, application/atom+xml, application/xml, text/xml, */*")
-            .send()
-            .await
-            .map_err(FeedError::Network)?;
+            .header("Accept", "application/rss+xml, application/rdf+xml, application/atom+xml, application/xml, text/xml, */*");
+
+        if let Some(etag) = if_none_match {
+            req = req.header(reqwest::header::IF_NONE_MATCH, etag);
+        }
+        if let Some(lm) = if_modified_since {
+            req = req.header(reqwest::header::IF_MODIFIED_SINCE, lm);
+        }
+
+        let response = req.send().await.map_err(FeedError::Network)?;
 
         let status = response.status();
-        let _final_url = response.url().clone();
+
+        // RFC 7232: 304 responses MUST NOT include a body. Short-circuit
+        // before any read to surface the "nothing changed" signal cheaply.
+        if status.as_u16() == 304 {
+            return Ok(None);
+        }
 
         if !status.is_success() {
             return Err(FeedError::Network(response.error_for_status().unwrap_err()));
         }
 
+        // Capture cache validators *before* consuming the response body.
+        // Header values are opaque ASCII; round-trip them verbatim (do not
+        // strip ETag quotes — RFC 7232 treats `"abc"` and `abc` as distinct).
+        let etag = response
+            .headers()
+            .get(reqwest::header::ETAG)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+        let last_modified = response
+            .headers()
+            .get(reqwest::header::LAST_MODIFIED)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+
         // Check content type if available (validation only)
         if let Some(content_type) = response.headers().get("content-type") {
             if let Ok(ct_str) = content_type.to_str() {
-                // Validate content type but don't log in production
                 if !ct_str.contains("xml") && !ct_str.contains("rss") && !ct_str.contains("atom") {
                     // Content type validation - could be added to error handling if needed
                 }
             }
         }
 
-        let content = response.text().await.map_err(FeedError::Network)?;
+        let body = response.text().await.map_err(FeedError::Network)?;
 
-        Ok(content)
+        Ok(Some(FeedFetchResult {
+            body,
+            etag,
+            last_modified,
+        }))
     }
 
     /// Extract feed metadata
@@ -428,6 +544,26 @@ impl Default for FeedParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::matchers::{header, header_exists, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    /// Minimal valid RSS body used by the conditional-GET tests below.
+    /// Uses one entry so `extract_episode` succeeds; the tests don't assert
+    /// on episode content, only on the conditional-GET wire behaviour.
+    const TEST_RSS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Test Feed</title>
+    <description>For tests</description>
+    <link>https://example.com</link>
+    <item>
+      <title>Episode 1</title>
+      <guid isPermaLink="false">ep-1</guid>
+      <enclosure url="https://example.com/ep1.mp3" type="audio/mpeg" length="1234"/>
+      <pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>"#;
 
     #[tokio::test]
     async fn test_feed_parser_creation() {
@@ -455,6 +591,210 @@ mod tests {
 
         // Note: Testing with real feeds requires network access
         // For unit tests, we'd want to mock the HTTP client
+    }
+
+    // --- Conditional GET (issue #246) ---
+
+    #[tokio::test]
+    async fn test_download_feed_sends_if_none_match_when_etag_provided() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/feed.xml"))
+            .and(header("If-None-Match", "\"abc123\""))
+            .respond_with(ResponseTemplate::new(200).set_body_string(TEST_RSS))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let parser = FeedParser::new();
+        let url = format!("{}/feed.xml", server.uri());
+        let result = parser
+            .download_feed_conditional(&url, Some("\"abc123\""), None)
+            .await;
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+        assert!(result.unwrap().is_some(), "expected Some(FeedFetchResult)");
+    }
+
+    #[tokio::test]
+    async fn test_download_feed_sends_if_modified_since_when_provided() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/feed.xml"))
+            .and(header_exists("If-Modified-Since"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(TEST_RSS))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let parser = FeedParser::new();
+        let url = format!("{}/feed.xml", server.uri());
+        let result = parser
+            .download_feed_conditional(&url, None, Some("Wed, 21 Oct 2015 07:28:00 GMT"))
+            .await;
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+        assert!(result.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_download_feed_omits_conditional_headers_when_none() {
+        let server = MockServer::start().await;
+        // Match only requests that have *neither* conditional header.
+        Mock::given(method("GET"))
+            .and(path("/feed.xml"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(TEST_RSS)
+                    .insert_header("ETag", "\"new-etag\""),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        // Negative mock: any request that *does* carry a conditional header
+        // would fall through to the default 404, surfacing a parse error.
+
+        let parser = FeedParser::new();
+        let url = format!("{}/feed.xml", server.uri());
+        let result = parser.download_feed_conditional(&url, None, None).await;
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+        let fetch = result.unwrap().expect("expected Some on 200");
+        assert_eq!(fetch.etag.as_deref(), Some("\"new-etag\""));
+    }
+
+    #[tokio::test]
+    async fn test_download_feed_returns_none_on_304() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/feed.xml"))
+            .and(header_exists("If-None-Match"))
+            .respond_with(ResponseTemplate::new(304))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let parser = FeedParser::new();
+        let url = format!("{}/feed.xml", server.uri());
+        let result = parser
+            .download_feed_conditional(&url, Some("\"abc123\""), None)
+            .await;
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+        assert!(result.unwrap().is_none(), "expected None on 304");
+    }
+
+    #[tokio::test]
+    async fn test_download_feed_captures_etag_on_200() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/feed.xml"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(TEST_RSS)
+                    .insert_header("ETag", "\"server-etag-v2\""),
+            )
+            .mount(&server)
+            .await;
+
+        let parser = FeedParser::new();
+        let url = format!("{}/feed.xml", server.uri());
+        let fetch = parser
+            .download_feed_conditional(&url, None, None)
+            .await
+            .unwrap()
+            .expect("expected Some on 200");
+        assert_eq!(fetch.etag.as_deref(), Some("\"server-etag-v2\""));
+    }
+
+    #[tokio::test]
+    async fn test_download_feed_captures_last_modified_on_200() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/feed.xml"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(TEST_RSS)
+                    .insert_header("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT"),
+            )
+            .mount(&server)
+            .await;
+
+        let parser = FeedParser::new();
+        let url = format!("{}/feed.xml", server.uri());
+        let fetch = parser
+            .download_feed_conditional(&url, None, None)
+            .await
+            .unwrap()
+            .expect("expected Some on 200");
+        assert_eq!(
+            fetch.last_modified.as_deref(),
+            Some("Wed, 21 Oct 2015 07:28:00 GMT")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_download_feed_handles_200_without_validators() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/feed.xml"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(TEST_RSS))
+            .mount(&server)
+            .await;
+
+        let parser = FeedParser::new();
+        let url = format!("{}/feed.xml", server.uri());
+        let fetch = parser
+            .download_feed_conditional(&url, None, None)
+            .await
+            .unwrap()
+            .expect("expected Some on 200");
+        assert!(fetch.etag.is_none(), "no ETag header → etag is None");
+        assert!(
+            fetch.last_modified.is_none(),
+            "no Last-Modified header → last_modified is None"
+        );
+        assert!(!fetch.body.is_empty(), "body should be populated");
+    }
+
+    #[tokio::test]
+    async fn test_get_episodes_conditional_returns_none_on_304() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/feed.xml"))
+            .respond_with(ResponseTemplate::new(304))
+            .mount(&server)
+            .await;
+
+        let parser = FeedParser::new();
+        let url = format!("{}/feed.xml", server.uri());
+        let pid = PodcastId::from_url(&url);
+        let result = parser
+            .get_episodes_conditional(&url, &pid, Some("\"abc\""), None)
+            .await
+            .unwrap();
+        assert!(result.is_none(), "304 should yield None");
+    }
+
+    #[tokio::test]
+    async fn test_get_episodes_conditional_returns_episodes_on_200() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/feed.xml"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(TEST_RSS)
+                    .insert_header("ETag", "\"e1\""),
+            )
+            .mount(&server)
+            .await;
+
+        let parser = FeedParser::new();
+        let url = format!("{}/feed.xml", server.uri());
+        let pid = PodcastId::from_url(&url);
+        let result = parser
+            .get_episodes_conditional(&url, &pid, None, None)
+            .await
+            .unwrap()
+            .expect("expected Some");
+        assert_eq!(result.episodes.len(), 1);
+        assert_eq!(result.etag.as_deref(), Some("\"e1\""));
     }
 
     // Commented out test that depends on Feed::default() which isn't available

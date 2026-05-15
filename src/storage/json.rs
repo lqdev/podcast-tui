@@ -1321,6 +1321,8 @@ mod tests {
             last_updated: chrono::Utc::now(),
             episodes: Vec::new(),
             tags: Vec::new(),
+            last_etag: None,
+            last_modified: None,
         };
 
         // Save podcast
@@ -1507,6 +1509,8 @@ mod tests {
             last_updated: chrono::Utc::now(),
             episodes: Vec::new(),
             tags: Vec::new(),
+            last_etag: None,
+            last_modified: None,
         }
     }
 
@@ -1650,6 +1654,8 @@ mod tests {
             last_updated: chrono::Utc::now(),
             episodes: Vec::new(),
             tags: Vec::new(),
+            last_etag: None,
+            last_modified: None,
         }
     }
 

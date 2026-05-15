@@ -1323,6 +1323,7 @@ mod tests {
             tags: Vec::new(),
             last_etag: None,
             last_modified: None,
+            last_body_hash: None,
         };
 
         // Save podcast
@@ -1511,6 +1512,7 @@ mod tests {
             tags: Vec::new(),
             last_etag: None,
             last_modified: None,
+            last_body_hash: None,
         }
     }
 
@@ -1656,6 +1658,7 @@ mod tests {
             tags: Vec::new(),
             last_etag: None,
             last_modified: None,
+            last_body_hash: None,
         }
     }
 

@@ -6,7 +6,9 @@ pub mod subscription;
 
 // Re-export main types
 pub use discovery::{DiscoveryError, PodcastIndexClient, PodcastSearchResult};
-pub use feed::{EpisodeFetchResult, FeedError, FeedFetchResult, FeedMetadata, FeedParser};
+pub use feed::{
+    hash_feed_body, EpisodeFetchResult, FeedError, FeedFetchResult, FeedMetadata, FeedParser,
+};
 pub use models::{Episode, EpisodeStatus, Podcast, PodcastSubscription};
 pub use opml::{FailedImport, ImportResult, OpmlDocument, OpmlError, OpmlExporter, OpmlParser};
 pub use subscription::{SubscriptionError, SubscriptionManager};

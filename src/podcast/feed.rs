@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use feed_rs::parser;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::time::Duration;
 
 use crate::podcast::{Episode, EpisodeStatus, Podcast};
@@ -52,6 +53,21 @@ pub struct EpisodeFetchResult {
     pub episodes: Vec<Episode>,
     pub etag: Option<String>,
     pub last_modified: Option<String>,
+    /// SHA-256 (lowercase hex) of the raw response body. Carried up from
+    /// `download_feed_conditional` so callers can compare against the
+    /// previously stored hash and short-circuit parse/dedup/save when the
+    /// body bytes are identical to the last fetch (Layer 2 of the
+    /// incremental-refresh sprint — covers servers that don't honor RFC 7232
+    /// conditional GET).
+    pub body_hash: String,
+}
+
+/// SHA-256 of the raw feed body, lowercase hex. Used as a content-level
+/// cache validator independent of HTTP cache headers.
+pub fn hash_feed_body(body: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(body.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 /// Errors that can occur during feed parsing
@@ -135,6 +151,7 @@ impl FeedParser {
             // The first refresh will receive the ETag and persist it then.
             last_etag: None,
             last_modified: None,
+            last_body_hash: None,
         };
 
         Ok(podcast)
@@ -192,10 +209,13 @@ impl FeedParser {
             }
         }
 
+        let body_hash = hash_feed_body(&fetch.body);
+
         Ok(Some(EpisodeFetchResult {
             episodes,
             etag: fetch.etag,
             last_modified: fetch.last_modified,
+            body_hash,
         }))
     }
 
@@ -844,6 +864,34 @@ mod tests {
             .expect("expected Some");
         assert_eq!(result.episodes.len(), 1);
         assert_eq!(result.etag.as_deref(), Some("\"e1\""));
+        assert!(
+            !result.body_hash.is_empty(),
+            "body_hash should be populated on 200 path"
+        );
+    }
+
+    #[test]
+    fn test_hash_feed_body_is_deterministic() {
+        let body = "<rss><channel><title>x</title></channel></rss>";
+        assert_eq!(hash_feed_body(body), hash_feed_body(body));
+    }
+
+    #[test]
+    fn test_hash_feed_body_differs_for_different_input() {
+        assert_ne!(hash_feed_body("a"), hash_feed_body("b"));
+        // Even a single trailing whitespace must differ — we hash raw bytes.
+        assert_ne!(hash_feed_body("a"), hash_feed_body("a "));
+    }
+
+    #[test]
+    fn test_hash_feed_body_format_is_lowercase_hex() {
+        let h = hash_feed_body("anything");
+        assert_eq!(h.len(), 64, "SHA-256 hex must be 64 chars");
+        assert!(
+            h.chars()
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+            "expected lowercase hex, got {h}"
+        );
     }
 
     // Commented out test that depends on Feed::default() which isn't available

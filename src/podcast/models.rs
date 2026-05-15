@@ -35,6 +35,16 @@ pub struct Podcast {
     /// `None` means we have not yet captured a value.
     #[serde(default)]
     pub last_modified: Option<String>,
+
+    /// SHA-256 (lowercase hex) of the last successfully fetched feed body.
+    /// Used as a content-level cache validator: if the next refresh's
+    /// 200-response body hashes to the same value, we skip parse + dedup +
+    /// save entirely. Independent of `last_etag` — covers servers that don't
+    /// implement RFC 7232 conditional GET.
+    /// `None` means we have not yet hashed a body (first refresh after
+    /// subscribe / after upgrade).
+    #[serde(default)]
+    pub last_body_hash: Option<String>,
 }
 
 impl Podcast {
@@ -55,6 +65,7 @@ impl Podcast {
             tags: Vec::new(),
             last_etag: None,
             last_modified: None,
+            last_body_hash: None,
         }
     }
 

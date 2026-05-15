@@ -590,6 +590,7 @@ mod tests {
             tags: vec![],
             last_etag: None,
             last_modified: None,
+            last_body_hash: None,
         }];
 
         let temp_dir = tempfile::tempdir().unwrap();

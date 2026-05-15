@@ -202,6 +202,7 @@ impl<S: Storage> SubscriptionManager<S> {
             episodes: feed_episodes,
             etag: new_etag,
             last_modified: new_lm,
+            body_hash: new_body_hash,
         } = match fetch_result {
             Some(r) => r,
             None => {
@@ -226,6 +227,25 @@ impl<S: Storage> SubscriptionManager<S> {
         if new_lm.is_some() {
             podcast.last_modified = new_lm;
         }
+
+        // Layer 2 short-circuit: identical body hash means the response
+        // bytes are byte-for-byte identical to the last successful fetch.
+        // Catches servers that don't honor RFC 7232 conditional GET but
+        // happen to send the same bytes (the long tail of self-hosted
+        // feeds). Skipped on hard refresh and on the very first refresh
+        // after subscribe (no stored hash).
+        if !hard_refresh && podcast.last_body_hash.as_deref() == Some(new_body_hash.as_str()) {
+            podcast.last_updated = Utc::now();
+            self.storage
+                .save_podcast(&podcast)
+                .await
+                .map_err(|e| SubscriptionError::Storage(e.to_string()))?;
+            return Ok(Vec::new());
+        }
+
+        // Hash miss (or first refresh): record the new hash so the next
+        // refresh can short-circuit on a repeat body.
+        podcast.last_body_hash = Some(new_body_hash);
 
         // Load existing episodes once. We use this both for dedup and as the
         // source of truth for chronological renumbering.

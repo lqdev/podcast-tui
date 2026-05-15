@@ -256,8 +256,21 @@ impl FeedParser {
 
         // RFC 7232: 304 responses MUST NOT include a body. Short-circuit
         // before any read to surface the "nothing changed" signal cheaply.
+        //
+        // Gate on actually having sent a validator: per RFC 7232 §4.1, a
+        // server MUST NOT generate 304 unless the request included an
+        // `If-None-Match` or `If-Modified-Since`. Treat an unsolicited 304
+        // (typically a misconfigured proxy/CDN) as a protocol error rather
+        // than silently reporting "unchanged" against a cache we never
+        // populated. This also makes the unconditional `download_feed` /
+        // `get_episodes` wrappers' `expect` provably unreachable.
         if status.as_u16() == 304 {
-            return Ok(None);
+            if if_none_match.is_some() || if_modified_since.is_some() {
+                return Ok(None);
+            }
+            return Err(FeedError::ParseError(
+                "server returned 304 Not Modified without a conditional request".to_string(),
+            ));
         }
 
         if !status.is_success() {
@@ -638,7 +651,6 @@ mod tests {
     #[tokio::test]
     async fn test_download_feed_omits_conditional_headers_when_none() {
         let server = MockServer::start().await;
-        // Match only requests that have *neither* conditional header.
         Mock::given(method("GET"))
             .and(path("/feed.xml"))
             .respond_with(
@@ -649,8 +661,6 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-        // Negative mock: any request that *does* carry a conditional header
-        // would fall through to the default 404, surfacing a parse error.
 
         let parser = FeedParser::new();
         let url = format!("{}/feed.xml", server.uri());
@@ -658,6 +668,45 @@ mod tests {
         assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
         let fetch = result.unwrap().expect("expected Some on 200");
         assert_eq!(fetch.etag.as_deref(), Some("\"new-etag\""));
+
+        // Verify at the request level that *neither* conditional header was
+        // sent. A regression that always added them would otherwise still
+        // pass the response-level assertions above.
+        let received = server.received_requests().await.unwrap_or_default();
+        assert_eq!(received.len(), 1);
+        assert!(
+            received[0].headers.get("If-None-Match").is_none(),
+            "If-None-Match must not be sent when validator is None"
+        );
+        assert!(
+            received[0].headers.get("If-Modified-Since").is_none(),
+            "If-Modified-Since must not be sent when validator is None"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_download_feed_unsolicited_304_is_error() {
+        // Per RFC 7232 §4.1, a server MUST NOT generate 304 unless the
+        // request included a conditional. If it does anyway (misconfigured
+        // proxy/CDN), surface a parse error rather than silently treating
+        // a never-cached representation as "unchanged".
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/feed.xml"))
+            .respond_with(ResponseTemplate::new(304))
+            .mount(&server)
+            .await;
+
+        let parser = FeedParser::new();
+        let url = format!("{}/feed.xml", server.uri());
+        let err = parser
+            .download_feed_conditional(&url, None, None)
+            .await
+            .expect_err("unsolicited 304 should be an error");
+        assert!(
+            matches!(err, FeedError::ParseError(_)),
+            "expected ParseError, got {err:?}"
+        );
     }
 
     #[tokio::test]

@@ -128,6 +128,39 @@ async fn test_refresh_persists_etag_after_200() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_refresh_preserves_validators_when_200_has_no_headers() -> Result<()> {
+    // 200 OK with no ETag/Last-Modified headers must not erase the previously
+    // stored validators — some servers omit these headers intermittently and
+    // we should keep the last good ones for the next conditional request.
+    let (_tmp, storage, sub) = setup().await?;
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/feed.xml"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(TEST_RSS))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let url = format!("{}/feed.xml", server.uri());
+    let mut podcast = Podcast::new("Test".to_string(), url);
+    podcast.last_etag = Some("\"keep-me\"".to_string());
+    podcast.last_modified = Some("Wed, 21 Oct 2015 07:28:00 GMT".to_string());
+    storage.save_podcast(&podcast).await?;
+
+    sub.refresh_feed(&podcast.id).await?;
+
+    let reloaded = storage.load_podcast(&podcast.id).await?;
+    assert_eq!(reloaded.last_etag.as_deref(), Some("\"keep-me\""));
+    assert_eq!(
+        reloaded.last_modified.as_deref(),
+        Some("Wed, 21 Oct 2015 07:28:00 GMT")
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_hard_refresh_ignores_stored_etag() -> Result<()> {
     let (_tmp, storage, sub) = setup().await?;
     let server = MockServer::start().await;

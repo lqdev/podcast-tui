@@ -50,6 +50,17 @@ Unknown values fall back to `help` and log a warning to stderr.
 
 Press `F1`, `?`, or run `:help` to open `*Help: Keybindings*`. This buffer reflects whichever preset is active for the current session. If you change `config.json` (including the `preset`), restart Podcast TUI to update the keybindings shown here.
 
+## Quick-Reference Bar
+
+Most buffers render a single contextual hint row just above the minibuffer listing the
+buffer-specific keybindings most relevant to the current view (for example
+`a add  d delete  r refresh` in the podcast list). Some hints are state-aware — the
+episode list and What's New buffers only show `F6 clear filter` while a filter is active.
+Buffers with their own richer in-pane hints (the Sync directory picker) and transient
+overlays don't render the bar. Global function-key shortcuts are intentionally omitted to
+keep the bar focused on actions available right where you are; the full reference lives in
+the auto-generated help buffer above.
+
 ## Default Preset
 
 ### Navigation

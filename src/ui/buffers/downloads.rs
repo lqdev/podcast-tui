@@ -271,6 +271,14 @@ impl Buffer for DownloadsBuffer {
         true
     }
 
+    fn key_hints(&self) -> Vec<super::KeyHint> {
+        vec![
+            super::KeyHint::new("Enter", "details"),
+            super::KeyHint::new("X", "delete"),
+            super::KeyHint::new("F5", "refresh"),
+        ]
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "Downloads Buffer Help".to_string(),

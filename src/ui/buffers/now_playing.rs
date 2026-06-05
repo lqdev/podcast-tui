@@ -320,6 +320,14 @@ impl Buffer for NowPlayingBuffer {
         false
     }
 
+    fn key_hints(&self) -> Vec<super::KeyHint> {
+        vec![
+            super::KeyHint::new("S-P", "play/pause"),
+            super::KeyHint::new("C-←/→", "seek"),
+            super::KeyHint::new("+/-", "volume"),
+        ]
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "Now Playing Buffer:".to_string(),

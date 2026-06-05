@@ -116,6 +116,15 @@ impl Buffer for PlaylistListBuffer {
         self.theme = theme;
     }
 
+    fn key_hints(&self) -> Vec<super::KeyHint> {
+        vec![
+            super::KeyHint::new("Enter", "open"),
+            super::KeyHint::new("c", "create"),
+            super::KeyHint::new("d", "delete"),
+            super::KeyHint::new("F5", "refresh"),
+        ]
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "Playlist Commands:".to_string(),

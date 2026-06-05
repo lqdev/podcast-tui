@@ -215,6 +215,17 @@ impl Buffer for PodcastListBuffer {
         false // Main podcast list shouldn't be closeable
     }
 
+    fn key_hints(&self) -> Vec<super::KeyHint> {
+        vec![
+            super::KeyHint::new("Enter", "episodes"),
+            super::KeyHint::new("a", "add"),
+            super::KeyHint::new("d", "delete"),
+            super::KeyHint::new("r", "refresh"),
+            super::KeyHint::new("R", "refresh all"),
+            super::KeyHint::new("C-r", "hard refresh"),
+        ]
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "Podcast List Commands:".to_string(),

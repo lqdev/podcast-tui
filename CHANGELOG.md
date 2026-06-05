@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Per-buffer command quick-reference bar** — A single contextual hint row now renders just above the minibuffer in most buffers, showing the buffer-specific keybindings (e.g. `a add  d delete  r refresh` in the podcast list, `Enter open  S-D download  / search` in the episode list). Hints reflect buffer state: the episode-list and What's New buffers only advertise `F6 clear filter` while a filter is active. The row is hidden for buffers that return no hints (the Sync buffer keeps its own richer mode-aware hints and opts out, and transient overlays stay clean). Global function-key bindings are intentionally excluded to keep the bar focused on what's actionable in the current view. The Downloads and Playlist buffers now also accept `r` to refresh (in addition to the global `F5`), matching their existing help text and keeping the hint bar buffer-specific. Closes #253.
+
 ### Fixed
 
 - **Sync directory picker: `Enter` now always selects the current directory** — In the Sync buffer's directory picker, `Enter` was overloaded: on a quick-access shortcut or the `..` parent entry it navigated into that entry, while only on a regular subdirectory entry did it select the current directory as the sync target. In an empty directory (which lists only shortcuts and `..`), there was no regular entry to highlight, so `Enter` could never pick the directory you were actually in. The picker now uses an unambiguous ranger-style model: `↑`/`↓` move the selection, `→` enters the highlighted directory, `←` goes to the parent, and **`Enter` always selects the current directory** regardless of what is highlighted. Picker hints, help text, and the confirmation message were updated to match, and three unit tests cover Enter-selects-current (with a shortcut or a regular entry highlighted) and `→` navigation. Closes #252.

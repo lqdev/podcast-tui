@@ -161,6 +161,13 @@ impl Buffer for HelpBuffer {
         true
     }
 
+    fn key_hints(&self) -> Vec<super::KeyHint> {
+        vec![
+            super::KeyHint::new("↑↓", "scroll"),
+            super::KeyHint::new("Esc", "close"),
+        ]
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "Help Buffer Navigation:".to_string(),

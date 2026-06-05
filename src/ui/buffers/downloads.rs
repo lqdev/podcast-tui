@@ -271,6 +271,14 @@ impl Buffer for DownloadsBuffer {
         true
     }
 
+    fn key_hints(&self) -> Vec<super::KeyHint> {
+        vec![
+            super::KeyHint::new("Enter", "details"),
+            super::KeyHint::new("X", "delete"),
+            super::KeyHint::new("r", "refresh"),
+        ]
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "Downloads Buffer Help".to_string(),
@@ -330,7 +338,7 @@ impl UIComponent for DownloadsBuffer {
                 }
                 UIAction::Render
             }
-            UIAction::Refresh => UIAction::TriggerRefreshDownloads,
+            UIAction::Refresh | UIAction::RefreshPodcast => UIAction::TriggerRefreshDownloads,
             UIAction::DeleteDownloadedEpisode => {
                 if let Some(download) = self.selected_download() {
                     if matches!(download.status, DownloadStatus::Completed) {
@@ -467,5 +475,34 @@ impl UIComponent for DownloadsBuffer {
             .style(self.theme.text_style());
 
         frame.render_widget(status_paragraph, chunks[1]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_r_and_f5_both_trigger_refresh() {
+        // `r` (RefreshPodcast) and F5 (Refresh) must both refresh the downloads
+        // list. The hint bar advertises `r` to stay buffer-specific and match the
+        // buffer help text ("r  Refresh downloads list").
+        let mut buffer = DownloadsBuffer::new();
+        assert_eq!(
+            buffer.handle_action(UIAction::RefreshPodcast),
+            UIAction::TriggerRefreshDownloads
+        );
+        assert_eq!(
+            buffer.handle_action(UIAction::Refresh),
+            UIAction::TriggerRefreshDownloads
+        );
+    }
+
+    #[test]
+    fn test_key_hints_use_buffer_specific_refresh_key() {
+        let buffer = DownloadsBuffer::new();
+        let hints = buffer.key_hints();
+        assert!(hints.iter().any(|h| h.key == "r"));
+        assert!(!hints.iter().any(|h| h.key == "F5"));
     }
 }

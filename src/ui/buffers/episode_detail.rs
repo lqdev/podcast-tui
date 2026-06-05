@@ -252,6 +252,14 @@ impl Buffer for EpisodeDetailBuffer {
         true
     }
 
+    fn key_hints(&self) -> Vec<super::KeyHint> {
+        vec![
+            super::KeyHint::new("S-D", "download"),
+            super::KeyHint::new("↑↓", "scroll"),
+            super::KeyHint::new("C-k", "close"),
+        ]
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "Episode Detail Commands:".to_string(),

@@ -33,6 +33,26 @@ use std::sync::Arc;
 /// Unique identifier for buffers
 pub type BufferId = String;
 
+/// A single key/description pair shown in the per-buffer quick-reference hint bar
+/// at the bottom of the screen (above the minibuffer).
+#[derive(Debug, Clone)]
+pub struct KeyHint {
+    /// The key or key chord, e.g. `"Enter"`, `"S-D"`, `"/"`.
+    pub key: String,
+    /// A short action description, e.g. `"open"`, `"download"`.
+    pub desc: String,
+}
+
+impl KeyHint {
+    /// Construct a hint from a key label and a short description.
+    pub fn new(key: impl Into<String>, desc: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            desc: desc.into(),
+        }
+    }
+}
+
 /// Trait that all buffer types must implement
 pub trait Buffer: UIComponent + Any {
     /// Get the unique ID of this buffer
@@ -72,6 +92,16 @@ pub trait Buffer: UIComponent + Any {
             "Buffer-specific help not available".to_string(),
             "Press C-h for general help".to_string(),
         ]
+    }
+
+    /// Buffer-specific key hints shown in the bottom quick-reference bar.
+    ///
+    /// The default is empty, which hides the hint row for this buffer. Because this
+    /// takes `&self`, implementations may vary their hints with buffer state (for
+    /// example, only showing a "clear filter" hint while a filter is active). Hints
+    /// should reflect this buffer's own bindings, not the global function-key shortcuts.
+    fn key_hints(&self) -> Vec<KeyHint> {
+        Vec::new()
     }
 }
 
@@ -288,6 +318,16 @@ impl BufferManager {
     /// Get current buffer ID
     pub fn current_buffer_id(&self) -> Option<BufferId> {
         self.active_buffer.clone()
+    }
+
+    /// Key hints for the currently active buffer, for the bottom quick-reference bar.
+    /// Returns an empty vector when there is no active buffer or it defines no hints.
+    pub fn current_buffer_key_hints(&self) -> Vec<KeyHint> {
+        self.active_buffer
+            .as_ref()
+            .and_then(|id| self.buffers.get(id))
+            .map(|buffer| buffer.key_hints())
+            .unwrap_or_default()
     }
 
     /// Get current buffer (alias for active buffer)

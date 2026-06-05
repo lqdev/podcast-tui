@@ -904,6 +904,14 @@ impl UIApp {
                     return Ok(true);
                 }
 
+                if self.buffer_manager.current_buffer_id().as_deref() == Some("downloads") {
+                    // 'r' in the downloads buffer refreshes the download list, matching
+                    // F5 (UIAction::Refresh) and the buffer's quick-reference hint.
+                    self.trigger_background_refresh(BufferRefreshType::Downloads);
+                    self.show_message("Refreshing downloads...".to_string());
+                    return Ok(true);
+                }
+
                 if let Some(current_id) = self.buffer_manager.current_buffer_id() {
                     if current_id.starts_with("playlist-") && current_id != "playlist-list" {
                         let result_action = if let Some(detail_buffer) = self
@@ -6752,6 +6760,34 @@ mod tests {
         assert_eq!(
             app.buffer_manager.current_buffer_id(),
             Some("sync".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_refresh_podcast_in_downloads_buffer_refreshes_downloads() {
+        // Arrange — 'r' maps to RefreshPodcast. In the downloads buffer it must refresh
+        // the download list (matching the quick-reference hint), NOT fall through to the
+        // podcast-list refresh flow.
+        let mut app = make_app_with_sync_buffer().await;
+        app.buffer_manager
+            .switch_to_buffer(&"downloads".to_string())
+            .unwrap();
+
+        // Act
+        let result = app.handle_action(UIAction::RefreshPodcast).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(result.unwrap(), "Should return true (continue running)");
+        assert_eq!(
+            app.buffer_manager.current_buffer_id(),
+            Some("downloads".to_string()),
+            "Should remain in the downloads buffer"
+        );
+        assert_eq!(
+            app.minibuffer.current_message().as_deref(),
+            Some("Refreshing downloads..."),
+            "'r' should trigger the downloads refresh, not the podcast-list refresh"
         );
     }
 

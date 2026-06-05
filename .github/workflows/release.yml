@@ -49,7 +49,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: target
-          key: ${{ runner.os }}-${{ matrix.arch }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ matrix.arch }}-cargo-build-target-${{ inputs.tag || github.ref_name }}-${{ hashFiles('**/Cargo.lock') }}
       
       - name: Update version in Cargo.toml to match tag
         run: |
@@ -92,8 +92,9 @@ jobs:
           
           echo "✓ Version successfully updated to $VERSION"
 
-          # Keep Cargo.lock in sync so the embedded CARGO_PKG_VERSION matches and
-          # the build cache key (hashFiles('**/Cargo.lock')) changes per release.
+          # Keep Cargo.lock in sync so the embedded CARGO_PKG_VERSION matches Cargo.toml.
+          # (The build-target cache key also includes the tag, so a stale cross-version
+          # target/ is never reused even if the committed lockfile lags behind.)
           cargo update -p podcast-tui --precise "$VERSION"
           echo "✓ Cargo.lock synced to $VERSION"
       
@@ -143,7 +144,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-build-target-${{ inputs.tag || github.ref_name }}-${{ hashFiles('**/Cargo.lock') }}
       
       - name: Update version in Cargo.toml to match tag
         shell: pwsh
@@ -189,8 +190,9 @@ jobs:
           
           Write-Host "✓ Version successfully updated to $version" -ForegroundColor Green
 
-          # Keep Cargo.lock in sync so the embedded CARGO_PKG_VERSION matches and
-          # the build cache key (hashFiles('**/Cargo.lock')) changes per release.
+          # Keep Cargo.lock in sync so the embedded CARGO_PKG_VERSION matches Cargo.toml.
+          # (The build-target cache key also includes the tag, so a stale cross-version
+          # target/ is never reused even if the committed lockfile lags behind.)
           cargo update -p podcast-tui --precise $version
           if ($LASTEXITCODE -ne 0) {
             Write-Error "ERROR: Failed to sync Cargo.lock to $version"

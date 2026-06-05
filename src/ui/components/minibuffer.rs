@@ -292,6 +292,16 @@ impl Minibuffer {
         }
     }
 
+    /// Return the text of the current status/message or error, if one is shown.
+    pub fn current_message(&self) -> Option<String> {
+        match &self.content {
+            MinibufferContent::Message(msg)
+            | MinibufferContent::Error(msg)
+            | MinibufferContent::Status(msg) => Some(msg.clone()),
+            _ => None,
+        }
+    }
+
     /// Submit the current input and return the result
     pub fn submit(&mut self) -> Option<String> {
         let input = self.current_input()?;

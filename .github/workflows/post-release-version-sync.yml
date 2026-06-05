@@ -25,6 +25,11 @@ jobs:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
       - name: Extract version from tag
         id: version
         shell: pwsh
@@ -53,8 +58,8 @@ jobs:
         run: |
           # Keep Cargo.lock's podcast-tui entry in lockstep with Cargo.toml so the
           # tree on main stays internally consistent (AGENTS.md: "Cargo.lock is
-          # tracked in git — always commit changes to it"). cargo is preinstalled on
-          # the windows-latest runner.
+          # tracked in git — always commit changes to it"). The Rust toolchain is
+          # provisioned by the "Setup Rust" step above.
           cargo update -p podcast-tui --precise ${{ steps.version.outputs.VERSION }}
           if ($LASTEXITCODE -ne 0) {
             Write-Error "ERROR: Failed to sync Cargo.lock to ${{ steps.version.outputs.VERSION }}"

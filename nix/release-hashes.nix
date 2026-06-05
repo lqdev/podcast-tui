@@ -7,9 +7,9 @@
 #
 # Format: { version = "X.Y.Z"; hashes = { "<system>" = "sha256-..." or null; ... }; }
 {
-  version = "1.13.0";
+  version = "1.15.0";
   hashes = {
-    "aarch64-linux" = "sha256-eUHicE8rBv2fzGzkpqwQlvWOAAbjzNmIfzEsRW/R6zY=";
-    "x86_64-linux"  = "sha256-omWzMTydgBBkpQpbQkR4zZ0WzojDyl5aZBcLd8gpO1M=";
+    "aarch64-linux" = "sha256-HgfM23AeBDU159b9jL2aQqBeGFDmAcMD45NulZ2wqYc=";
+    "x86_64-linux"  = "sha256-AN/6U9S2xWurENcdiQ4GH5ju9tPaYGOzf4OofbKoPM8=";
   };
 }

@@ -116,6 +116,15 @@ impl Buffer for PlaylistListBuffer {
         self.theme = theme;
     }
 
+    fn key_hints(&self) -> Vec<super::KeyHint> {
+        vec![
+            super::KeyHint::new("Enter", "open"),
+            super::KeyHint::new("c", "create"),
+            super::KeyHint::new("d", "delete"),
+            super::KeyHint::new("r", "refresh"),
+        ]
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "Playlist Commands:".to_string(),
@@ -173,7 +182,7 @@ impl UIComponent for PlaylistListBuffer {
                     UIAction::ShowMessage("No playlist selected".to_string())
                 }
             }
-            UIAction::Refresh => UIAction::RefreshAutoPlaylists,
+            UIAction::Refresh | UIAction::RefreshPodcast => UIAction::RefreshAutoPlaylists,
             _ => UIAction::None,
         }
     }
@@ -249,5 +258,34 @@ impl UIComponent for PlaylistListBuffer {
 
     fn set_focus(&mut self, focused: bool) {
         self.focused = focused;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_r_and_f5_both_refresh_auto_playlists() {
+        // `r` (RefreshPodcast) and F5 (Refresh) must both refresh auto-playlists.
+        // The hint bar advertises `r` to stay buffer-specific and match the buffer
+        // help text ("r  Refresh Today playlist").
+        let mut buffer = PlaylistListBuffer::new();
+        assert_eq!(
+            buffer.handle_action(UIAction::RefreshPodcast),
+            UIAction::RefreshAutoPlaylists
+        );
+        assert_eq!(
+            buffer.handle_action(UIAction::Refresh),
+            UIAction::RefreshAutoPlaylists
+        );
+    }
+
+    #[test]
+    fn test_key_hints_use_buffer_specific_refresh_key() {
+        let buffer = PlaylistListBuffer::new();
+        let hints = buffer.key_hints();
+        assert!(hints.iter().any(|h| h.key == "r"));
+        assert!(!hints.iter().any(|h| h.key == "F5"));
     }
 }

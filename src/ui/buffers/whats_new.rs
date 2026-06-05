@@ -252,6 +252,20 @@ impl Buffer for WhatsNewBuffer {
         false // Core buffer, cannot be closed
     }
 
+    fn key_hints(&self) -> Vec<super::KeyHint> {
+        let mut hints = vec![
+            super::KeyHint::new("Enter", "open"),
+            super::KeyHint::new("S-D", "download"),
+            super::KeyHint::new("/", "search"),
+            super::KeyHint::new("m", "played"),
+            super::KeyHint::new("*", "favorite"),
+        ];
+        if self.filter.is_active() {
+            hints.push(super::KeyHint::new("F6", "clear filter"));
+        }
+        hints
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "What's New Commands:".to_string(),

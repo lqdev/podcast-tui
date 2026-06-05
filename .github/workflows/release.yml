@@ -91,6 +91,11 @@ jobs:
           fi
           
           echo "✓ Version successfully updated to $VERSION"
+
+          # Keep Cargo.lock in sync so the embedded CARGO_PKG_VERSION matches and
+          # the build cache key (hashFiles('**/Cargo.lock')) changes per release.
+          cargo update -p podcast-tui --precise "$VERSION"
+          echo "✓ Cargo.lock synced to $VERSION"
       
       - name: Install build dependencies
         run: |
@@ -183,6 +188,15 @@ jobs:
           }
           
           Write-Host "✓ Version successfully updated to $version" -ForegroundColor Green
+
+          # Keep Cargo.lock in sync so the embedded CARGO_PKG_VERSION matches and
+          # the build cache key (hashFiles('**/Cargo.lock')) changes per release.
+          cargo update -p podcast-tui --precise $version
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "ERROR: Failed to sync Cargo.lock to $version"
+            exit 1
+          }
+          Write-Host "✓ Cargo.lock synced to $version" -ForegroundColor Green
       
       - name: Install build dependencies
         shell: pwsh

@@ -322,6 +322,48 @@ wingetcreate submit manifests\l\lqdev\PodcastTUI\<VER> --token <PAT>
 
 ---
 
+## Troubleshooting
+
+### `podcast-tui --version` reports an older version than `winget list`
+
+**Symptom**: `winget list --id lqdev.PodcastTUI` shows the new version (e.g. `1.14.0`),
+but running `podcast-tui --version` prints an older one (e.g. `1.13.0`).
+
+**Cause**: PATH shadowing. A leftover **non-winget** install of `podcast-tui.exe` exists
+at `%LOCALAPPDATA%\Programs\podcast-tui\` (a manual/older install location), and that
+folder sits **earlier on PATH** than winget's managed copy under
+`%LOCALAPPDATA%\Microsoft\WinGet\Packages\lqdev.PodcastTUI_…\`. The shell resolves
+`podcast-tui` to the first match, so the stale binary wins. winget never touches the
+non-winget install, so upgrading the package doesn't replace it.
+
+**Fix** (either approach):
+
+```powershell
+# Option A — remove the stale shadow install
+# 1. Delete the leftover folder
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Programs\podcast-tui"
+# 2. Remove that path from the User PATH (Settings → Edit environment variables),
+#    then open a fresh terminal.
+
+# Option B — reinstall cleanly via winget
+winget uninstall lqdev.PodcastTUI
+winget install  lqdev.PodcastTUI
+```
+
+Open a **new** shell afterward and confirm:
+
+```powershell
+where.exe podcast-tui      # should list only the WinGet\Packages path
+podcast-tui --version      # should match winget list
+```
+
+> **Note**: Since v1.14.0 the release automation also keeps `Cargo.lock` in lockstep
+> with `Cargo.toml`, so the embedded `CARGO_PKG_VERSION` in official builds is always
+> correct. A version mismatch on a winget install is therefore a local PATH issue, not a
+> build/release bug.
+
+---
+
 ## References
 
 - [wingetcreate documentation](https://github.com/microsoft/winget-create)

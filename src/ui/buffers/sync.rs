@@ -821,7 +821,7 @@ impl SyncBuffer {
 
         // Hints
         let hints =
-            Paragraph::new("↑↓ move  → enter dir  ← parent  Enter select current dir  Esc cancel")
+            Paragraph::new("↑↓ move  → enter dir  ← parent  Enter select THIS dir  Esc cancel")
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
@@ -874,7 +874,7 @@ impl Buffer for SyncBuffer {
             "  ↑/↓         Move selection".to_string(),
             "  →           Navigate INTO highlighted directory".to_string(),
             "  ←           Go UP to parent directory".to_string(),
-            "  Enter       Select current directory as sync target".to_string(),
+            "  Enter       Select THIS directory (current path) as sync target".to_string(),
             "  Esc         Cancel — return to Overview".to_string(),
             "".to_string(),
             "Dry-Run Preview (after pressing d):".to_string(),
@@ -938,68 +938,36 @@ impl UIComponent for SyncBuffer {
                         }
                         UIAction::Render
                     }
-                    UIAction::MoveRight | UIAction::SelectItem => {
-                        // Navigate INTO the highlighted directory (MoveRight),
-                        // or if the user pressed Enter and there's a selected entry,
-                        // navigate into it IF it's a quick-access entry.
-                        // For Enter on the current_path itself, handled below via HideMinibuffer path.
+                    UIAction::SelectItem => {
+                        // Enter ALWAYS selects the current directory as the sync target,
+                        // regardless of which entry is highlighted. Use → to descend into a
+                        // subdirectory first, then Enter to select it. This makes selecting
+                        // an empty directory (which lists only shortcuts and ../) possible.
+                        let path = current_path.clone();
+                        self.active_target = Some(path.clone());
+                        self.upsert_saved_target(path.clone());
+                        self.mode = SyncBufferMode::Overview;
+                        UIAction::ShowMessage(format!("Sync target set to {}", path.display()))
+                    }
+                    UIAction::MoveRight => {
+                        // Navigate INTO the highlighted directory (quick-access, parent,
+                        // or a regular subdirectory all behave the same way).
                         let sel = *selected;
                         if let Some(entry) = entries.get(sel).cloned() {
-                            if action == UIAction::SelectItem {
-                                if entry.is_quick_access || entry.is_parent {
-                                    // Navigate to it (don't select as target yet)
-                                    if entry.is_accessible {
-                                        let new_path = entry.path.clone();
-                                        Self::picker_navigate_to(
-                                            current_path,
-                                            entries,
-                                            selected,
-                                            scroll,
-                                            new_path,
-                                        );
-                                    } else {
-                                        return UIAction::ShowMessage(
-                                            "Directory is not accessible".to_string(),
-                                        );
-                                    }
-                                } else {
-                                    // Enter on a regular dir entry: SELECT the current_path
-                                    let path = current_path.clone();
-                                    self.active_target = Some(path.clone());
-                                    self.upsert_saved_target(path.clone());
-                                    self.mode = SyncBufferMode::Overview;
-                                    return UIAction::ShowMessage(format!(
-                                        "Sync target set to {}  (use → to enter a subdirectory first, then Enter to select)",
-                                        path.display()
-                                    ));
-                                }
+                            if entry.is_accessible {
+                                let new_path = entry.path.clone();
+                                Self::picker_navigate_to(
+                                    current_path,
+                                    entries,
+                                    selected,
+                                    scroll,
+                                    new_path,
+                                );
                             } else {
-                                // MoveRight → always navigate into entry
-                                if entry.is_accessible {
-                                    let new_path = entry.path.clone();
-                                    Self::picker_navigate_to(
-                                        current_path,
-                                        entries,
-                                        selected,
-                                        scroll,
-                                        new_path,
-                                    );
-                                } else {
-                                    return UIAction::ShowMessage(
-                                        "Directory is not accessible".to_string(),
-                                    );
-                                }
+                                return UIAction::ShowMessage(
+                                    "Directory is not accessible".to_string(),
+                                );
                             }
-                        } else if action == UIAction::SelectItem {
-                            // No entries (empty dir): select current_path as target
-                            let path = current_path.clone();
-                            self.active_target = Some(path.clone());
-                            self.upsert_saved_target(path.clone());
-                            self.mode = SyncBufferMode::Overview;
-                            return UIAction::ShowMessage(format!(
-                                "Sync target set to {}",
-                                path.display()
-                            ));
                         }
                         UIAction::Render
                     }
@@ -1882,6 +1850,106 @@ mod tests {
         // Assert
         assert_eq!(action, UIAction::Render);
         assert!(matches!(buffer.mode, SyncBufferMode::Overview));
+    }
+
+    #[test]
+    fn test_picker_enter_selects_current_dir_with_shortcut_highlighted() {
+        // Arrange — empty-dir style listing where only a quick-access shortcut is
+        // highlighted. The old behavior navigated into it; the new behavior selects
+        // the current directory regardless.
+        let temp = tempfile::TempDir::new().unwrap();
+        let current = temp.path().to_path_buf();
+        let shortcut_target = current.join("some-shortcut");
+        std::fs::create_dir(&shortcut_target).unwrap();
+        let mut buffer = SyncBuffer::new();
+        let entries = vec![DirectoryEntry {
+            name: "C:\\".to_string(),
+            path: shortcut_target,
+            is_accessible: true,
+            is_parent: false,
+            is_quick_access: true,
+        }];
+        buffer.mode = SyncBufferMode::DirectoryPicker {
+            current_path: current.clone(),
+            entries,
+            selected: 0,
+            scroll: 0,
+        };
+
+        // Act
+        let action = buffer.handle_action(UIAction::SelectItem);
+
+        // Assert — current dir selected, returned to Overview
+        assert!(matches!(action, UIAction::ShowMessage(_)));
+        assert!(matches!(buffer.mode, SyncBufferMode::Overview));
+        assert_eq!(buffer.active_target.as_deref(), Some(current.as_path()));
+    }
+
+    #[test]
+    fn test_picker_enter_selects_current_dir_with_regular_entry_highlighted() {
+        // Arrange — a regular subdirectory is highlighted; Enter must still select the
+        // current directory (not the highlighted child).
+        let temp = tempfile::TempDir::new().unwrap();
+        let current = temp.path().to_path_buf();
+        let sub = current.join("subdir");
+        std::fs::create_dir(&sub).unwrap();
+        let mut buffer = SyncBuffer::new();
+        let entries = vec![DirectoryEntry {
+            name: "subdir".to_string(),
+            path: sub.clone(),
+            is_accessible: true,
+            is_parent: false,
+            is_quick_access: false,
+        }];
+        buffer.mode = SyncBufferMode::DirectoryPicker {
+            current_path: current.clone(),
+            entries,
+            selected: 0,
+            scroll: 0,
+        };
+
+        // Act
+        buffer.handle_action(UIAction::SelectItem);
+
+        // Assert
+        assert!(matches!(buffer.mode, SyncBufferMode::Overview));
+        assert_eq!(buffer.active_target.as_deref(), Some(current.as_path()));
+    }
+
+    #[test]
+    fn test_picker_right_navigates_into_highlighted_dir() {
+        // Arrange
+        let temp = tempfile::TempDir::new().unwrap();
+        let current = temp.path().to_path_buf();
+        let sub = current.join("subdir");
+        std::fs::create_dir(&sub).unwrap();
+        let mut buffer = SyncBuffer::new();
+        let entries = vec![DirectoryEntry {
+            name: "subdir".to_string(),
+            path: sub.clone(),
+            is_accessible: true,
+            is_parent: false,
+            is_quick_access: false,
+        }];
+        buffer.mode = SyncBufferMode::DirectoryPicker {
+            current_path: current.clone(),
+            entries,
+            selected: 0,
+            scroll: 0,
+        };
+
+        // Act — Right descends into the highlighted directory
+        let action = buffer.handle_action(UIAction::MoveRight);
+
+        // Assert — still in picker, now at the child path, nothing selected as target
+        assert_eq!(action, UIAction::Render);
+        match &buffer.mode {
+            SyncBufferMode::DirectoryPicker { current_path, .. } => {
+                assert_eq!(current_path, &sub);
+            }
+            _ => panic!("expected to remain in DirectoryPicker mode"),
+        }
+        assert!(buffer.active_target.is_none());
     }
 
     // ── PreviewTab cycling ────────────────────────────────────────────────────

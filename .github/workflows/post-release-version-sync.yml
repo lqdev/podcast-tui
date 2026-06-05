@@ -25,6 +25,11 @@ jobs:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
       - name: Extract version from tag
         id: version
         shell: pwsh
@@ -47,6 +52,20 @@ jobs:
           Set-Content Cargo.toml -Value $newContent -NoNewline
           Write-Host "Updated Cargo.toml to version ${{ steps.version.outputs.VERSION }}"
           Get-Content Cargo.toml | Select-Object -First 5
+
+      - name: Sync Cargo.lock version
+        shell: pwsh
+        run: |
+          # Keep Cargo.lock's podcast-tui entry in lockstep with Cargo.toml so the
+          # tree on main stays internally consistent (AGENTS.md: "Cargo.lock is
+          # tracked in git — always commit changes to it"). The Rust toolchain is
+          # provisioned by the "Setup Rust" step above.
+          cargo update -p podcast-tui --precise ${{ steps.version.outputs.VERSION }}
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "ERROR: Failed to sync Cargo.lock to ${{ steps.version.outputs.VERSION }}"
+            exit 1
+          }
+          Write-Host "Synced Cargo.lock to version ${{ steps.version.outputs.VERSION }}"
 
       - name: Install wingetcreate
         shell: pwsh
@@ -85,7 +104,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml manifests/
+          git add Cargo.toml Cargo.lock manifests/
           git diff --cached --stat
           # Only commit and push if there are staged changes.
           # This prevents workflow failure when the version was already

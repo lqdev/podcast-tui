@@ -15,7 +15,8 @@ use futures_util::stream::{self, StreamExt};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    widgets::{Block, Borders},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
 use tokio::sync::mpsc;
@@ -900,6 +901,14 @@ impl UIApp {
             UIAction::RefreshPodcast => {
                 if self.buffer_manager.current_buffer_id().as_deref() == Some("sync") {
                     // 'r' in sync buffer just re-renders the current state
+                    return Ok(true);
+                }
+
+                if self.buffer_manager.current_buffer_id().as_deref() == Some("downloads") {
+                    // 'r' in the downloads buffer refreshes the download list, matching
+                    // F5 (UIAction::Refresh) and the buffer's quick-reference hint.
+                    self.trigger_background_refresh(BufferRefreshType::Downloads);
+                    self.show_message("Refreshing downloads...".to_string());
                     return Ok(true);
                 }
 
@@ -5452,24 +5461,60 @@ impl UIApp {
     fn render(&mut self, frame: &mut Frame) {
         let size = frame.area();
 
-        // Create layout: main area + minibuffer + status bar
+        // Per-buffer quick-reference hints. When the active buffer defines none, the
+        // hint row is omitted entirely so no vertical space is wasted.
+        let hints = self.buffer_manager.current_buffer_key_hints();
+        let show_hints = !hints.is_empty();
+
+        // Create layout: main area + (optional) hint bar + minibuffer + status bar
+        let mut constraints = vec![Constraint::Min(0)];
+        if show_hints {
+            constraints.push(Constraint::Length(1)); // Hint bar
+        }
+        constraints.push(Constraint::Length(2)); // Minibuffer (1 border + 1 text)
+        constraints.push(Constraint::Length(1)); // Status bar
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(0),    // Main content area
-                Constraint::Length(2), // Minibuffer (1 for border + 1 for text)
-                Constraint::Length(1), // Status bar
-            ])
+            .constraints(constraints)
             .split(size);
 
         // Render main content area
         self.render_main_content(frame, chunks[0]);
 
-        // Render minibuffer
-        self.minibuffer.render(frame, chunks[1]);
+        // Render the optional hint bar, then the minibuffer and status bar. Indices
+        // shift by one when the hint row is present.
+        let mut idx = 1;
+        if show_hints {
+            self.render_hint_bar(frame, chunks[idx], &hints);
+            idx += 1;
+        }
+        self.minibuffer.render(frame, chunks[idx]);
+        self.status_bar.render(frame, chunks[idx + 1]);
+    }
 
-        // Render status bar
-        self.status_bar.render(frame, chunks[2]);
+    /// Render the per-buffer quick-reference hint bar as a single styled line.
+    fn render_hint_bar(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        hints: &[crate::ui::buffers::KeyHint],
+    ) {
+        let key_style = self.theme.primary_style();
+        let desc_style = self.theme.muted_style();
+
+        let mut spans: Vec<Span> = Vec::with_capacity(hints.len() * 4);
+        for (i, hint) in hints.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::styled("  ", desc_style));
+            }
+            spans.push(Span::styled(hint.key.as_str(), key_style));
+            spans.push(Span::styled(" ", desc_style));
+            spans.push(Span::styled(hint.desc.as_str(), desc_style));
+        }
+
+        let paragraph = Paragraph::new(Line::from(spans)).style(self.theme.default_style());
+        frame.render_widget(paragraph, area);
     }
 
     /// Render the main content area
@@ -6715,6 +6760,34 @@ mod tests {
         assert_eq!(
             app.buffer_manager.current_buffer_id(),
             Some("sync".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_refresh_podcast_in_downloads_buffer_refreshes_downloads() {
+        // Arrange — 'r' maps to RefreshPodcast. In the downloads buffer it must refresh
+        // the download list (matching the quick-reference hint), NOT fall through to the
+        // podcast-list refresh flow.
+        let mut app = make_app_with_sync_buffer().await;
+        app.buffer_manager
+            .switch_to_buffer(&"downloads".to_string())
+            .unwrap();
+
+        // Act
+        let result = app.handle_action(UIAction::RefreshPodcast).await;
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(result.unwrap(), "Should return true (continue running)");
+        assert_eq!(
+            app.buffer_manager.current_buffer_id(),
+            Some("downloads".to_string()),
+            "Should remain in the downloads buffer"
+        );
+        assert_eq!(
+            app.minibuffer.current_message().as_deref(),
+            Some("Refreshing downloads..."),
+            "'r' should trigger the downloads refresh, not the podcast-list refresh"
         );
     }
 

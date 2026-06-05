@@ -152,6 +152,15 @@ impl Buffer for PlaylistDetailBuffer {
         self.theme = theme;
     }
 
+    fn key_hints(&self) -> Vec<super::KeyHint> {
+        vec![
+            super::KeyHint::new("Enter", "open"),
+            super::KeyHint::new("X", "remove"),
+            super::KeyHint::new("C-↑/↓", "reorder"),
+            super::KeyHint::new("m", "played"),
+        ]
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "Playlist Detail Commands:".to_string(),

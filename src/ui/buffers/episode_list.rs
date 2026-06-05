@@ -357,6 +357,22 @@ impl Buffer for EpisodeListBuffer {
         true
     }
 
+    fn key_hints(&self) -> Vec<super::KeyHint> {
+        let mut hints = vec![
+            super::KeyHint::new("Enter", "open"),
+            super::KeyHint::new("S-Enter", "play"),
+            super::KeyHint::new("S-D", "download"),
+            super::KeyHint::new("/", "search"),
+            super::KeyHint::new("m", "played"),
+            super::KeyHint::new("*", "favorite"),
+            super::KeyHint::new("p", "playlist"),
+        ];
+        if self.filter.is_active() {
+            hints.push(super::KeyHint::new("F6", "clear filter"));
+        }
+        hints
+    }
+
     fn help_text(&self) -> Vec<String> {
         vec![
             "Episode List Commands:".to_string(),
@@ -1686,5 +1702,22 @@ mod tests {
             }
             other => panic!("Expected PlayEpisode, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_key_hints_show_clear_filter_only_when_active() {
+        let mut buffer = EpisodeListBuffer::new("Test".to_string(), PodcastId::new());
+
+        // No filter active → no "F6 clear filter" hint
+        assert!(!buffer.key_hints().iter().any(|h| h.key == "F6"));
+
+        // Activate a text filter
+        buffer.handle_action(UIAction::ApplySearch {
+            query: "rust".to_string(),
+        });
+        assert!(buffer.filter.is_active());
+
+        // Now the contextual clear-filter hint is present
+        assert!(buffer.key_hints().iter().any(|h| h.key == "F6"));
     }
 }

@@ -196,8 +196,12 @@ case and whitespace. Tab-completion will only offer names that exist.
 **Files outside `Podcasts/` aren't being renamed.**
 Templates only apply to files copied into the device's `Podcasts/`
 subtree. Playlists in `Playlists/` and any other top-level files are
-forwarded verbatim. `.m3u` playlist files are not yet rewritten to
-point at the renamed device files (tracked as a known follow-up).
+forwarded verbatim. Each playlist directory now contains a generated
+`<name>.m3u` manifest (UTF-8, with `audio/<file>` relative entries) that
+is regenerated whenever the playlist's membership or order changes. The
+`.m3u` entries reference the playlist's own `audio/` copies; they are not
+yet rewritten to point at renamed files elsewhere in the device's
+`Podcasts/` tree (tracked as a known follow-up).
 
 ## See also
 

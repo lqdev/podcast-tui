@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Release automation now keeps `Cargo.lock` in sync with `Cargo.toml`** — At tag `v1.14.0` the committed `Cargo.lock` still pinned `podcast-tui` to `1.13.0` even though `Cargo.toml` was bumped to `1.14.0`. The release pipeline bumped only `Cargo.toml` and never the lockfile, leaving the tree internally inconsistent (violating the tracked-lockfile rule in `AGENTS.md`). Because `release.yml` keys its build cache on `hashFiles('**/Cargo.lock')`, an unchanging lockfile produces an identical cache key across versions, risking a stale cross-version `target/` that embeds the wrong `CARGO_PKG_VERSION` into the binary. The fix: `release.yml` (both the Linux and Windows update-version steps), `post-release-version-sync.yml`, and the `prepare-release` skill now run `cargo update -p podcast-tui --precise <version>` after bumping `Cargo.toml` and commit `Cargo.lock` alongside it. The lockfile on `main` is corrected to `1.14.0` in this change. `docs/WINGET_PUBLISHING.md` gains a Troubleshooting section explaining the separate, local PATH-shadowing cause of a stale `podcast-tui --version` after a winget upgrade. Closes #254.
+
 ---
 
 ## [1.14.0] - 2026-05-14

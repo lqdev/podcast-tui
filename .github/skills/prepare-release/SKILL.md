@@ -67,6 +67,14 @@ version = "X.Y.Z"
 
 > **Note**: The `post-release-version-sync.yml` workflow also updates this after publishing, but setting it locally ensures `cargo build --version` output is correct for verification.
 
+Then sync `Cargo.lock` so its `podcast-tui` entry matches (the lockfile is tracked in git and must never drift from `Cargo.toml`):
+
+```powershell
+cargo update -p podcast-tui --precise X.Y.Z
+```
+
+> **Why this matters**: `release.yml` keys its build cache on `hashFiles('**/Cargo.lock')`. If the lockfile version never changes, the cache key is identical across releases and a stale cross-version `target/` can be served, embedding the wrong `CARGO_PKG_VERSION` into the binary. Always commit the updated `Cargo.lock` alongside `Cargo.toml`.
+
 ### 4. Run full verification
 
 ```powershell
@@ -82,11 +90,11 @@ All three must pass cleanly before tagging. The `test_opml_local_file` integrati
 ### 5. Commit the release prep
 
 ```bash
-git add Cargo.toml CHANGELOG.md
+git add Cargo.toml Cargo.lock CHANGELOG.md
 git commit -m "chore: prepare release vX.Y.Z
 
 - Finalize CHANGELOG.md for vX.Y.Z
-- Update Cargo.toml version to X.Y.Z
+- Update Cargo.toml and Cargo.lock version to X.Y.Z
 
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 ```
@@ -118,8 +126,9 @@ After CI completes (~10 minutes):
 
 The `post-release-version-sync.yml` workflow triggers **automatically** when the GitHub Release is published (triggered by `release: types: [published]`, not by the tag push directly). It:
 1. Updates `Cargo.toml` version on `main` (no-op if you already set it in step 3)
-2. Generates winget manifests under `manifests/l/lqdev/PodcastTUI/<version>/`
-3. Commits and pushes both to `main`
+2. Syncs `Cargo.lock`'s `podcast-tui` entry to match (no-op if already in sync)
+3. Generates winget manifests under `manifests/l/lqdev/PodcastTUI/<version>/`
+4. Commits and pushes all three to `main`
 
 Monitor it:
 ```powershell
@@ -142,7 +151,7 @@ git push origin vX.Y.Z
   └─► release.yml (tag push: v*)
         └─► builds binaries + creates GitHub Release (published)
               └─► post-release-version-sync.yml (release: published)
-                    └─► updates Cargo.toml + generates winget manifests
+                    └─► updates Cargo.toml + Cargo.lock + generates winget manifests
 ```
 
 ## What NOT to do

@@ -1859,10 +1859,12 @@ mod tests {
         // the current directory regardless.
         let temp = tempfile::TempDir::new().unwrap();
         let current = temp.path().to_path_buf();
+        let shortcut_target = current.join("some-shortcut");
+        std::fs::create_dir(&shortcut_target).unwrap();
         let mut buffer = SyncBuffer::new();
         let entries = vec![DirectoryEntry {
             name: "C:\\".to_string(),
-            path: current.join("some-shortcut"),
+            path: shortcut_target,
             is_accessible: true,
             is_parent: false,
             is_quick_access: true,

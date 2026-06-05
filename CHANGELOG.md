@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sync directory picker: `Enter` now always selects the current directory** — In the Sync buffer's directory picker, `Enter` was overloaded: on a quick-access shortcut or the `..` parent entry it navigated into that entry, while only on a regular subdirectory entry did it select the current directory as the sync target. In an empty directory (which lists only shortcuts and `..`), there was no regular entry to highlight, so `Enter` could never pick the directory you were actually in. The picker now uses an unambiguous ranger-style model: `↑`/`↓` move the selection, `→` enters the highlighted directory, `←` goes to the parent, and **`Enter` always selects the current directory** regardless of what is highlighted. Picker hints, help text, and the confirmation message were updated to match, and three unit tests cover Enter-selects-current (with a shortcut or a regular entry highlighted) and `→` navigation. Closes #252.
+
 ---
 
 ## [1.14.0] - 2026-05-14

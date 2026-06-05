@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Playlists now generate `.m3u` manifests** — Adding episodes to a playlist previously copied the audio files into `Playlists/<name>/audio/` but wrote no manifest, so media players couldn't open the playlist as a unit. `PlaylistFileManager::write_m3u` now writes `Playlists/<name>/<name>.m3u` (`.m3u` extension for broadest player recognition, UTF-8 content so Unicode titles round-trip) with an `#EXTM3U` header and one `#EXTINF:-1,<title>` + relative `audio/<filename>` entry per episode, in playlist order. Episodes not yet copied (no `filename`) are skipped; titles fall back to the filename stem; newlines in titles are collapsed so each `#EXTINF` stays on one line. The manifest is regenerated atomically (temp file + rename) after every membership/order change — add, remove, reorder, rebuild, and the Today/auto-playlist refresh — and is removed with the playlist directory on delete. Closes #255.
+
 ---
 
 ## [1.14.0] - 2026-05-14

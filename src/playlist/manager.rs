@@ -216,6 +216,9 @@ impl PlaylistManager {
 
         playlist.episodes.push(playlist_episode.clone());
         playlist.last_updated = Utc::now();
+        self.file_manager
+            .write_m3u(&playlist.name, &playlist.episodes)
+            .await?;
         self.storage
             .save_playlist(&playlist)
             .await
@@ -431,6 +434,10 @@ impl PlaylistManager {
             .cleanup_orphaned_files(&playlist.name, &valid_filenames)
             .await?;
 
+        self.file_manager
+            .write_m3u(&playlist.name, &playlist.episodes)
+            .await?;
+
         playlist.last_updated = Utc::now();
         self.storage
             .save_playlist(&playlist)
@@ -468,6 +475,10 @@ impl PlaylistManager {
         let _ = self
             .file_manager
             .cleanup_orphaned_files(&playlist.name, &valid_filenames)
+            .await?;
+
+        self.file_manager
+            .write_m3u(&playlist.name, &playlist.episodes)
             .await?;
 
         Ok(())

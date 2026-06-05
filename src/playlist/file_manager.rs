@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 use tokio::fs;
+use uuid::Uuid;
 
 #[derive(Debug, Error)]
 pub enum PlaylistFileError {
@@ -179,6 +180,58 @@ impl PlaylistFileManager {
             .join("audio")
     }
 
+    /// Write (or overwrite) the `.m3u` playlist manifest for `playlist_name`.
+    ///
+    /// The manifest lives at `<playlists_dir>/<sanitized-name>/<sanitized-name>.m3u`,
+    /// alongside the `audio/` directory, and references each copied episode by the
+    /// relative path `audio/<filename>`. Episodes without a copied file (`filename`
+    /// is `None`) are skipped. The file uses the `.m3u` extension (broadest player
+    /// recognition) with UTF-8 content so Unicode titles round-trip. The write is
+    /// atomic (temp file + rename) to avoid leaving a half-written manifest behind.
+    pub async fn write_m3u(
+        &self,
+        playlist_name: &str,
+        episodes: &[PlaylistEpisode],
+    ) -> Result<(), PlaylistFileError> {
+        let sanitized = sanitize_playlist_name(playlist_name);
+        let playlist_dir = self.playlists_dir.join(&sanitized);
+        fs::create_dir_all(&playlist_dir).await?;
+
+        let mut content = String::from("#EXTM3U\n");
+        for episode in episodes {
+            let Some(filename) = &episode.filename else {
+                continue;
+            };
+
+            let title = episode
+                .episode_title
+                .as_deref()
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+                .map(|t| t.to_string())
+                .unwrap_or_else(|| {
+                    Path::new(filename)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| filename.clone())
+                });
+            // Collapse any newlines so a single #EXTINF line is never broken.
+            let title = title.replace(['\r', '\n'], " ");
+
+            content.push_str(&format!("#EXTINF:-1,{title}\n"));
+            content.push_str(&format!("audio/{filename}\n"));
+        }
+
+        let m3u_path = playlist_dir.join(format!("{sanitized}.m3u"));
+        let temp_path = playlist_dir.join(format!(".{sanitized}.{}.m3u.tmp", Uuid::new_v4()));
+        fs::write(&temp_path, content.as_bytes()).await?;
+        if let Err(e) = fs::rename(&temp_path, &m3u_path).await {
+            let _ = fs::remove_file(&temp_path).await;
+            return Err(PlaylistFileError::Io(e));
+        }
+        Ok(())
+    }
+
     pub async fn delete_playlist_directory(
         &self,
         playlist_name: &str,
@@ -330,5 +383,152 @@ mod tests {
             .await
             .expect("Failed to get playlist size");
         assert_eq!(size, 9);
+    }
+
+    fn titled_episode(
+        filename: Option<String>,
+        title: Option<&str>,
+        order: usize,
+    ) -> PlaylistEpisode {
+        PlaylistEpisode {
+            episode_title: title.map(str::to_string),
+            ..test_episode(filename, order)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_write_m3u_content_order_and_relative_paths() {
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let manager = PlaylistFileManager::new(temp.path().join("Playlists"));
+
+        let episodes = vec![
+            titled_episode(Some("001-intro.mp3".to_string()), Some("Intro"), 1),
+            titled_episode(Some("002-deep-dive.mp3".to_string()), Some("Deep Dive"), 2),
+        ];
+
+        manager
+            .write_m3u("Morning Commute", &episodes)
+            .await
+            .expect("Failed to write m3u");
+
+        let m3u_path = temp
+            .path()
+            .join("Playlists")
+            .join("Morning Commute")
+            .join("Morning Commute.m3u");
+        assert!(m3u_path.exists(), ".m3u file should exist");
+
+        let content = fs::read_to_string(&m3u_path)
+            .await
+            .expect("Failed to read m3u");
+        let expected = "#EXTM3U\n\
+            #EXTINF:-1,Intro\n\
+            audio/001-intro.mp3\n\
+            #EXTINF:-1,Deep Dive\n\
+            audio/002-deep-dive.mp3\n";
+        assert_eq!(content, expected);
+    }
+
+    #[tokio::test]
+    async fn test_write_m3u_skips_episodes_without_filename() {
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let manager = PlaylistFileManager::new(temp.path().join("Playlists"));
+
+        let episodes = vec![
+            titled_episode(Some("001-have.mp3".to_string()), Some("Have File"), 1),
+            titled_episode(None, Some("No File Yet"), 2),
+        ];
+
+        manager
+            .write_m3u("Skip Test", &episodes)
+            .await
+            .expect("Failed to write m3u");
+
+        let content = fs::read_to_string(
+            temp.path()
+                .join("Playlists")
+                .join("Skip Test")
+                .join("Skip Test.m3u"),
+        )
+        .await
+        .expect("Failed to read m3u");
+
+        assert!(content.contains("audio/001-have.mp3"));
+        assert!(!content.contains("No File Yet"));
+    }
+
+    #[tokio::test]
+    async fn test_write_m3u_unicode_title_roundtrips() {
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let manager = PlaylistFileManager::new(temp.path().join("Playlists"));
+
+        let episodes = vec![titled_episode(
+            Some("001-episode.mp3".to_string()),
+            Some("Café ☕ — naïve"),
+            1,
+        )];
+
+        manager
+            .write_m3u("Unicode Test", &episodes)
+            .await
+            .expect("Failed to write m3u");
+
+        let content = fs::read_to_string(
+            temp.path()
+                .join("Playlists")
+                .join("Unicode Test")
+                .join("Unicode Test.m3u"),
+        )
+        .await
+        .expect("Failed to read m3u");
+        assert!(content.contains("#EXTINF:-1,Café ☕ — naïve"));
+    }
+
+    #[tokio::test]
+    async fn test_write_m3u_empty_playlist_writes_header_only() {
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let manager = PlaylistFileManager::new(temp.path().join("Playlists"));
+
+        manager
+            .write_m3u("Empty Test", &[])
+            .await
+            .expect("Failed to write m3u");
+
+        let content = fs::read_to_string(
+            temp.path()
+                .join("Playlists")
+                .join("Empty Test")
+                .join("Empty Test.m3u"),
+        )
+        .await
+        .expect("Failed to read m3u");
+        assert_eq!(content, "#EXTM3U\n");
+    }
+
+    #[tokio::test]
+    async fn test_write_m3u_falls_back_to_filename_stem_when_no_title() {
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let manager = PlaylistFileManager::new(temp.path().join("Playlists"));
+
+        let episodes = vec![titled_episode(
+            Some("003-fallback.mp3".to_string()),
+            None,
+            3,
+        )];
+
+        manager
+            .write_m3u("Fallback Test", &episodes)
+            .await
+            .expect("Failed to write m3u");
+
+        let content = fs::read_to_string(
+            temp.path()
+                .join("Playlists")
+                .join("Fallback Test")
+                .join("Fallback Test.m3u"),
+        )
+        .await
+        .expect("Failed to read m3u");
+        assert!(content.contains("#EXTINF:-1,003-fallback"));
     }
 }

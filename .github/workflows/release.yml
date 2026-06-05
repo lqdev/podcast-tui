@@ -12,8 +12,40 @@ on:
         type: string
 
 jobs:
+  validate-release-token:
+    name: Validate release token
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify WINGET_SUBMIT_TOKEN is valid
+        env:
+          TOKEN: ${{ secrets.WINGET_SUBMIT_TOKEN }}
+        run: |
+          # Fail fast before the ~15-minute build matrix if the release PAT is
+          # missing or expired. release.yml publishes the GitHub Release with this
+          # token (so the `release: published` event cascades into
+          # post-release-version-sync.yml); an expired PAT otherwise surfaces only
+          # at the Create GitHub Release step, after all builds have already run.
+          if [ -z "$TOKEN" ]; then
+            echo "::error::WINGET_SUBMIT_TOKEN secret is empty or unset. Add a classic PAT (scope: public_repo) as the WINGET_SUBMIT_TOKEN repo secret, then re-run this workflow."
+            exit 1
+          fi
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: token $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/user)
+          if [ "$code" = "200" ]; then
+            echo "✓ WINGET_SUBMIT_TOKEN is valid."
+          elif [ "$code" = "401" ]; then
+            echo "::error::WINGET_SUBMIT_TOKEN returned 401 Bad credentials — the PAT is expired or revoked. Regenerate a classic PAT (scope: public_repo) at https://github.com/settings/tokens, update the WINGET_SUBMIT_TOKEN repo secret, then re-run this workflow. See docs/WINGET_PUBLISHING.md."
+            exit 1
+          else
+            echo "::error::WINGET_SUBMIT_TOKEN validation got unexpected HTTP $code from api.github.com/user. Verify the token and re-run."
+            exit 1
+          fi
+
   build-linux:
     name: Build Linux releases (${{ matrix.arch }})
+    needs: validate-release-token
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -117,6 +149,7 @@ jobs:
 
   build-windows:
     name: Build Windows releases
+    needs: validate-release-token
     runs-on: windows-latest
     
     steps:

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Release pipeline fails fast on an expired release token** — The `release.yml` workflow now runs a `validate-release-token` preflight job that verifies the `WINGET_SUBMIT_TOKEN` PAT against the GitHub API before the build matrix, and the Linux/Windows build jobs depend on it. Previously an expired PAT (the token used to publish the GitHub Release so the `release: published` event cascades into winget manifest generation) surfaced only at the **Create GitHub Release** step — after ~15 minutes of builds had already run — as an opaque `HttpError: Bad credentials`. The preflight now fails in ~5 seconds with an actionable message pointing at the rotation runbook. `docs/WINGET_PUBLISHING.md` gains a `WINGET_SUBMIT_TOKEN` section documenting the token's purpose, required scope (`public_repo`), expiry pitfall, and the rotate + `gh run rerun --failed` recovery procedure. Closes #262.
+
 ---
 
 ## [1.15.0] - 2026-06-04

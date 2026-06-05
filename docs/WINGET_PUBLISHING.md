@@ -277,6 +277,8 @@ sha256sum podcast-tui-v1.9.0-windows-x86_64.zip
 
 ## GitHub Personal Access Token
 
+### `wingetcreate` token (local, manual submissions)
+
 The `wingetcreate submit` and `wingetcreate update --submit` commands require a GitHub PAT with the following scopes:
 
 - `public_repo` — to fork and create PRs on `winget-pkgs`
@@ -286,6 +288,27 @@ Generate a token at https://github.com/settings/tokens and pass it via `--token`
 ```powershell
 wingetcreate token --store <github-pat>
 ```
+
+### `WINGET_SUBMIT_TOKEN` repo secret (CI release automation)
+
+The release pipeline authenticates with a classic PAT stored as the **`WINGET_SUBMIT_TOKEN`** repository secret. It is referenced in five places: `release.yml` (publish the GitHub Release, open the nix-hashes PR) and `post-release-version-sync.yml` (fast-forward the winget-pkgs fork, `wingetcreate submit`).
+
+- **Scope**: `public_repo` is sufficient (this repo and `microsoft/winget-pkgs` are public).
+- **Why a PAT and not the built-in `GITHUB_TOKEN`**: a release created with the built-in token does **not** trigger other workflows. Publishing the release with a PAT makes the `release: published` event cascade into `post-release-version-sync.yml`, which generates the winget manifests. Switching to `GITHUB_TOKEN` would silently stop manifest generation.
+- **Expiry pitfall**: classic PATs expire. When the token lapses, the **Create GitHub Release** step fails with `HttpError: Bad credentials` (HTTP 401) — but only *after* the full ~15-minute build matrix has already run. A `validate-release-token` preflight job in `release.yml` now catches an empty/expired token in ~5 seconds and fails with an actionable message, so the build matrix is skipped. (A 401 means the token string was rejected — expired or revoked — not a permissions problem, which would be a 403.)
+
+#### Rotating the token
+
+1. Regenerate a **classic PAT** with the `public_repo` scope at https://github.com/settings/tokens. Set a **long expiry** (e.g. 1 year) or add a calendar reminder so it doesn't lapse mid-release.
+2. Update the repo secret — `Settings → Secrets and variables → Actions → WINGET_SUBMIT_TOKEN → Update`, or:
+   ```powershell
+   gh secret set WINGET_SUBMIT_TOKEN
+   ```
+3. **Recover a half-failed release** (builds succeeded, publish failed): secrets are read at run time, so a re-run picks up the new token and reuses the cached build artifacts (30-day retention) — no rebuild:
+   ```powershell
+   gh run rerun <run-id> --failed
+   ```
+   This re-runs the `create-release` job (publishing the release, which fires the `post-release-version-sync.yml` cascade) and its dependent `update-flake-hashes` job. If the artifacts have expired, do a full re-run (`gh run rerun <run-id>`) or delete and re-push the tag.
 
 ---
 

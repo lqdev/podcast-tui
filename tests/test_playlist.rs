@@ -140,6 +140,20 @@ async fn test_create_playlist_and_add_episode() {
         .join("audio");
     assert!(audio_dir.exists());
     assert!(audio_dir.join("001-integration-episode.mp3").exists());
+
+    // The .m3u manifest is generated alongside the audio dir and references the
+    // copied file by relative path.
+    let m3u_path = setup
+        .data_dir
+        .join("Playlists")
+        .join("Morning Commute")
+        .join("Morning Commute.m3u");
+    assert!(m3u_path.exists(), ".m3u manifest should be generated");
+    let m3u = fs::read_to_string(&m3u_path)
+        .await
+        .expect("Failed to read m3u manifest");
+    assert!(m3u.starts_with("#EXTM3U"));
+    assert!(m3u.contains("audio/001-integration-episode.mp3"));
 }
 
 #[tokio::test]

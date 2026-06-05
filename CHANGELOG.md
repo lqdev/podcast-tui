@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Per-buffer command quick-reference bar** — A single contextual hint row now renders just above the minibuffer in most buffers, showing the buffer-specific keybindings (e.g. `a add  d delete  r refresh` in the podcast list, `Enter open  S-D download  / search` in the episode list). Hints reflect buffer state: the episode-list and What's New buffers only advertise `F6 clear filter` while a filter is active. The row is hidden for buffers that return no hints (the Sync buffer keeps its own richer mode-aware hints and opts out, and transient overlays stay clean). Global function-key bindings are intentionally excluded to keep the bar focused on what's actionable in the current view. Closes #253.
+- **Per-buffer command quick-reference bar** — A single contextual hint row now renders just above the minibuffer in most buffers, showing the buffer-specific keybindings (e.g. `a add  d delete  r refresh` in the podcast list, `Enter open  S-D download  / search` in the episode list). Hints reflect buffer state: the episode-list and What's New buffers only advertise `F6 clear filter` while a filter is active. The row is hidden for buffers that return no hints (the Sync buffer keeps its own richer mode-aware hints and opts out, and transient overlays stay clean). Global function-key bindings are intentionally excluded to keep the bar focused on what's actionable in the current view. The Downloads and Playlist buffers now also accept `r` to refresh (in addition to the global `F5`), matching their existing help text and keeping the hint bar buffer-specific. Closes #253.
 
 ---
 

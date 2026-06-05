@@ -5495,13 +5495,14 @@ impl UIApp {
         let key_style = self.theme.primary_style();
         let desc_style = self.theme.muted_style();
 
-        let mut spans: Vec<Span> = Vec::with_capacity(hints.len() * 3);
+        let mut spans: Vec<Span> = Vec::with_capacity(hints.len() * 4);
         for (i, hint) in hints.iter().enumerate() {
             if i > 0 {
                 spans.push(Span::styled("  ", desc_style));
             }
-            spans.push(Span::styled(hint.key.clone(), key_style));
-            spans.push(Span::styled(format!(" {}", hint.desc), desc_style));
+            spans.push(Span::styled(hint.key.as_str(), key_style));
+            spans.push(Span::styled(" ", desc_style));
+            spans.push(Span::styled(hint.desc.as_str(), desc_style));
         }
 
         let paragraph = Paragraph::new(Line::from(spans)).style(self.theme.default_style());

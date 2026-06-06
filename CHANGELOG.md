@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Device profiles carry their own sync target (`sync_path`)** — Each entry in `device_profiles[]` may now set a `sync_path`. Activating a profile — via `:set-device-profile` or for the `active_device_profile` at startup — sets the Sync buffer's active sync target to that path, so switching profiles points the target at the right device every time. Manual selection still works and takes session-level precedence: pressing `p` to pick a directory or selecting a saved target overrides the active target without rewriting the profile, and re-running `:set-device-profile` snaps it back to the configured `sync_path`. If the configured path isn't currently available (device unplugged), it is still applied and a warning is shown. Documented in [`docs/DEVICE_PROFILES.md`](docs/DEVICE_PROFILES.md). Closes #264.
+
 ### Changed
 
 - **Release pipeline fails fast on an expired release token** — The `release.yml` workflow now runs a `validate-release-token` preflight job that verifies the `WINGET_SUBMIT_TOKEN` PAT against the GitHub API before the build matrix, and the Linux/Windows build jobs depend on it. Previously an expired PAT (the token used to publish the GitHub Release so the `release: published` event cascades into winget manifest generation) surfaced only at the **Create GitHub Release** step — after ~15 minutes of builds had already run — as an opaque `HttpError: Bad credentials`. The preflight now fails in ~5 seconds with an actionable message pointing at the rotation runbook. `docs/WINGET_PUBLISHING.md` gains a `WINGET_SUBMIT_TOKEN` section documenting the token's purpose, required scope (`public_repo`), expiry pitfall, and the rotate + `gh run rerun --failed` recovery procedure. Closes #262.
+
+### Removed
+
+- **`match_path_contains` device-profile field** — Removed the inert `match_path_contains` field from `DeviceProfile`. It was never wired to any selection logic (a placeholder for auto-selection) and is superseded by the explicit `sync_path`. Existing `config.json` files are unaffected — the leftover key is ignored on load. Part of #264.
 
 ---
 

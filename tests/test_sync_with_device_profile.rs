@@ -68,7 +68,7 @@ async fn make_podcast_with_episodes(
 fn make_profile(template: &str, ascii_only: bool, max: usize) -> DeviceProfile {
     DeviceProfile {
         name: "test-profile".to_string(),
-        match_path_contains: None,
+        sync_path: None,
         filename_template: template.to_string(),
         max_filename_length: max,
         ascii_only,
@@ -79,7 +79,7 @@ fn make_profile(template: &str, ascii_only: bool, max: usize) -> DeviceProfile {
 fn make_flat_profile(template: &str, ascii_only: bool, max: usize) -> DeviceProfile {
     DeviceProfile {
         name: "flat-test-profile".to_string(),
-        match_path_contains: None,
+        sync_path: None,
         filename_template: template.to_string(),
         max_filename_length: max,
         ascii_only,

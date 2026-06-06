@@ -24,7 +24,7 @@ Add this to `~/.config/podcast-tui/config.json` (Linux) or
   "device_profiles": [
     {
       "name": "Innioasis Y1",
-      "match_path_contains": "INNIOASIS",
+      "sync_path": "E:\\Podcasts",
       "filename_template": "{podcast_short}/{track:03} - {title}.{ext}",
       "max_filename_length": 64,
       "ascii_only": true
@@ -35,8 +35,9 @@ Add this to `~/.config/podcast-tui/config.json` (Linux) or
 ```
 
 Restart the app, then open the Sync buffer (`F8`). The header shows
-`Active device profile: Innioasis Y1`. A dry-run (`d`) previews the
-renamed files; `s` syncs them.
+`Active device profile: Innioasis Y1` and the active sync target is set
+to the profile's `sync_path` (`E:\Podcasts` above). A dry-run (`d`)
+previews the renamed files; `s` syncs them.
 
 ## Schema
 
@@ -45,7 +46,7 @@ Each entry in `device_profiles` is a `DeviceProfile`:
 | Field                 | Type    | Default | Description                                                                                                                          |
 |-----------------------|---------|---------|--------------------------------------------------------------------------------------------------------------------------------------|
 | `name`                | string  | —       | Human-readable identifier. Referenced by `active_device_profile`.                                                                    |
-| `match_path_contains` | string? | `null`  | Substring matched against the sync target path. Currently informational; auto-selection is not yet wired to it.                      |
+| `sync_path`           | string? | `null`  | Configured sync location for this device. When the profile is activated (via `:set-device-profile` or at startup) the Sync buffer's active target is set to this path. Applied even if the device is not currently connected (a warning is shown). Manual target selection (`p` / picking a saved target) still overrides it for the session without rewriting this field. Empty/whitespace is treated as unset. |
 | `filename_template`   | string  | —       | Template used to render the per-file device-side path. See [Token reference](#token-reference). Empty templates are rejected at sync time. |
 | `max_filename_length` | uint    | `128`   | Maximum **byte** length applied to **each path segment** of the rendered filename after substitution (UTF-8-aware). Both the podcast-folder segment and the filename segment are capped independently.                |
 | `ascii_only`          | bool    | `false` | If `true`, strip non-ASCII characters from each segment after sanitization. If a segment becomes empty, it is replaced with the literal `Podcast` (folder segment) or `Episode` (filename segment) so files are never nameless. |
@@ -146,6 +147,24 @@ header updates immediately, and the change is **persisted to
 `config.json`** so it survives the next restart. If saving fails (for
 example, because the file is read-only), an error message is shown but
 the in-memory switch still applies for the current session.
+
+### Sync target follows the profile
+
+If the activated profile has a `sync_path`, activating it **always** sets
+the Sync buffer's active sync target to that path — so switching to your
+FiiO profile points the target at the FiiO, switching to the Innioasis
+points it at the Innioasis, every time. This also applies at startup for
+the `active_device_profile`.
+
+You retain full manual control: while a profile is active you can still
+press `p` to pick a different directory, or `Enter` a saved target, to
+override the active target for the current session. A manual override
+does **not** rewrite the profile's `sync_path`; running
+`:set-device-profile` again snaps the target back to the configured path.
+
+If the configured `sync_path` isn't currently available (the device is
+unplugged), it is still set as the active target and a warning is shown —
+plug the device in and sync, or pick another target with `p`.
 
 ## Verifying before syncing
 

@@ -66,6 +66,31 @@ fn resolve_startup_buffer_id(buffer_manager: &BufferManager, name: &str) -> Opti
     }
 }
 
+/// Apply the active device profile's configured `sync_path` (if any) to the
+/// Sync buffer's active target.
+///
+/// Returns `Some((path, available))` when the active profile has a non-empty
+/// `sync_path` that was applied — `available` reflects whether the path
+/// currently exists as a directory (an unavailable device, e.g. unplugged, is
+/// still applied). Returns `None` when there is no active profile or it has no
+/// `sync_path`, in which case the active target is left untouched.
+fn apply_profile_sync_target(
+    config: &Config,
+    buffer_manager: &mut BufferManager,
+) -> Option<(std::path::PathBuf, bool)> {
+    let sync_path = config
+        .active_device_profile()
+        .and_then(|p| p.sync_path.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(std::path::PathBuf::from)?;
+    let available = sync_path.is_dir();
+    if let Some(sync_buffer) = buffer_manager.get_sync_buffer_mut() {
+        sync_buffer.set_active_target(sync_path.clone());
+    }
+    Some((sync_path, available))
+}
+
 /// The main UI application
 pub struct UIApp {
     /// Configuration
@@ -308,6 +333,7 @@ impl UIApp {
                 config.active_device_profile().map(|p| p.name.clone()),
             );
         }
+        apply_profile_sync_target(&config, &mut buffer_manager);
         buffer_manager.create_playlist_list_buffer(playlist_manager.clone());
         buffer_manager.create_whats_new_buffer(
             subscription_manager.clone(),
@@ -647,6 +673,7 @@ impl UIApp {
                 self.config.active_device_profile().map(|p| p.name.clone()),
             );
         }
+        apply_profile_sync_target(&self.config, &mut self.buffer_manager);
         self.buffer_manager.create_whats_new_buffer(
             self.subscription_manager.clone(),
             self.download_manager.clone(),
@@ -3123,7 +3150,19 @@ impl UIApp {
             if let Some(sync_buffer) = self.buffer_manager.get_sync_buffer_mut() {
                 sync_buffer.set_active_device_profile_name(Some(trimmed.to_string()));
             }
-            self.show_message(format!("Active device profile: {}", trimmed));
+            match apply_profile_sync_target(&self.config, &mut self.buffer_manager) {
+                Some((path, true)) => self.show_message(format!(
+                    "Active device profile: {} (sync target: {})",
+                    trimmed,
+                    path.display()
+                )),
+                Some((path, false)) => self.show_message(format!(
+                    "Active device profile: {} (sync target {} is not currently available)",
+                    trimmed,
+                    path.display()
+                )),
+                None => self.show_message(format!("Active device profile: {}", trimmed)),
+            }
             let _ = self.persist_config();
         } else {
             self.show_error(format!("No device profile named '{}'", trimmed));
@@ -5841,7 +5880,7 @@ mod tests {
     fn sample_profile(name: &str) -> crate::config::DeviceProfile {
         crate::config::DeviceProfile {
             name: name.to_string(),
-            match_path_contains: None,
+            sync_path: None,
             filename_template: "{podcast}/{title}.{ext}".to_string(),
             max_filename_length: 128,
             ascii_only: false,
@@ -5917,6 +5956,101 @@ mod tests {
         assert!(cmds.iter().any(|c| c == "set-device-profile"));
         assert!(cmds.iter().any(|c| c == "set-device-profile Innioasis Y1"));
         assert!(cmds.iter().any(|c| c == "set-device-profile Generic"));
+    }
+
+    /// Helper: a device profile with a configured `sync_path`.
+    fn profile_with_path(name: &str, sync_path: &str) -> crate::config::DeviceProfile {
+        crate::config::DeviceProfile {
+            sync_path: Some(sync_path.to_string()),
+            ..sample_profile(name)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_set_device_profile_applies_sync_path_to_active_target() {
+        // An available (existing) sync_path is set as the active sync target.
+        let target = tempfile::TempDir::new().unwrap();
+        let target_path = target.path().to_path_buf();
+        let (mut app, _tmp) = make_app_with_device_profiles(
+            vec![profile_with_path("FiiO", &target_path.to_string_lossy())],
+            None,
+        )
+        .await;
+
+        app.set_device_profile_direct("FiiO");
+
+        let sync_buf = app.buffer_manager.get_sync_buffer_mut().unwrap();
+        assert_eq!(sync_buf.active_target(), Some(&target_path));
+    }
+
+    #[tokio::test]
+    async fn test_set_device_profile_without_sync_path_leaves_target_unchanged() {
+        // Switching to a profile with no sync_path must not touch the active
+        // target — a previously chosen target stays put.
+        let existing = tempfile::TempDir::new().unwrap();
+        let existing_path = existing.path().to_path_buf();
+        let (mut app, _tmp) =
+            make_app_with_device_profiles(vec![sample_profile("Generic")], None).await;
+        if let Some(buf) = app.buffer_manager.get_sync_buffer_mut() {
+            buf.set_active_target(existing_path.clone());
+        }
+
+        app.set_device_profile_direct("Generic");
+
+        let sync_buf = app.buffer_manager.get_sync_buffer_mut().unwrap();
+        assert_eq!(sync_buf.active_target(), Some(&existing_path));
+    }
+
+    #[tokio::test]
+    async fn test_set_device_profile_unavailable_sync_path_still_sets_target() {
+        // An unplugged device (path does not exist) is still applied as the
+        // active target so the user can plug in and sync.
+        let missing = if cfg!(windows) {
+            "Z:\\podcast-tui-does-not-exist"
+        } else {
+            "/podcast-tui/does/not/exist"
+        };
+        let (mut app, _tmp) =
+            make_app_with_device_profiles(vec![profile_with_path("FiiO", missing)], None).await;
+
+        app.set_device_profile_direct("FiiO");
+
+        let sync_buf = app.buffer_manager.get_sync_buffer_mut().unwrap();
+        assert_eq!(
+            sync_buf.active_target(),
+            Some(&std::path::PathBuf::from(missing))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_set_device_profile_resets_target_after_manual_override() {
+        // After a manual target override, re-running set-device-profile snaps
+        // the active target back to the profile's configured sync_path.
+        let configured = tempfile::TempDir::new().unwrap();
+        let configured_path = configured.path().to_path_buf();
+        let manual = tempfile::TempDir::new().unwrap();
+        let manual_path = manual.path().to_path_buf();
+        let (mut app, _tmp) = make_app_with_device_profiles(
+            vec![profile_with_path(
+                "FiiO",
+                &configured_path.to_string_lossy(),
+            )],
+            None,
+        )
+        .await;
+
+        app.set_device_profile_direct("FiiO");
+        // User manually picks a different directory for the session.
+        if let Some(buf) = app.buffer_manager.get_sync_buffer_mut() {
+            buf.set_active_target(manual_path.clone());
+            assert_eq!(buf.active_target(), Some(&manual_path));
+        }
+
+        // Re-applying the profile resets to the configured path.
+        app.set_device_profile_direct("FiiO");
+
+        let sync_buf = app.buffer_manager.get_sync_buffer_mut().unwrap();
+        assert_eq!(sync_buf.active_target(), Some(&configured_path));
     }
 
     // ---- persist_config tests (#223) -----------------------------------

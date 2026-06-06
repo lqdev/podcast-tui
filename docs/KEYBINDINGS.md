@@ -214,7 +214,7 @@ Press `:` (or `Shift+:`) to open the command prompt. Press `Tab` to autocomplete
 
 - `sync [path]` — Sync to device
 - `sync-dry-run [path]` — Preview sync without applying
-- `set-device-profile [name]` — Switch the active device profile and persist the change to `config.json`. Tab-completes against `device_profiles[].name` from `config.json`. Empty argument clears the active profile. If the save fails an error is shown but the in-memory switch still applies for the current session. See [`docs/DEVICE_PROFILES.md`](DEVICE_PROFILES.md).
+- `set-device-profile [name]` — Switch the active device profile and persist the change to `config.json`. Tab-completes against `device_profiles[].name` from `config.json`. Empty argument clears the active profile. If the profile has a `sync_path`, the active sync target is set to it (overriding any manual pick; an unavailable path still applies with a warning). If the save fails an error is shown but the in-memory switch still applies for the current session. See [`docs/DEVICE_PROFILES.md`](DEVICE_PROFILES.md).
 
 ### Storage Commands
 

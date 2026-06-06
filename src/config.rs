@@ -344,7 +344,7 @@ impl Default for ScrobblingConfig {
 /// ```json
 /// {
 ///   "name": "Innioasis Y1",
-///   "match_path_contains": "INNIOASIS",
+///   "sync_path": "E:\\Podcasts",
 ///   "filename_template": "{podcast} - {episode_number:03} - {title}.{ext}",
 ///   "max_filename_length": 64,
 ///   "ascii_only": true,
@@ -356,11 +356,15 @@ pub struct DeviceProfile {
     /// Human-readable identifier for the profile. Referenced by
     /// [`Config::active_device_profile`].
     pub name: String,
-    /// Optional substring to match against the sync target path for future
-    /// auto-selection. Currently informational only — sync still uses
-    /// `active_device_profile` to choose a profile.
+    /// Optional configured sync location for this device. When the profile is
+    /// activated (via `:set-device-profile` or at startup), the Sync buffer's
+    /// active target is set to this path. An empty or whitespace-only value is
+    /// treated as unset. The path is applied even if it is not currently
+    /// available (e.g. the device is unplugged), with a warning surfaced to the
+    /// user. Manual target selection (`p` / picking a saved target) still
+    /// overrides the active target for the session without rewriting this field.
     #[serde(default)]
-    pub match_path_contains: Option<String>,
+    pub sync_path: Option<String>,
     /// Filename template containing literal text and substitution tokens.
     ///
     /// Validation is intentionally deferred to the template engine (#208) so
@@ -1230,7 +1234,7 @@ mod tests {
             device_profiles: vec![
                 DeviceProfile {
                     name: "Innioasis Y1".to_string(),
-                    match_path_contains: Some("INNIOASIS".to_string()),
+                    sync_path: Some("E:\\Podcasts".to_string()),
                     filename_template: "{podcast} - {episode_number:03} - {title}.{ext}"
                         .to_string(),
                     max_filename_length: 64,
@@ -1239,7 +1243,7 @@ mod tests {
                 },
                 DeviceProfile {
                     name: "Generic USB".to_string(),
-                    match_path_contains: None,
+                    sync_path: None,
                     filename_template: "{title}.{ext}".to_string(),
                     max_filename_length: 128,
                     ascii_only: false,
@@ -1303,7 +1307,7 @@ mod tests {
         assert_eq!(profile.max_filename_length, 128);
         assert!(!profile.ascii_only);
         assert!(profile.preserve_structure); // default_true
-        assert!(profile.match_path_contains.is_none());
+        assert!(profile.sync_path.is_none());
     }
 
     #[test]
@@ -1313,7 +1317,7 @@ mod tests {
             device_profiles: vec![
                 DeviceProfile {
                     name: "A".to_string(),
-                    match_path_contains: None,
+                    sync_path: None,
                     filename_template: "a.{ext}".to_string(),
                     max_filename_length: 128,
                     ascii_only: false,
@@ -1321,7 +1325,7 @@ mod tests {
                 },
                 DeviceProfile {
                     name: "B".to_string(),
-                    match_path_contains: None,
+                    sync_path: None,
                     filename_template: "b.{ext}".to_string(),
                     max_filename_length: 128,
                     ascii_only: false,

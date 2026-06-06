@@ -71,7 +71,7 @@ Podcast TUI exposes three customization surfaces in `config.json`. See [`docs/KE
 
 - **Startup buffer** — set `ui.startup_buffer` to one of `help`, `podcast-list`, `downloads`, `sync`, `playlist-list`, `whats-new`, `now-playing` to control which buffer opens on launch. Default: `help`.
 - **Keybinding presets** — set `keybindings.preset` to `default`, `vim`, or `emacs`. Per-action overrides go under `keybindings.bindings`.
-- **Device profiles** — for MP3 players that show the literal filename (e.g. Innioasis Y1, generic USB DACs), define a profile under `device_profiles[]` with a `filename_template` and select it via `active_device_profile`. The local downloads directory is untouched; only the device-side filenames are rewritten during sync. The `:set-device-profile` minibuffer command switches profiles at runtime.
+- **Device profiles** — for MP3 players that show the literal filename (e.g. Innioasis Y1, generic USB DACs), define a profile under `device_profiles[]` with a `filename_template` and select it via `active_device_profile`. The local downloads directory is untouched; only the device-side filenames are rewritten during sync. Give a profile a `sync_path` and switching to it points the active sync target at that device automatically. The `:set-device-profile` minibuffer command switches profiles at runtime.
 
 The storage layer also caches all podcasts, episodes, and playlists in memory and persists the index to `cache_index.json`, making warm launches near-instant. Toggle with `storage.cache_enabled` (default `true`); rebuild with `:cache-rebuild`. See [`docs/STORAGE_DESIGN.md`](docs/STORAGE_DESIGN.md) for benchmark numbers.
 

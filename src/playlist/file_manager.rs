@@ -232,6 +232,37 @@ impl PlaylistFileManager {
         Ok(())
     }
 
+    /// Transform a local `.m3u` manifest into the layout used on a synced device.
+    ///
+    /// The local manifest references audio via the relative path `audio/<file>`
+    /// (the files live in an `audio/` subfolder). Device sync flattens each
+    /// playlist so the audio files land directly under `Playlists/<name>/<file>`
+    /// with no `audio/` subfolder. This rewrites every path line by stripping a
+    /// leading `audio/` (or `audio\`) segment, leaving `#EXTM3U`/`#EXTINF`
+    /// directive lines and any non-`audio/` paths untouched. The line structure
+    /// and order are preserved verbatim so titles round-trip.
+    pub fn transform_m3u_for_device(content: &str) -> String {
+        let mut out = String::with_capacity(content.len());
+        for line in content.split_inclusive('\n') {
+            let (body, eol) = match line.strip_suffix('\n') {
+                Some(b) => (b, "\n"),
+                None => (line, ""),
+            };
+            let trimmed = body.trim_start();
+            if trimmed.starts_with('#') || trimmed.is_empty() {
+                out.push_str(body);
+            } else {
+                let stripped = body
+                    .strip_prefix("audio/")
+                    .or_else(|| body.strip_prefix("audio\\"))
+                    .unwrap_or(body);
+                out.push_str(stripped);
+            }
+            out.push_str(eol);
+        }
+        out
+    }
+
     pub async fn delete_playlist_directory(
         &self,
         playlist_name: &str,
@@ -530,5 +561,50 @@ mod tests {
         .await
         .expect("Failed to read m3u");
         assert!(content.contains("#EXTINF:-1,003-fallback"));
+    }
+
+    #[test]
+    fn test_transform_m3u_strips_audio_prefix() {
+        let local = "#EXTM3U\n#EXTINF:-1,Episode One\naudio/001-episode.mp3\n";
+        let device = PlaylistFileManager::transform_m3u_for_device(local);
+        assert_eq!(device, "#EXTM3U\n#EXTINF:-1,Episode One\n001-episode.mp3\n");
+    }
+
+    #[test]
+    fn test_transform_m3u_preserves_directives_and_order() {
+        let local = "#EXTM3U\n\
+            #EXTINF:-1,One\naudio/001-a.mp3\n\
+            #EXTINF:-1,Two\naudio/002-b.mp3\n";
+        let device = PlaylistFileManager::transform_m3u_for_device(local);
+        assert_eq!(
+            device,
+            "#EXTM3U\n\
+             #EXTINF:-1,One\n001-a.mp3\n\
+             #EXTINF:-1,Two\n002-b.mp3\n"
+        );
+    }
+
+    #[test]
+    fn test_transform_m3u_header_only_unchanged() {
+        assert_eq!(
+            PlaylistFileManager::transform_m3u_for_device("#EXTM3U\n"),
+            "#EXTM3U\n"
+        );
+    }
+
+    #[test]
+    fn test_transform_m3u_leaves_non_audio_paths_untouched() {
+        // A path line without the `audio/` prefix is passed through verbatim.
+        let local = "#EXTM3U\n#EXTINF:-1,X\n001-already-flat.mp3\n";
+        assert_eq!(PlaylistFileManager::transform_m3u_for_device(local), local);
+    }
+
+    #[test]
+    fn test_transform_m3u_strips_backslash_prefix() {
+        let local = "#EXTM3U\naudio\\001-episode.mp3\n";
+        assert_eq!(
+            PlaylistFileManager::transform_m3u_for_device(local),
+            "#EXTM3U\n001-episode.mp3\n"
+        );
     }
 }

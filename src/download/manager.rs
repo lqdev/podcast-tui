@@ -1,5 +1,6 @@
 use crate::config::{DeviceProfile, DownloadConfig};
 use crate::download::device_template::{self, DeviceFilenameOptions};
+use crate::playlist::PlaylistFileManager;
 use crate::podcast::{Episode, EpisodeStatus, Podcast};
 use crate::storage::{EpisodeId, PodcastId, Storage};
 use anyhow::Result;
@@ -1285,6 +1286,26 @@ impl<S: Storage> DownloadManager<S> {
             }
         }
 
+        // Step 3.5: Generate device-layout `.m3u` manifests for each playlist
+        // that has synced audio, and reclaim stale manifests for playlists that
+        // no longer exist. The local manifest references `audio/<file>`, but the
+        // device layout is flat (`Playlists/<name>/<file>`), so the paths are
+        // rewritten. `.m3u` files are excluded from the audio-only `device_files`
+        // scan, so this step does its own on-disk reconciliation.
+        if let Some(playlists_dir) = &playlists_dir {
+            self.sync_playlist_manifests(
+                playlists_dir,
+                &device_path,
+                dry_run,
+                delete_orphans,
+                hard_sync,
+                &pc_files,
+                &mut report,
+                &progress_tx,
+            )
+            .await;
+        }
+
         // Step 4: Delete orphan files on device (files not present on PC)
         if delete_orphans && !hard_sync {
             // In flat-podcasts mode podcast files share the device root
@@ -1782,6 +1803,199 @@ impl<S: Storage> DownloadManager<S> {
         })
     }
 
+    /// Generate device-layout `.m3u` manifests for every playlist that has
+    /// synced audio files, and reclaim stale manifests for playlists that no
+    /// longer exist.
+    ///
+    /// Each playlist's local manifest lives at
+    /// `<playlists_dir>/<name>/<name>.m3u` and references audio via the relative
+    /// path `audio/<file>`. The device layout is flat
+    /// (`Playlists/<name>/<file>`, no `audio/` subfolder), so the manifest is
+    /// rewritten with [`PlaylistFileManager::transform_m3u_for_device`] and
+    /// written to `Playlists/<name>/<name>.m3u` on the device.
+    ///
+    /// `.m3u` files are deliberately excluded from the audio-only directory
+    /// scans that build `device_files`, so this method does its own on-disk
+    /// reconciliation: it reads the existing device manifest directly to decide
+    /// whether a rewrite is needed (idempotent — unchanged manifests are
+    /// reported as skipped), and — when `delete_orphans` is set (and not a
+    /// `hard_sync`, which already wiped the tree, and not a `dry_run`) — removes
+    /// any device manifest whose playlist no longer has synced audio.
+    ///
+    /// Per-playlist failures are recorded in `report.errors` and do not abort
+    /// the rest of the sync.
+    #[allow(clippy::too_many_arguments)]
+    async fn sync_playlist_manifests(
+        &self,
+        playlists_dir: &Path,
+        device_path: &Path,
+        dry_run: bool,
+        delete_orphans: bool,
+        hard_sync: bool,
+        pc_files: &std::collections::HashMap<PathBuf, (PathBuf, u64)>,
+        report: &mut SyncReport,
+        progress_tx: &Option<tokio::sync::mpsc::UnboundedSender<SyncProgressEvent>>,
+    ) {
+        use std::collections::HashSet;
+        use std::ffi::OsStr;
+
+        // Derive the set of playlists that have at least one synced audio file
+        // from the already-built `pc_files` map (keys like
+        // `Playlists/<name>/<file>`).
+        let mut playlist_names: HashSet<String> = HashSet::new();
+        for key in pc_files.keys() {
+            let mut comps = key.components();
+            if comps.next().map(|c| c.as_os_str()) != Some(OsStr::new("Playlists")) {
+                continue;
+            }
+            let Some(name) = comps.next() else { continue };
+            // Require at least one further component so the entry is an audio
+            // file under the playlist, not a bare manifest at the playlist root.
+            if comps.next().is_none() {
+                continue;
+            }
+            playlist_names.insert(name.as_os_str().to_string_lossy().into_owned());
+        }
+
+        // Device-relative manifest keys that should remain on the device.
+        let mut valid_manifests: HashSet<PathBuf> = HashSet::new();
+
+        for name in &playlist_names {
+            let local_m3u = playlists_dir.join(name).join(format!("{name}.m3u"));
+            if !local_m3u.exists() {
+                continue;
+            }
+
+            let rel_key = Path::new("Playlists")
+                .join(name)
+                .join(format!("{name}.m3u"));
+            valid_manifests.insert(rel_key.clone());
+
+            let content = match fs::read_to_string(&local_m3u).await {
+                Ok(c) => c,
+                Err(e) => {
+                    let msg = format!("Failed to read playlist manifest: {}", e);
+                    if let Some(tx) = progress_tx {
+                        let _ = tx.send(SyncProgressEvent::Error {
+                            path: rel_key.clone(),
+                            message: msg.clone(),
+                        });
+                    }
+                    report.errors.push((rel_key, msg));
+                    continue;
+                }
+            };
+            let device_content = PlaylistFileManager::transform_m3u_for_device(&content);
+            let size = device_content.len() as u64;
+            report.file_sizes.insert(rel_key.clone(), size);
+
+            // `.m3u` files aren't in `device_files`, so read the device target
+            // directly to decide whether a rewrite is needed.
+            let target = device_path.join(&rel_key);
+            let existing = fs::read_to_string(&target).await.ok();
+            if existing.as_deref() == Some(device_content.as_str()) {
+                report.files_skipped.push(rel_key.clone());
+                if let Some(tx) = progress_tx {
+                    let _ = tx.send(SyncProgressEvent::FileSkipped { path: rel_key });
+                }
+                continue;
+            }
+
+            if !dry_run {
+                if let Some(parent) = target.parent() {
+                    if let Err(e) = fs::create_dir_all(parent).await {
+                        let msg = format!("Failed to create directory: {}", e);
+                        if let Some(tx) = progress_tx {
+                            let _ = tx.send(SyncProgressEvent::Error {
+                                path: rel_key.clone(),
+                                message: msg.clone(),
+                            });
+                        }
+                        report.errors.push((rel_key, msg));
+                        continue;
+                    }
+                }
+                if let Err(e) = fs::write(&target, device_content.as_bytes()).await {
+                    let msg = format!("Copy failed: {}", e);
+                    if let Some(tx) = progress_tx {
+                        let _ = tx.send(SyncProgressEvent::Error {
+                            path: rel_key.clone(),
+                            message: msg.clone(),
+                        });
+                    }
+                    report.errors.push((rel_key, msg));
+                    continue;
+                }
+            }
+
+            report.files_copied.push(rel_key.clone());
+            if let Some(tx) = progress_tx {
+                let _ = tx.send(SyncProgressEvent::FileCopied {
+                    path: rel_key,
+                    bytes: size,
+                });
+            }
+        }
+
+        // Reclaim stale manifests. Hard sync already wiped the Playlists tree,
+        // and dry-run never deletes; in both cases there's nothing to do here.
+        if !delete_orphans || hard_sync || dry_run {
+            return;
+        }
+
+        let playlists_root = device_path.join("Playlists");
+        let mut dir_entries = match fs::read_dir(&playlists_root).await {
+            Ok(e) => e,
+            Err(_) => return, // No Playlists tree on device yet.
+        };
+        while let Ok(Some(dir_entry)) = dir_entries.next_entry().await {
+            let playlist_dir = dir_entry.path();
+            if !playlist_dir.is_dir() {
+                continue;
+            }
+            let mut files = match fs::read_dir(&playlist_dir).await {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            while let Ok(Some(file_entry)) = files.next_entry().await {
+                let file_path = file_entry.path();
+                let is_m3u = file_path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e.eq_ignore_ascii_case("m3u"))
+                    .unwrap_or(false);
+                if !is_m3u {
+                    continue;
+                }
+                let rel_key = match file_path.strip_prefix(device_path) {
+                    Ok(rel) => rel.to_path_buf(),
+                    Err(_) => continue,
+                };
+                if valid_manifests.contains(&rel_key) {
+                    continue;
+                }
+                match fs::remove_file(&file_path).await {
+                    Ok(_) => {
+                        report.files_deleted.push(rel_key.clone());
+                        if let Some(tx) = progress_tx {
+                            let _ = tx.send(SyncProgressEvent::FileDeleted { path: rel_key });
+                        }
+                    }
+                    Err(e) => {
+                        let msg = format!("Delete failed: {}", e);
+                        if let Some(tx) = progress_tx {
+                            let _ = tx.send(SyncProgressEvent::Error {
+                                path: rel_key.clone(),
+                                message: msg.clone(),
+                            });
+                        }
+                        report.errors.push((rel_key, msg));
+                    }
+                }
+            }
+        }
+    }
+
     /// Copy a file from source to destination with error handling
     async fn copy_file_to_device(
         &self,
@@ -2237,6 +2451,314 @@ mod tests {
             .join("Morning Commute")
             .join("001-episode.mp3")
             .exists());
+    }
+
+    /// Build a playlist on disk with one audio file and a local `.m3u` manifest
+    /// (referencing the audio via the `audio/<file>` relative path, exactly as
+    /// `PlaylistFileManager::write_m3u` produces).
+    async fn make_playlist_with_manifest(
+        playlists_dir: &Path,
+        name: &str,
+        audio_filename: &str,
+        title: &str,
+    ) {
+        let audio_dir = playlists_dir.join(name).join("audio");
+        fs::create_dir_all(&audio_dir).await.unwrap();
+        fs::write(audio_dir.join(audio_filename), b"playlist")
+            .await
+            .unwrap();
+
+        let manifest = format!("#EXTM3U\n#EXTINF:-1,{title}\naudio/{audio_filename}\n");
+        fs::write(
+            playlists_dir.join(name).join(format!("{name}.m3u")),
+            manifest,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_sync_writes_device_m3u_with_stripped_paths() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let playlists_dir = temp_dir.path().join("Playlists");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        make_playlist_with_manifest(
+            &playlists_dir,
+            "Morning Commute",
+            "001-episode.mp3",
+            "Episode One",
+        )
+        .await;
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+        let device_path = temp_dir.path().join("device");
+        fs::create_dir_all(&device_path).await.unwrap();
+
+        manager
+            .sync_to_device(
+                device_path.clone(),
+                Some(playlists_dir),
+                false,
+                false,
+                false,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let device_m3u = device_path
+            .join("Playlists")
+            .join("Morning Commute")
+            .join("Morning Commute.m3u");
+        assert!(device_m3u.exists(), "device .m3u should be written");
+
+        let content = fs::read_to_string(&device_m3u).await.unwrap();
+        // Audio path is flattened (no `audio/` prefix), title/order preserved.
+        assert_eq!(
+            content,
+            "#EXTM3U\n#EXTINF:-1,Episode One\n001-episode.mp3\n"
+        );
+        // The flattened audio file is a sibling of the manifest.
+        assert!(device_path
+            .join("Playlists")
+            .join("Morning Commute")
+            .join("001-episode.mp3")
+            .exists());
+    }
+
+    #[tokio::test]
+    async fn test_sync_device_m3u_idempotent_skip() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let playlists_dir = temp_dir.path().join("Playlists");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        make_playlist_with_manifest(
+            &playlists_dir,
+            "Morning Commute",
+            "001-episode.mp3",
+            "Episode One",
+        )
+        .await;
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+        let device_path = temp_dir.path().join("device");
+        fs::create_dir_all(&device_path).await.unwrap();
+
+        // First sync writes everything.
+        manager
+            .sync_to_device(
+                device_path.clone(),
+                Some(playlists_dir.clone()),
+                true,
+                false,
+                false,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Second sync should skip the unchanged manifest (and not delete it).
+        let report = manager
+            .sync_to_device(
+                device_path.clone(),
+                Some(playlists_dir),
+                true,
+                false,
+                false,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let rel = Path::new("Playlists")
+            .join("Morning Commute")
+            .join("Morning Commute.m3u");
+        assert!(
+            report.files_skipped.contains(&rel),
+            "manifest should be skipped on the second sync"
+        );
+        assert!(
+            !report.files_deleted.contains(&rel),
+            "manifest must not be orphan-deleted"
+        );
+        assert!(device_path
+            .join("Playlists")
+            .join("Morning Commute")
+            .join("Morning Commute.m3u")
+            .exists());
+    }
+
+    #[tokio::test]
+    async fn test_sync_removes_device_m3u_when_playlist_removed() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let playlists_dir = temp_dir.path().join("Playlists");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        make_playlist_with_manifest(
+            &playlists_dir,
+            "Morning Commute",
+            "001-episode.mp3",
+            "Episode One",
+        )
+        .await;
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+        let device_path = temp_dir.path().join("device");
+        fs::create_dir_all(&device_path).await.unwrap();
+
+        manager
+            .sync_to_device(
+                device_path.clone(),
+                Some(playlists_dir.clone()),
+                true,
+                false,
+                false,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Remove the playlist locally, then sync with orphan deletion enabled.
+        fs::remove_dir_all(playlists_dir.join("Morning Commute"))
+            .await
+            .unwrap();
+
+        manager
+            .sync_to_device(
+                device_path.clone(),
+                Some(playlists_dir),
+                true,
+                false,
+                false,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            !device_path
+                .join("Playlists")
+                .join("Morning Commute")
+                .join("Morning Commute.m3u")
+                .exists(),
+            "stale device manifest should be reclaimed as an orphan"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_dry_run_does_not_write_device_m3u() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let playlists_dir = temp_dir.path().join("Playlists");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        make_playlist_with_manifest(
+            &playlists_dir,
+            "Morning Commute",
+            "001-episode.mp3",
+            "Episode One",
+        )
+        .await;
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+        let device_path = temp_dir.path().join("device");
+        fs::create_dir_all(&device_path).await.unwrap();
+
+        let report = manager
+            .sync_to_device(
+                device_path.clone(),
+                Some(playlists_dir),
+                false,
+                true, // dry_run
+                false,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let rel = Path::new("Playlists")
+            .join("Morning Commute")
+            .join("Morning Commute.m3u");
+        assert!(
+            report.files_copied.contains(&rel),
+            "dry-run should report the manifest as a planned write"
+        );
+        assert!(
+            !device_path
+                .join("Playlists")
+                .join("Morning Commute")
+                .join("Morning Commute.m3u")
+                .exists(),
+            "dry-run must not write anything to the device"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_hard_sync_regenerates_device_m3u() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let playlists_dir = temp_dir.path().join("Playlists");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+
+        make_playlist_with_manifest(
+            &playlists_dir,
+            "Morning Commute",
+            "001-episode.mp3",
+            "Episode One",
+        )
+        .await;
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+        let device_path = temp_dir.path().join("device");
+        fs::create_dir_all(&device_path).await.unwrap();
+
+        // Pre-seed a stale device manifest that hard sync should wipe + rewrite.
+        let device_playlist_dir = device_path.join("Playlists").join("Morning Commute");
+        fs::create_dir_all(&device_playlist_dir).await.unwrap();
+        fs::write(device_playlist_dir.join("Morning Commute.m3u"), b"stale")
+            .await
+            .unwrap();
+
+        manager
+            .sync_to_device(
+                device_path.clone(),
+                Some(playlists_dir),
+                false,
+                false,
+                true, // hard_sync
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let content = fs::read_to_string(device_playlist_dir.join("Morning Commute.m3u"))
+            .await
+            .unwrap();
+        assert_eq!(
+            content,
+            "#EXTM3U\n#EXTINF:-1,Episode One\n001-episode.mp3\n"
+        );
     }
 
     #[tokio::test]

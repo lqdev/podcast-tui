@@ -398,6 +398,7 @@ podcast-tui/
 | Create an RFC | `create-rfc` |
 | Add a new UI buffer | `add-new-buffer` |
 | Add a new minibuffer command | `add-new-command` |
+| Add a device sync profile | `add-device-profile` |
 
 ### Quick Reference: Quality Checks
 

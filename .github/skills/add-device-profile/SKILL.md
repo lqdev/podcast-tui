@@ -22,9 +22,9 @@ directly to a profile field:
 
 | Question | Field it drives | Why it matters |
 |---|---|---|
-| **How does it connect to a PC?** | (workflow, not a field) | **MTP** (e.g. HiBy R4, most Android DAPs) exposes *no drive letter* — `sync_to_device` needs a real filesystem path (`device_path.exists()`/`is_dir()` in `src/download/manager.rs`), so the user **must** sync via the microSD in a **card reader**, not over the cable. **USB Mass Storage** (e.g. Snowsky Echo Nano) mounts as a drive letter → sync directly over USB. |
+| **How does it connect to a PC?** | (workflow, not a field) | `sync_to_device` just needs a real filesystem path that exists and is writable (`device_path.exists()`/`is_dir()` in `src/download/manager.rs`) — it doesn't care about the transport. **USB Mass Storage** (e.g. Snowsky Echo Nano) mounts as a drive letter → sync directly. **MTP** (e.g. HiBy R4, most Android DAPs) exposes no drive letter on **Windows**, so there the practical option is to sync the microSD in a **card reader**. On Linux/macOS an MTP device *can* be mounted to a path (gvfs/jmtpfs), in which case that mount point works as the sync target. |
 | **Does it read ID3 tags / render Unicode?** | `ascii_only` | Rich players (FiiO, HiBy, most Android) → `false`. Budget players that show the raw filename and can't render Unicode (e.g. Innioasis Y1) → `true`. |
-| **Does it browse subfolders?** | `preserve_structure` | Folder-browsing devices → `true` (files land under `Podcasts/<podcast>/…`). Devices that only scan a flat root → `false` (**orphan deletion is skipped in flat mode** — see DEVICE_PROFILES.md). |
+| **Does it browse subfolders?** | `preserve_structure` | `true` keeps the managed `Podcasts/` root prefix on device paths; the per-podcast `Podcasts/<podcast>/…` grouping only happens if the `filename_template` starts with a `{podcast}/` segment. `false` flattens everything to the device root (separators in the rendered template become `_`) and **skips orphan deletion** — see DEVICE_PROFILES.md. |
 | **How small is the screen / filename limit?** | `max_filename_length`, `filename_template` | Tiny displays or strict limits → shorter template and/or lower cap. Default cap is `128` bytes per path segment. |
 
 ## Step 2 — Choose the fields
@@ -47,8 +47,9 @@ directly to a profile field:
   in / the drive letter is unknown; the user sets it later via the Sync buffer
   `p` picker. When set, activating the profile auto-targets it.
 - **`filename_template`** — see the token reference in
-  `docs/DEVICE_PROFILES.md`. A literal `/` creates a device subfolder. Common
-  choices:
+  `docs/DEVICE_PROFILES.md`. A literal `/` creates a device subfolder **only
+  when `preserve_structure: true`**; in flat mode (`false`) separators in the
+  rendered output are flattened to `_`. Common choices:
   - Rich player: `{podcast}/{date} - {title}.{ext}`
   - Ordered by episode: `{podcast}/{track:03} - {title}.{ext}`
   - Minimal: `{podcast}/{title}.{ext}`

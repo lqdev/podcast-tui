@@ -74,12 +74,13 @@ Closes #N"
 git push origin feat/issue-{N}-short-description
 ```
 
-Then create the PR. **Always use a PowerShell here-string for the body** — backtick is PowerShell's escape character, so any backtick-quoted code in a markdown body will corrupt or crash if passed as an inline string literal.
+Then create the PR. **Always write the body to a temporary `.md` file and pass it via `--body-file`.** Inline `--body $body` with PowerShell here-strings is brittle: backticks (used liberally in markdown for code), unclosed `'@` markers, and `$variable` expansion in double-quoted strings all corrupt or crash the call. A file is also easier to draft, review, and re-use.
 
 ```powershell
-# Single-quoted here-string: backticks, $vars, and quotes are all literal.
-# The closing '@ MUST be at column 0 (no leading spaces).
-$body = @'
+# Draft the body in a temp file. Use Out-File -Encoding utf8 so multi-byte
+# characters (em-dashes, smart quotes, accented names) survive.
+$bodyPath = New-TemporaryFile | Rename-Item -NewName { $_.Name + '.md' } -PassThru
+@'
 ## Summary
 
 Closes #N — one-paragraph description.
@@ -102,10 +103,13 @@ Closes #N — one-paragraph description.
 - `cargo fmt` ✅
 - `cargo clippy -- -D warnings` ✅
 - `cargo test` ✅
-'@
+'@ | Out-File -FilePath $bodyPath -Encoding utf8
 
-gh pr create --title "feat(scope): description" --body $body --base main
+gh pr create --title "feat(scope): description" --body-file $bodyPath --base main
+Remove-Item $bodyPath
 ```
+
+If you prefer, write the body with the `create` tool to a path under your session workspace (e.g. `C:\Users\<you>\.copilot\session-state\<sid>\files\pr-body.md`) — that file will already exist on disk and persists across checkpoints, which is useful when iterating on a draft.
 
 PR requirements:
 - Title in conventional commit format (`feat(scope): description`)

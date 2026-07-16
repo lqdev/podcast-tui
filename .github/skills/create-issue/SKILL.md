@@ -120,19 +120,23 @@ Always verify before writing:
 
 ### 6. Create the issue
 
-**Always use a PowerShell here-string for the body** — backtick is PowerShell's escape character and any backtick-quoted code in markdown will corrupt or crash if passed as an inline string literal.
+**Always write the body to a temporary `.md` file and pass it via `--body-file`.** Inline `--body $body` with PowerShell here-strings is brittle: backticks (used liberally in markdown for code), unclosed `'@` markers, and `$variable` expansion in double-quoted strings all corrupt or crash the call. A file is also easier to draft, review, and re-use.
 
 ```powershell
-# Single-quoted here-string: backticks, $vars, and quotes are all literal.
-# The closing '@ MUST be at column 0 (no leading spaces).
-$body = @'
+# Draft the body in a temp file. Use Out-File -Encoding utf8 so multi-byte
+# characters (em-dashes, smart quotes, accented names) survive.
+$bodyPath = New-TemporaryFile | Rename-Item -NewName { $_.Name + '.md' } -PassThru
+@'
 ## Summary
 
-<paste your drafted body here>
-'@
+<paste your drafted body here — backticks, $vars, and quotes are all literal>
+'@ | Out-File -FilePath $bodyPath -Encoding utf8
 
-gh issue create --title "[Feature] Your title" --body $body
+gh issue create --title "[Feature] Your title" --body-file $bodyPath
+Remove-Item $bodyPath
 ```
+
+If you prefer, write the body with the `create` tool to a path under your session workspace (e.g. `C:\Users\<you>\.copilot\session-state\<sid>\files\issue-body.md`) — that file will already exist on disk and persists across checkpoints, which is useful when iterating on a draft.
 
 ### 7. Apply labels
 

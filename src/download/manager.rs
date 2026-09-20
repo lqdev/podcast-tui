@@ -993,7 +993,10 @@ impl<S: Storage> DownloadManager<S> {
     /// - `FileCopied`, `FileDeleted`, `FileSkipped`, or `Error` for each file operation
     /// - `Complete` at the end with the full report
     ///
-    /// When `progress_tx` is `None`, behavior is identical to before (backward compatible).
+    /// Normal syncs reclaim managed stale and replacement files before copying
+    /// new data so capacity-constrained devices do not need temporary
+    /// double-occupancy. When `progress_tx` is `None`, behavior is otherwise
+    /// identical to before (backward compatible).
     #[allow(clippy::too_many_arguments)]
     pub async fn sync_to_device(
         &self,
@@ -1162,6 +1165,37 @@ impl<S: Storage> DownloadManager<S> {
             .await?;
         }
 
+        // Plan all audio deletions before copying anything. This includes
+        // same-path replacements, which otherwise may require temporary
+        // double-occupancy on a capacity-constrained device.
+        let mut audio_deletions: Vec<(PathBuf, PathBuf)> = Vec::new();
+        if !hard_sync {
+            if delete_orphans && flat_podcasts {
+                report.warnings.push(
+                    "Orphan deletion skipped: active device profile uses a flat layout \
+                     (preserve_structure: false). Old podcast files at the device root \
+                     are not removed automatically — delete them manually or run a hard \
+                     sync. Playlist orphans are still cleaned up."
+                        .to_string(),
+                );
+            }
+
+            for (relative_path, (device_file_path, device_size)) in &device_files {
+                let is_replacement = pc_files
+                    .get(relative_path)
+                    .map(|(_, source_size)| source_size != device_size)
+                    .unwrap_or(false);
+                let is_orphan = !pc_files.contains_key(relative_path);
+                let is_playlist = relative_path.starts_with("Playlists");
+                let can_delete_orphan = delete_orphans && (!flat_podcasts || is_playlist);
+
+                if is_replacement || (is_orphan && can_delete_orphan) {
+                    audio_deletions.push((relative_path.clone(), device_file_path.clone()));
+                }
+            }
+        }
+        audio_deletions.sort_by(|(left, _), (right, _)| left.cmp(right));
+
         // Emit ScanComplete: calculate total bytes for files that need copying
         if let Some(ref tx) = progress_tx {
             let total_bytes: u64 = pc_files
@@ -1194,8 +1228,66 @@ impl<S: Storage> DownloadManager<S> {
             report.file_sizes.insert(rel.clone(), *size);
         }
 
+        // Reclaim managed audio files before any replacement or new file is
+        // copied. A failed replacement deletion blocks only that replacement;
+        // unrelated files can still make progress.
+        let mut blocked_replacements = std::collections::HashSet::new();
+        for (relative_path, device_file_path) in audio_deletions {
+            let is_replacement = pc_files.contains_key(&relative_path);
+            if dry_run {
+                report.files_deleted.push(relative_path);
+                continue;
+            }
+
+            match fs::remove_file(&device_file_path).await {
+                Ok(_) => {
+                    report.files_deleted.push(relative_path.clone());
+                    if let Some(ref tx) = progress_tx {
+                        let _ = tx.send(SyncProgressEvent::FileDeleted {
+                            path: relative_path,
+                        });
+                    }
+                }
+                Err(e) => {
+                    let msg = format!("Delete failed: {}", e);
+                    if is_replacement {
+                        blocked_replacements.insert(relative_path.clone());
+                    }
+                    if let Some(ref tx) = progress_tx {
+                        let _ = tx.send(SyncProgressEvent::Error {
+                            path: relative_path.clone(),
+                            message: msg.clone(),
+                        });
+                    }
+                    report.errors.push((relative_path, msg));
+                }
+            }
+        }
+
+        // Playlist manifests are not part of the audio scan, so reclaim their
+        // stale/replaced files in the same pre-copy deletion phase.
+        let blocked_manifests = if let Some(playlists_dir) = &playlists_dir {
+            self.prepare_playlist_manifest_cleanup(
+                playlists_dir,
+                &device_path,
+                delete_orphans,
+                dry_run,
+                hard_sync,
+                &pc_files,
+                &mut report,
+                &progress_tx,
+            )
+            .await
+        } else {
+            std::collections::HashSet::new()
+        };
+
         // Step 3: Determine what needs to be copied (new or changed files)
         for (relative_path, (source_path, source_size)) in &pc_files {
+            if blocked_replacements.contains(relative_path) {
+                continue;
+            }
+
             if let Some((device_file_path, device_size)) = device_files.get(relative_path) {
                 // File exists on device - check if size matches
                 if source_size == device_size {
@@ -1297,90 +1389,32 @@ impl<S: Storage> DownloadManager<S> {
                 playlists_dir,
                 &device_path,
                 dry_run,
-                delete_orphans,
-                hard_sync,
                 &pc_files,
                 &mut report,
                 &progress_tx,
+                &blocked_manifests,
             )
             .await;
         }
 
-        // Step 4: Delete orphan files on device (files not present on PC)
-        if delete_orphans && !hard_sync {
-            // In flat-podcasts mode podcast files share the device root
-            // with arbitrary user files (photos, other music, etc.). We
-            // have no safe way to tell "an old episode this app wrote" from
-            // "the user's vacation photo", so we skip orphan deletion
-            // entirely and surface a warning. A manifest-based approach is
-            // tracked for a follow-up — see issue #221.
-            if flat_podcasts {
-                report.warnings.push(
-                    "Orphan deletion skipped: active device profile uses a flat layout \
-                     (preserve_structure: false). Old podcast files at the device root \
-                     are not removed automatically — delete them manually or run a hard \
-                     sync. Playlist orphans are still cleaned up."
-                        .to_string(),
-                );
-            }
-
-            for (relative_path, (device_file_path, _)) in &device_files {
-                if flat_podcasts {
-                    // Skip podcast (root-level) entries entirely; only
-                    // playlist entries (which keep their structure) are
-                    // safe to reconcile.
-                    let is_playlist = relative_path.starts_with("Playlists");
-                    if !is_playlist {
-                        continue;
-                    }
-                }
-                if !pc_files.contains_key(relative_path) {
-                    // File exists on device but not on PC, delete it
-                    if !dry_run {
-                        match fs::remove_file(device_file_path).await {
-                            Ok(_) => {
-                                report.files_deleted.push(relative_path.clone());
-                                if let Some(ref tx) = progress_tx {
-                                    let _ = tx.send(SyncProgressEvent::FileDeleted {
-                                        path: relative_path.clone(),
-                                    });
-                                }
-                            }
-                            Err(e) => {
-                                let msg = format!("Delete failed: {}", e);
-                                if let Some(ref tx) = progress_tx {
-                                    let _ = tx.send(SyncProgressEvent::Error {
-                                        path: relative_path.clone(),
-                                        message: msg.clone(),
-                                    });
-                                }
-                                report.errors.push((relative_path.clone(), msg));
-                            }
-                        }
-                    } else {
-                        report.files_deleted.push(relative_path.clone());
-                    }
+        // Clean up empty directories only when orphan cleanup is enabled.
+        // With orphan deletion disabled, preserve the device tree exactly
+        // apart from new files and required replacements.
+        if !dry_run && delete_orphans && !hard_sync {
+            // Only sweep Podcasts/ when the active profile actually wrote
+            // there; in flat mode there is nothing to clean and any
+            // pre-existing Podcasts/ tree was left intentionally untouched.
+            if !flat_podcasts {
+                let podcasts_root = device_path.join("Podcasts");
+                if podcasts_root.exists() {
+                    let _ = self.cleanup_empty_directories_in(&podcasts_root).await;
                 }
             }
 
-            // Clean up empty directories in managed roots (only if not dry run)
-            if !dry_run {
-                // Only sweep Podcasts/ when the active profile actually
-                // wrote there; in flat mode there's nothing to clean and
-                // any pre-existing Podcasts/ tree was left intentionally
-                // untouched.
-                if !flat_podcasts {
-                    let podcasts_root = device_path.join("Podcasts");
-                    if podcasts_root.exists() {
-                        let _ = self.cleanup_empty_directories_in(&podcasts_root).await;
-                    }
-                }
-
-                if playlists_dir.is_some() {
-                    let playlists_root = device_path.join("Playlists");
-                    if playlists_root.exists() {
-                        let _ = self.cleanup_empty_directories_in(&playlists_root).await;
-                    }
+            if playlists_dir.is_some() {
+                let playlists_root = device_path.join("Playlists");
+                if playlists_root.exists() {
+                    let _ = self.cleanup_empty_directories_in(&playlists_root).await;
                 }
             }
         }
@@ -1803,62 +1837,47 @@ impl<S: Storage> DownloadManager<S> {
         })
     }
 
-    /// Generate device-layout `.m3u` manifests for every playlist that has
-    /// synced audio files, and reclaim stale manifests for playlists that no
-    /// longer exist.
+    /// Reclaim stale or replaced playlist manifests before any sync copy.
     ///
-    /// Each playlist's local manifest lives at
-    /// `<playlists_dir>/<name>/<name>.m3u` and references audio via the relative
-    /// path `audio/<file>`. The device layout is flat
-    /// (`Playlists/<name>/<file>`, no `audio/` subfolder), so the manifest is
-    /// rewritten with [`PlaylistFileManager::transform_m3u_for_device`] and
-    /// written to `Playlists/<name>/<name>.m3u` on the device.
-    ///
-    /// `.m3u` files are deliberately excluded from the audio-only directory
-    /// scans that build `device_files`, so this method does its own on-disk
-    /// reconciliation: it reads the existing device manifest directly to decide
-    /// whether a rewrite is needed (idempotent — unchanged manifests are
-    /// reported as skipped), and — when `delete_orphans` is set (and not a
-    /// `hard_sync`, which already wiped the tree, and not a `dry_run`) — removes
-    /// any device manifest whose playlist no longer has synced audio.
-    ///
-    /// Per-playlist failures are recorded in `report.errors` and do not abort
-    /// the rest of the sync.
+    /// Playlist manifests are deliberately excluded from the audio-only
+    /// directory scans. This pass therefore handles both changed active
+    /// manifests and orphaned manifests, returning the active paths whose
+    /// deletion failed so the write phase cannot silently overwrite them.
     #[allow(clippy::too_many_arguments)]
-    async fn sync_playlist_manifests(
+    async fn prepare_playlist_manifest_cleanup(
         &self,
         playlists_dir: &Path,
         device_path: &Path,
-        dry_run: bool,
         delete_orphans: bool,
+        dry_run: bool,
         hard_sync: bool,
         pc_files: &std::collections::HashMap<PathBuf, (PathBuf, u64)>,
         report: &mut SyncReport,
         progress_tx: &Option<tokio::sync::mpsc::UnboundedSender<SyncProgressEvent>>,
-    ) {
+    ) -> std::collections::HashSet<PathBuf> {
         use std::collections::HashSet;
         use std::ffi::OsStr;
 
-        // Derive the set of playlists that have at least one synced audio file
-        // from the already-built `pc_files` map (keys like
-        // `Playlists/<name>/<file>`).
-        let mut playlist_names: HashSet<String> = HashSet::new();
+        let mut playlist_names = HashSet::new();
         for key in pc_files.keys() {
             let mut comps = key.components();
             if comps.next().map(|c| c.as_os_str()) != Some(OsStr::new("Playlists")) {
                 continue;
             }
             let Some(name) = comps.next() else { continue };
-            // Require at least one further component so the entry is an audio
-            // file under the playlist, not a bare manifest at the playlist root.
             if comps.next().is_none() {
                 continue;
             }
             playlist_names.insert(name.as_os_str().to_string_lossy().into_owned());
         }
 
-        // Device-relative manifest keys that should remain on the device.
-        let mut valid_manifests: HashSet<PathBuf> = HashSet::new();
+        let mut valid_manifests = HashSet::new();
+        let mut blocked_manifests = HashSet::new();
+
+        // Hard sync already handles the managed playlist tree up front.
+        if hard_sync {
+            return blocked_manifests;
+        }
 
         for name in &playlist_names {
             let local_m3u = playlists_dir.join(name).join(format!("{name}.m3u"));
@@ -1870,6 +1889,176 @@ impl<S: Storage> DownloadManager<S> {
                 .join(name)
                 .join(format!("{name}.m3u"));
             valid_manifests.insert(rel_key.clone());
+
+            let content = match fs::read_to_string(&local_m3u).await {
+                Ok(c) => c,
+                Err(e) => {
+                    let msg = format!("Failed to read playlist manifest: {}", e);
+                    blocked_manifests.insert(rel_key.clone());
+                    if let Some(tx) = progress_tx {
+                        let _ = tx.send(SyncProgressEvent::Error {
+                            path: rel_key.clone(),
+                            message: msg.clone(),
+                        });
+                    }
+                    report.errors.push((rel_key, msg));
+                    continue;
+                }
+            };
+            let device_content = PlaylistFileManager::transform_m3u_for_device(&content);
+            let target = device_path.join(&rel_key);
+            let existing = fs::read_to_string(&target).await.ok();
+            if existing.as_deref() == Some(device_content.as_str()) {
+                continue;
+            }
+
+            let target_exists = fs::metadata(&target).await.is_ok();
+            if !target_exists {
+                continue;
+            }
+
+            if dry_run {
+                report.files_deleted.push(rel_key);
+                continue;
+            }
+
+            match fs::remove_file(&target).await {
+                Ok(_) => {
+                    report.files_deleted.push(rel_key.clone());
+                    if let Some(tx) = progress_tx {
+                        let _ = tx.send(SyncProgressEvent::FileDeleted { path: rel_key });
+                    }
+                }
+                Err(e) => {
+                    let msg = format!("Delete failed: {}", e);
+                    blocked_manifests.insert(rel_key.clone());
+                    if let Some(tx) = progress_tx {
+                        let _ = tx.send(SyncProgressEvent::Error {
+                            path: rel_key.clone(),
+                            message: msg.clone(),
+                        });
+                    }
+                    report.errors.push((rel_key, msg));
+                }
+            }
+        }
+
+        if !delete_orphans {
+            return blocked_manifests;
+        }
+
+        let playlists_root = device_path.join("Playlists");
+        let mut dir_entries = match fs::read_dir(&playlists_root).await {
+            Ok(e) => e,
+            Err(_) => return blocked_manifests,
+        };
+        while let Ok(Some(dir_entry)) = dir_entries.next_entry().await {
+            let playlist_dir = dir_entry.path();
+            if !playlist_dir.is_dir() {
+                continue;
+            }
+            let mut files = match fs::read_dir(&playlist_dir).await {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            while let Ok(Some(file_entry)) = files.next_entry().await {
+                let file_path = file_entry.path();
+                let is_m3u = file_path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e.eq_ignore_ascii_case("m3u"))
+                    .unwrap_or(false);
+                if !is_m3u {
+                    continue;
+                }
+                let rel_key = match file_path.strip_prefix(device_path) {
+                    Ok(rel) => rel.to_path_buf(),
+                    Err(_) => continue,
+                };
+                if valid_manifests.contains(&rel_key) {
+                    continue;
+                }
+
+                if dry_run {
+                    report.files_deleted.push(rel_key);
+                    continue;
+                }
+
+                match fs::remove_file(&file_path).await {
+                    Ok(_) => {
+                        report.files_deleted.push(rel_key.clone());
+                        if let Some(tx) = progress_tx {
+                            let _ = tx.send(SyncProgressEvent::FileDeleted { path: rel_key });
+                        }
+                    }
+                    Err(e) => {
+                        let msg = format!("Delete failed: {}", e);
+                        if let Some(tx) = progress_tx {
+                            let _ = tx.send(SyncProgressEvent::Error {
+                                path: rel_key.clone(),
+                                message: msg.clone(),
+                            });
+                        }
+                        report.errors.push((rel_key, msg));
+                    }
+                }
+            }
+        }
+
+        blocked_manifests
+    }
+
+    /// Generate device-layout `.m3u` manifests for every playlist that has
+    /// synced audio files.
+    ///
+    /// Each playlist's local manifest lives at
+    /// `<playlists_dir>/<name>/<name>.m3u` and references audio via the relative
+    /// path `audio/<file>`. The device layout is flat
+    /// (`Playlists/<name>/<file>`, no `audio/` subfolder), so the manifest is
+    /// rewritten with [`PlaylistFileManager::transform_m3u_for_device`] and
+    /// written to `Playlists/<name>/<name>.m3u` on the device.
+    ///
+    /// Deletions are performed by [`Self::prepare_playlist_manifest_cleanup`]
+    /// before this write phase so a changed manifest also frees its old space
+    /// before it is replaced.
+    #[allow(clippy::too_many_arguments)]
+    async fn sync_playlist_manifests(
+        &self,
+        playlists_dir: &Path,
+        device_path: &Path,
+        dry_run: bool,
+        pc_files: &std::collections::HashMap<PathBuf, (PathBuf, u64)>,
+        report: &mut SyncReport,
+        progress_tx: &Option<tokio::sync::mpsc::UnboundedSender<SyncProgressEvent>>,
+        blocked_manifests: &std::collections::HashSet<PathBuf>,
+    ) {
+        use std::ffi::OsStr;
+
+        let mut playlist_names = std::collections::HashSet::new();
+        for key in pc_files.keys() {
+            let mut comps = key.components();
+            if comps.next().map(|c| c.as_os_str()) != Some(OsStr::new("Playlists")) {
+                continue;
+            }
+            let Some(name) = comps.next() else { continue };
+            if comps.next().is_none() {
+                continue;
+            }
+            playlist_names.insert(name.as_os_str().to_string_lossy().into_owned());
+        }
+
+        for name in playlist_names {
+            let local_m3u = playlists_dir.join(&name).join(format!("{name}.m3u"));
+            if !local_m3u.exists() {
+                continue;
+            }
+
+            let rel_key = Path::new("Playlists")
+                .join(&name)
+                .join(format!("{name}.m3u"));
+            if blocked_manifests.contains(&rel_key) {
+                continue;
+            }
 
             let content = match fs::read_to_string(&local_m3u).await {
                 Ok(c) => c,
@@ -1889,8 +2078,6 @@ impl<S: Storage> DownloadManager<S> {
             let size = device_content.len() as u64;
             report.file_sizes.insert(rel_key.clone(), size);
 
-            // `.m3u` files aren't in `device_files`, so read the device target
-            // directly to decide whether a rewrite is needed.
             let target = device_path.join(&rel_key);
             let existing = fs::read_to_string(&target).await.ok();
             if existing.as_deref() == Some(device_content.as_str()) {
@@ -1934,64 +2121,6 @@ impl<S: Storage> DownloadManager<S> {
                     path: rel_key,
                     bytes: size,
                 });
-            }
-        }
-
-        // Reclaim stale manifests. Hard sync already wiped the Playlists tree,
-        // and dry-run never deletes; in both cases there's nothing to do here.
-        if !delete_orphans || hard_sync || dry_run {
-            return;
-        }
-
-        let playlists_root = device_path.join("Playlists");
-        let mut dir_entries = match fs::read_dir(&playlists_root).await {
-            Ok(e) => e,
-            Err(_) => return, // No Playlists tree on device yet.
-        };
-        while let Ok(Some(dir_entry)) = dir_entries.next_entry().await {
-            let playlist_dir = dir_entry.path();
-            if !playlist_dir.is_dir() {
-                continue;
-            }
-            let mut files = match fs::read_dir(&playlist_dir).await {
-                Ok(f) => f,
-                Err(_) => continue,
-            };
-            while let Ok(Some(file_entry)) = files.next_entry().await {
-                let file_path = file_entry.path();
-                let is_m3u = file_path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .map(|e| e.eq_ignore_ascii_case("m3u"))
-                    .unwrap_or(false);
-                if !is_m3u {
-                    continue;
-                }
-                let rel_key = match file_path.strip_prefix(device_path) {
-                    Ok(rel) => rel.to_path_buf(),
-                    Err(_) => continue,
-                };
-                if valid_manifests.contains(&rel_key) {
-                    continue;
-                }
-                match fs::remove_file(&file_path).await {
-                    Ok(_) => {
-                        report.files_deleted.push(rel_key.clone());
-                        if let Some(tx) = progress_tx {
-                            let _ = tx.send(SyncProgressEvent::FileDeleted { path: rel_key });
-                        }
-                    }
-                    Err(e) => {
-                        let msg = format!("Delete failed: {}", e);
-                        if let Some(tx) = progress_tx {
-                            let _ = tx.send(SyncProgressEvent::Error {
-                                path: rel_key.clone(),
-                                message: msg.clone(),
-                            });
-                        }
-                        report.errors.push((rel_key, msg));
-                    }
-                }
             }
         }
     }
@@ -2173,22 +2302,33 @@ mod tests {
         // Create device directory
         let device_path = temp_dir.path().join("device");
         fs::create_dir_all(&device_path).await.unwrap();
+        let stale_device_file = device_path
+            .join("Podcasts")
+            .join("Old Podcast")
+            .join("old_episode.mp3");
+        fs::create_dir_all(stale_device_file.parent().unwrap())
+            .await
+            .unwrap();
+        fs::write(&stale_device_file, b"stale device content")
+            .await
+            .unwrap();
 
         // Run sync in dry-run mode
         let report = manager
-            .sync_to_device(device_path.clone(), None, false, true, false, None, None)
+            .sync_to_device(device_path.clone(), None, true, true, false, None, None)
             .await
             .unwrap();
 
         // Verify dry-run results
         assert_eq!(report.files_copied.len(), 1);
-        assert_eq!(report.files_deleted.len(), 0);
+        assert_eq!(report.files_deleted.len(), 1);
         assert_eq!(report.errors.len(), 0);
         assert!(report.is_success());
 
         // Verify no files were actually copied
         let device_podcast_dir = device_path.join("Podcasts").join("Test Podcast");
         assert!(!device_podcast_dir.exists());
+        assert!(stale_device_file.exists());
     }
 
     #[tokio::test]
@@ -2312,6 +2452,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_sync_deletes_orphans_before_copying_new_files() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let podcast_dir = downloads_dir.join("Test Podcast");
+        fs::create_dir_all(&podcast_dir).await.unwrap();
+        fs::write(podcast_dir.join("new_episode.mp3"), b"new content")
+            .await
+            .unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+        let device_path = temp_dir.path().join("device");
+        let device_podcast_dir = device_path.join("Podcasts").join("Test Podcast");
+        fs::create_dir_all(&device_podcast_dir).await.unwrap();
+        fs::write(device_podcast_dir.join("old_episode.mp3"), b"old content")
+            .await
+            .unwrap();
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        // Act
+        let report = manager
+            .sync_to_device(device_path, None, true, false, false, Some(tx), None)
+            .await
+            .unwrap();
+
+        // Assert
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        let deletion_index = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    SyncProgressEvent::FileDeleted { path }
+                        if path == Path::new("Podcasts/Test Podcast/old_episode.mp3")
+                )
+            })
+            .expect("orphan deletion event should be emitted");
+        let copy_index = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    SyncProgressEvent::FileCopied { path, .. }
+                        if path == Path::new("Podcasts/Test Podcast/new_episode.mp3")
+                )
+            })
+            .expect("new file copy event should be emitted");
+
+        assert!(
+            deletion_index < copy_index,
+            "managed deletions must be reported before new copies"
+        );
+        assert_eq!(report.files_deleted.len(), 1);
+        assert_eq!(report.files_copied.len(), 1);
+    }
+
+    #[tokio::test]
     async fn test_sync_to_device_delete_orphans_ignores_unmanaged_dirs() {
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
@@ -2361,6 +2564,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_sync_without_orphan_deletion_preserves_empty_managed_directories() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let podcast_dir = downloads_dir.join("Test Podcast");
+        fs::create_dir_all(&podcast_dir).await.unwrap();
+        fs::write(podcast_dir.join("episode1.mp3"), b"test audio content")
+            .await
+            .unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+        let device_path = temp_dir.path().join("device");
+        let empty_managed_dir = device_path.join("Podcasts").join("Old Podcast");
+        fs::create_dir_all(&empty_managed_dir).await.unwrap();
+
+        // Act
+        let report = manager
+            .sync_to_device(device_path, None, false, false, false, None, None)
+            .await
+            .unwrap();
+
+        // Assert
+        assert!(report.is_success());
+        assert!(empty_managed_dir.exists());
+    }
+
+    #[tokio::test]
     async fn test_sync_to_device_update_changed_files() {
         let temp_dir = TempDir::new().unwrap();
         let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
@@ -2399,6 +2631,78 @@ mod tests {
         // Verify content was updated
         let device_content = fs::read(&device_file).await.unwrap();
         assert_eq!(device_content, new_content);
+    }
+
+    #[tokio::test]
+    async fn test_sync_deletes_replacement_before_copying_when_orphan_deletion_disabled() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let podcast_dir = downloads_dir.join("Test Podcast");
+        fs::create_dir_all(&podcast_dir).await.unwrap();
+        fs::write(
+            podcast_dir.join("episode1.mp3"),
+            b"new content with more data",
+        )
+        .await
+        .unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+        let device_path = temp_dir.path().join("device");
+        let device_file = device_path
+            .join("Podcasts")
+            .join("Test Podcast")
+            .join("episode1.mp3");
+        fs::create_dir_all(device_file.parent().unwrap())
+            .await
+            .unwrap();
+        fs::write(&device_file, b"old").await.unwrap();
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        // Act
+        let report = manager
+            .sync_to_device(device_path, None, false, false, false, Some(tx), None)
+            .await
+            .unwrap();
+
+        // Assert
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        let relative_path = Path::new("Podcasts/Test Podcast/episode1.mp3");
+        let deletion_index = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    SyncProgressEvent::FileDeleted { path } if path == relative_path
+                )
+            })
+            .expect("replacement deletion event should be emitted");
+        let copy_index = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    SyncProgressEvent::FileCopied { path, .. } if path == relative_path
+                )
+            })
+            .expect("replacement copy event should be emitted");
+
+        assert!(
+            deletion_index < copy_index,
+            "replacement deletion must be reported before its copy"
+        );
+        assert_eq!(report.files_deleted, vec![relative_path]);
+        assert_eq!(report.files_copied, vec![relative_path]);
+        assert_eq!(
+            fs::read(device_file).await.unwrap(),
+            b"new content with more data"
+        );
     }
 
     #[tokio::test]
@@ -2596,6 +2900,161 @@ mod tests {
             .join("Morning Commute")
             .join("Morning Commute.m3u")
             .exists());
+    }
+
+    #[tokio::test]
+    async fn test_sync_replaces_changed_device_m3u_before_copying_manifest() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let playlists_dir = temp_dir.path().join("Playlists");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+        make_playlist_with_manifest(
+            &playlists_dir,
+            "Morning Commute",
+            "001-episode.mp3",
+            "Episode One",
+        )
+        .await;
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+        let device_path = temp_dir.path().join("device");
+        fs::create_dir_all(&device_path).await.unwrap();
+        manager
+            .sync_to_device(
+                device_path.clone(),
+                Some(playlists_dir.clone()),
+                false,
+                false,
+                false,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        fs::write(
+            playlists_dir
+                .join("Morning Commute")
+                .join("Morning Commute.m3u"),
+            "#EXTM3U\n#EXTINF:-1,Episode Two\naudio/001-episode.mp3\n",
+        )
+        .await
+        .unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        // Act
+        let report = manager
+            .sync_to_device(
+                device_path,
+                Some(playlists_dir),
+                false,
+                false,
+                false,
+                Some(tx),
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Assert
+        let relative_path = Path::new("Playlists")
+            .join("Morning Commute")
+            .join("Morning Commute.m3u");
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        let deletion_index = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    SyncProgressEvent::FileDeleted { path } if path == &relative_path
+                )
+            })
+            .expect("changed manifest deletion event should be emitted");
+        let copy_index = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    SyncProgressEvent::FileCopied { path, .. } if path == &relative_path
+                )
+            })
+            .expect("changed manifest copy event should be emitted");
+
+        assert!(deletion_index < copy_index);
+        assert!(report.files_deleted.contains(&relative_path));
+        assert!(report.files_copied.contains(&relative_path));
+        let device_manifest = temp_dir.path().join("device").join(&relative_path);
+        assert_eq!(
+            fs::read_to_string(device_manifest).await.unwrap(),
+            "#EXTM3U\n#EXTINF:-1,Episode Two\n001-episode.mp3\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_reports_unreadable_playlist_manifest_once() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let playlists_dir = temp_dir.path().join("Playlists");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+        let playlist_dir = playlists_dir.join("Malformed Playlist");
+        fs::create_dir_all(playlist_dir.join("audio"))
+            .await
+            .unwrap();
+        fs::write(playlist_dir.join("audio").join("episode.mp3"), b"audio")
+            .await
+            .unwrap();
+        fs::write(
+            playlist_dir.join("Malformed Playlist.m3u"),
+            [0xff, 0xfe, 0xfd],
+        )
+        .await
+        .unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+        let device_path = temp_dir.path().join("device");
+        fs::create_dir_all(&device_path).await.unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        // Act
+        let report = manager
+            .sync_to_device(
+                device_path,
+                Some(playlists_dir),
+                false,
+                false,
+                false,
+                Some(tx),
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Assert
+        assert_eq!(report.errors.len(), 1);
+        assert_eq!(
+            report.errors[0].0,
+            Path::new("Playlists")
+                .join("Malformed Playlist")
+                .join("Malformed Playlist.m3u")
+        );
+        let error_events = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|event| matches!(event, SyncProgressEvent::Error { .. }))
+            .count();
+        assert_eq!(error_events, 1);
+        assert!(!report.files_copied.iter().any(|path| {
+            path == &Path::new("Playlists")
+                .join("Malformed Playlist")
+                .join("Malformed Playlist.m3u")
+        }));
     }
 
     #[tokio::test]

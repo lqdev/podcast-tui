@@ -525,6 +525,61 @@ async fn test_sync_flat_layout_skips_orphan_deletion_with_warning() {
     );
 }
 
+/// Flat mode still removes a known replacement before rewriting it, while
+/// leaving unrelated root-level files untouched.
+#[tokio::test]
+async fn test_sync_flat_layout_deletes_known_replacement_before_copy() {
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().join("data");
+    let downloads_dir = temp.path().join("downloads");
+    let device_dir = temp.path().join("device");
+    fs::create_dir_all(&data_dir).await.unwrap();
+    fs::create_dir_all(&downloads_dir).await.unwrap();
+    fs::create_dir_all(&device_dir).await.unwrap();
+
+    let storage = Arc::new(JsonStorage::with_data_dir(data_dir.clone()));
+    storage.initialize().await.unwrap();
+    let (_podcast, _) =
+        make_podcast_with_episodes(&storage, &downloads_dir, "Flat Pod", &["Episode"]).await;
+
+    let manager = DownloadManager::new(
+        storage.clone(),
+        downloads_dir.clone(),
+        DownloadConfig::default(),
+    )
+    .unwrap();
+    let profile = make_flat_profile("{podcast_short}_{title}.{ext}", false, 128);
+    let known_target = device_dir.join("Flat Pod_Episode.mp3");
+    let user_file = device_dir.join("vacation_photo.jpg");
+    fs::write(&known_target, b"old device content")
+        .await
+        .unwrap();
+    fs::write(&user_file, b"keep this file").await.unwrap();
+
+    let report = manager
+        .sync_to_device(
+            device_dir.clone(),
+            None,
+            true,
+            false,
+            false,
+            None,
+            Some(profile),
+        )
+        .await
+        .expect("sync should succeed");
+
+    assert_eq!(report.errors.len(), 0, "no errors expected");
+    assert_eq!(report.files_deleted.len(), 1);
+    assert_eq!(report.files_copied.len(), 1);
+    assert_eq!(
+        report.files_deleted[0],
+        std::path::Path::new("Flat Pod_Episode.mp3")
+    );
+    assert_eq!(fs::read(&known_target).await.unwrap(), b"audio for Episode");
+    assert_eq!(fs::read(&user_file).await.unwrap(), b"keep this file");
+}
+
 /// In flat mode, syncing a second time must detect already-present files
 /// (by name + size) at the device root and mark them as skipped — not
 /// re-copy them every run.

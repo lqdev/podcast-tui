@@ -183,6 +183,28 @@ to confirm before any files are copied. You can also trigger a one-off
 preview with `d` (dry-run) or `:sync-dry-run [path]` regardless of this
 setting.
 
+## Capacity-aware sync ordering
+
+Normal sync reclaims managed device files before it copies replacements or
+new episodes. The sync operation scans the source and device, deletes stale
+files selected for orphan cleanup, deletes same-path files whose size changed,
+removes changed or stale playlist manifests, and only then writes replacement
+audio, new audio, and active manifests. This ordering avoids temporarily
+requiring space for both the old and new copy on capacity-constrained devices.
+
+Replacement cleanup is independent of `sync_delete_orphans`: even when orphan
+deletion is disabled, an existing managed file with different metadata is
+removed before its replacement is copied. If a deletion fails, that
+replacement is not copied and the error is reported; unrelated sync items
+continue.
+
+Flat profiles (`preserve_structure: false`) remain conservative. Podcast files
+at the device root are not treated as removable orphans because the root may
+contain user-owned music or photos. Known matching replacement files are still
+reclaimed before they are rewritten, and playlist files under `Playlists/`
+continue to receive normal stale/replacement cleanup. Use a hard sync only when
+you intend to clear the managed `Podcasts/` and `Playlists/` directories.
+
 ## Troubleshooting
 
 **Two episodes render to the same filename after templating.**

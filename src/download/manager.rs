@@ -1892,6 +1892,7 @@ impl<S: Storage> DownloadManager<S> {
                 Ok(c) => c,
                 Err(e) => {
                     let msg = format!("Failed to read playlist manifest: {}", e);
+                    blocked_manifests.insert(rel_key.clone());
                     if let Some(tx) = progress_tx {
                         let _ = tx.send(SyncProgressEvent::Error {
                             path: rel_key.clone(),
@@ -2962,6 +2963,67 @@ mod tests {
             fs::read_to_string(device_manifest).await.unwrap(),
             "#EXTM3U\n#EXTINF:-1,Episode Two\n001-episode.mp3\n"
         );
+    }
+
+    #[tokio::test]
+    async fn test_sync_reports_unreadable_playlist_manifest_once() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let playlists_dir = temp_dir.path().join("Playlists");
+        fs::create_dir_all(&downloads_dir).await.unwrap();
+        let playlist_dir = playlists_dir.join("Malformed Playlist");
+        fs::create_dir_all(playlist_dir.join("audio"))
+            .await
+            .unwrap();
+        fs::write(playlist_dir.join("audio").join("episode.mp3"), b"audio")
+            .await
+            .unwrap();
+        fs::write(
+            playlist_dir.join("Malformed Playlist.m3u"),
+            [0xff, 0xfe, 0xfd],
+        )
+        .await
+        .unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+        let device_path = temp_dir.path().join("device");
+        fs::create_dir_all(&device_path).await.unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        // Act
+        let report = manager
+            .sync_to_device(
+                device_path,
+                Some(playlists_dir),
+                false,
+                false,
+                false,
+                Some(tx),
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Assert
+        assert_eq!(report.errors.len(), 1);
+        assert_eq!(
+            report.errors[0].0,
+            Path::new("Playlists")
+                .join("Malformed Playlist")
+                .join("Malformed Playlist.m3u")
+        );
+        let error_events = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|event| matches!(event, SyncProgressEvent::Error { .. }))
+            .count();
+        assert_eq!(error_events, 1);
+        assert!(!report.files_copied.iter().any(|path| {
+            path == &Path::new("Playlists")
+                .join("Malformed Playlist")
+                .join("Malformed Playlist.m3u")
+        }));
     }
 
     #[tokio::test]

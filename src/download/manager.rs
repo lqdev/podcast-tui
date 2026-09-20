@@ -1397,8 +1397,10 @@ impl<S: Storage> DownloadManager<S> {
             .await;
         }
 
-        // Clean up empty directories in managed roots (only if not dry run).
-        if !dry_run {
+        // Clean up empty directories only when orphan cleanup is enabled.
+        // With orphan deletion disabled, preserve the device tree exactly
+        // apart from new files and required replacements.
+        if !dry_run && delete_orphans && !hard_sync {
             // Only sweep Podcasts/ when the active profile actually wrote
             // there; in flat mode there is nothing to clean and any
             // pre-existing Podcasts/ tree was left intentionally untouched.
@@ -2559,6 +2561,35 @@ mod tests {
             .all(|path| path.starts_with("Podcasts")));
         assert!(!managed_orphan.exists());
         assert!(unmanaged_audio.exists());
+    }
+
+    #[tokio::test]
+    async fn test_sync_without_orphan_deletion_preserves_empty_managed_directories() {
+        // Arrange
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Arc::new(JsonStorage::with_data_dir(temp_dir.path().to_path_buf()));
+        let downloads_dir = temp_dir.path().join("downloads");
+        let podcast_dir = downloads_dir.join("Test Podcast");
+        fs::create_dir_all(&podcast_dir).await.unwrap();
+        fs::write(podcast_dir.join("episode1.mp3"), b"test audio content")
+            .await
+            .unwrap();
+
+        let manager =
+            DownloadManager::new(storage, downloads_dir, DownloadConfig::default()).unwrap();
+        let device_path = temp_dir.path().join("device");
+        let empty_managed_dir = device_path.join("Podcasts").join("Old Podcast");
+        fs::create_dir_all(&empty_managed_dir).await.unwrap();
+
+        // Act
+        let report = manager
+            .sync_to_device(device_path, None, false, false, false, None, None)
+            .await
+            .unwrap();
+
+        // Assert
+        assert!(report.is_success());
+        assert!(empty_managed_dir.exists());
     }
 
     #[tokio::test]

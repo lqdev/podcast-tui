@@ -32,7 +32,8 @@ Following the project's MVP-focused approach:
 
 **High Priority:**
 1. Playlist edge cases (duplicate adds, ordering, Today refresh)
-2. Device sync edge cases (orphan deletion, dry-run mode, path override)
+2. Device sync edge cases (delete-before-copy ordering, orphan deletion,
+   replacement cleanup, dry-run mode, path override)
 3. Episode filter combinations (multi-filter AND logic)
 4. Download cleanup duration parsing edge cases
 

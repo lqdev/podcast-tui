@@ -19,6 +19,7 @@ use crate::{
     },
 };
 
+use chrono::{DateTime, Utc};
 use std::sync::Arc;
 
 /// Download entry for tracking downloads
@@ -28,6 +29,7 @@ pub struct DownloadEntry {
     pub episode_id: EpisodeId,
     pub podcast_name: String,
     pub episode_title: String,
+    pub published: DateTime<Utc>,
     pub status: DownloadStatus,
     pub progress: Option<(u64, u64)>, // (downloaded, total)
     pub error_message: Option<String>,
@@ -79,6 +81,8 @@ impl DownloadsBuffer {
     /// Load current downloads from storage
     pub async fn refresh_downloads(&mut self) -> Result<(), String> {
         if let Some(ref storage) = self.storage {
+            let selected_key = self.selected_download_key();
+            let previous_index = self.selected_index;
             self.downloads.clear();
 
             // Load all podcasts and their episodes to find downloading/downloaded ones
@@ -116,6 +120,7 @@ impl DownloadsBuffer {
                                                 episode_id: episode.id.clone(),
                                                 podcast_name: podcast.title.clone(),
                                                 episode_title: episode.title.clone(),
+                                                published: episode.published,
                                                 status,
                                                 progress: episode.file_size.map(|size| {
                                                     if episode.is_downloaded() {
@@ -141,10 +146,8 @@ impl DownloadsBuffer {
                 Err(e) => return Err(format!("Failed to load podcasts: {}", e)),
             }
 
-            // Set selection if we have downloads
-            if !self.downloads.is_empty() && self.selected_index.is_none() {
-                self.selected_index = Some(0);
-            }
+            self.sort_newest_first();
+            self.restore_selection(selected_key, previous_index);
 
             Ok(())
         } else {
@@ -159,6 +162,9 @@ impl DownloadsBuffer {
 
     /// Set downloads data directly (for background refresh)
     pub fn set_downloads(&mut self, downloads: Vec<crate::ui::events::DownloadEntry>) {
+        let selected_key = self.selected_download_key();
+        let previous_index = self.selected_index;
+
         // Convert from events::DownloadEntry to downloads::DownloadEntry
         self.downloads = downloads
             .into_iter()
@@ -167,26 +173,42 @@ impl DownloadsBuffer {
                 episode_id: entry.episode_id,
                 podcast_name: entry.podcast_name,
                 episode_title: entry.episode_title,
+                published: entry.published,
                 status: entry.status,
                 progress: entry.file_size.map(|size| (size, size)), // Assume completed downloads are full size
                 error_message: None,
             })
             .collect();
 
-        // Set selection if we have downloads
-        if !self.downloads.is_empty() && self.selected_index.is_none() {
-            self.selected_index = Some(0);
-        }
-        // Reset selection if it's out of bounds
-        if let Some(selected) = self.selected_index {
-            if selected >= self.downloads.len() {
-                self.selected_index = if self.downloads.is_empty() {
-                    None
-                } else {
-                    Some(self.downloads.len() - 1)
-                };
-            }
-        }
+        self.sort_newest_first();
+        self.restore_selection(selected_key, previous_index);
+    }
+
+    fn selected_download_key(&self) -> Option<(PodcastId, EpisodeId)> {
+        self.selected_download()
+            .map(|download| (download.podcast_id.clone(), download.episode_id.clone()))
+    }
+
+    fn sort_newest_first(&mut self) {
+        self.downloads
+            .sort_by_key(|download| std::cmp::Reverse(download.published));
+    }
+
+    fn restore_selection(
+        &mut self,
+        selected_key: Option<(PodcastId, EpisodeId)>,
+        previous_index: Option<usize>,
+    ) {
+        let selected_index = selected_key.and_then(|(podcast_id, episode_id)| {
+            self.downloads.iter().position(|download| {
+                download.podcast_id == podcast_id && download.episode_id == episode_id
+            })
+        });
+
+        self.selected_index = selected_index.or_else(|| {
+            (!self.downloads.is_empty())
+                .then(|| previous_index.unwrap_or(0).min(self.downloads.len() - 1))
+        });
     }
 
     /// Move selection up
@@ -481,6 +503,24 @@ impl UIComponent for DownloadsBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
+
+    fn download_entry(
+        podcast_name: &str,
+        episode_title: &str,
+        published: DateTime<Utc>,
+    ) -> crate::ui::events::DownloadEntry {
+        crate::ui::events::DownloadEntry {
+            podcast_id: PodcastId::new(),
+            episode_id: EpisodeId::new(),
+            podcast_name: podcast_name.to_string(),
+            episode_title: episode_title.to_string(),
+            published,
+            status: DownloadStatus::Completed,
+            file_path: None,
+            file_size: None,
+        }
+    }
 
     #[test]
     fn test_r_and_f5_both_trigger_refresh() {
@@ -504,5 +544,66 @@ mod tests {
         let hints = buffer.key_hints();
         assert!(hints.iter().any(|h| h.key == "r"));
         assert!(!hints.iter().any(|h| h.key == "F5"));
+    }
+
+    #[test]
+    fn test_set_downloads_sorts_globally_newest_first_and_preserves_selection() {
+        let mut buffer = DownloadsBuffer::new();
+        let newest = download_entry(
+            "Podcast B",
+            "Newest",
+            Utc.with_ymd_and_hms(2025, 1, 3, 0, 0, 0).unwrap(),
+        );
+        let selected_episode_id = newest.episode_id.clone();
+        buffer.set_downloads(vec![
+            download_entry(
+                "Podcast A",
+                "Oldest",
+                Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap(),
+            ),
+            newest.clone(),
+            download_entry(
+                "Podcast A",
+                "Middle",
+                Utc.with_ymd_and_hms(2025, 1, 2, 0, 0, 0).unwrap(),
+            ),
+        ]);
+
+        assert_eq!(
+            buffer
+                .downloads
+                .iter()
+                .map(|download| download.episode_title.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Newest", "Middle", "Oldest"]
+        );
+        assert_eq!(
+            buffer
+                .selected_download()
+                .map(|download| &download.episode_id),
+            Some(&selected_episode_id)
+        );
+
+        buffer.set_downloads(vec![
+            download_entry(
+                "Podcast C",
+                "Just Added",
+                Utc.with_ymd_and_hms(2025, 1, 4, 0, 0, 0).unwrap(),
+            ),
+            download_entry(
+                "Podcast A",
+                "Oldest",
+                Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap(),
+            ),
+            newest,
+        ]);
+
+        assert_eq!(
+            buffer
+                .selected_download()
+                .map(|download| download.episode_title.as_str()),
+            Some("Newest"),
+            "Refreshing the list should keep the selected episode selected"
+        );
     }
 }

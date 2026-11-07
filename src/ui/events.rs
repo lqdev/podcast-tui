@@ -541,6 +541,7 @@ pub struct DownloadEntry {
     pub episode_id: crate::storage::EpisodeId,
     pub podcast_name: String,
     pub episode_title: String,
+    pub published: chrono::DateTime<chrono::Utc>,
     pub status: crate::download::DownloadStatus,
     pub file_path: Option<std::path::PathBuf>,
     pub file_size: Option<u64>,

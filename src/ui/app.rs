@@ -5150,6 +5150,7 @@ impl UIApp {
                                         episode_id: episode.id.clone(),
                                         podcast_name: podcast.title.clone(),
                                         episode_title: episode.title.clone(),
+                                        published: episode.published,
                                         status,
                                         file_path: episode.local_path.clone(),
                                         file_size,

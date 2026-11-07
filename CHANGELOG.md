@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Episode playlist membership is visible and navigable** — Episode rows show the number of playlists containing each episode, and episode details list their playlist names. `L` or `S-L` opens a read-only list that includes manual, Today, and smart playlists; `Enter` opens a playlist. Stale membership and refresh failures are surfaced rather than silently presented as current data.
 
+### Changed
+
+- **Downloads are ordered newest to oldest across podcasts** — The Downloads buffer now sorts episodes by publication date instead of grouping them in podcast order. Refreshing the list keeps the selected episode selected when it is still present.
+
 ---
 
 ## [1.16.0] - 2026-09-20

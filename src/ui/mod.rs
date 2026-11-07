@@ -131,6 +131,11 @@ pub enum UIAction {
         podcast_id: crate::storage::PodcastId,
         episode_id: crate::storage::EpisodeId,
     },
+    ShowEpisodePlaylists,
+    OpenEpisodePlaylists {
+        podcast_id: crate::storage::PodcastId,
+        episode_id: crate::storage::EpisodeId,
+    },
     /// Trigger async downloads refresh
     TriggerRefreshDownloads,
     RefreshPodcast,
@@ -385,6 +390,7 @@ impl UIAction {
             UIAction::OpenPlaylistList => "Switch to playlists",
             UIAction::CreatePlaylist => "Create playlist",
             UIAction::AddToPlaylist => "Add episode to playlist",
+            UIAction::ShowEpisodePlaylists => "Show playlists containing episode",
             // OPML
             UIAction::ImportOpml => "Import OPML",
             UIAction::ExportOpml => "Export OPML",
@@ -462,9 +468,10 @@ impl UIAction {
             | UIAction::MoveEpisodeDown => "EPISODE STATUS & SORTING",
 
             // Playlists
-            UIAction::OpenPlaylistList | UIAction::CreatePlaylist | UIAction::AddToPlaylist => {
-                "PLAYLISTS"
-            }
+            UIAction::OpenPlaylistList
+            | UIAction::CreatePlaylist
+            | UIAction::AddToPlaylist
+            | UIAction::ShowEpisodePlaylists => "PLAYLISTS",
 
             // OPML
             UIAction::ImportOpml | UIAction::ExportOpml => "OPML IMPORT/EXPORT",

@@ -1,11 +1,11 @@
 use ratatui::{
     layout::Rect,
-    widgets::{Block, Borders, List, ListItem},
+    widgets::{Block, Borders, List, ListItem, ListState},
     Frame,
 };
 
 use crate::{
-    playlist::{manager::PlaylistManager, Playlist, PlaylistId, PlaylistType},
+    playlist::{manager::PlaylistManager, EpisodeKey, Playlist, PlaylistId, PlaylistType},
     ui::{
         buffers::{Buffer, BufferId},
         themes::Theme,
@@ -20,7 +20,8 @@ pub struct PlaylistDetailBuffer {
     playlist_name: String,
     playlist_type: PlaylistType,
     episodes: Vec<crate::playlist::PlaylistEpisode>,
-    selected_index: Option<usize>,
+    list_state: ListState,
+    visible_rows: usize,
     focused: bool,
     theme: Theme,
     playlist_manager: Option<Arc<PlaylistManager>>,
@@ -44,7 +45,8 @@ impl PlaylistDetailBuffer {
             playlist_name,
             playlist_type,
             episodes: Vec::new(),
-            selected_index: None,
+            list_state: ListState::default(),
+            visible_rows: 0,
             focused: false,
             theme: Theme::default(),
             playlist_manager: None,
@@ -59,13 +61,12 @@ impl PlaylistDetailBuffer {
     pub fn set_playlist(&mut self, playlist: Playlist) {
         self.playlist_type = playlist.playlist_type;
         self.is_smart = playlist.smart_rules.is_some();
+        let selected_key = self
+            .selected_episode()
+            .map(|episode| EpisodeKey::new(episode.podcast_id.clone(), episode.episode_id.clone()));
+        let previous_index = self.list_state.selected().unwrap_or(0);
         self.episodes = playlist.episodes;
-        if self.episodes.is_empty() {
-            self.selected_index = None;
-        } else {
-            let selected = self.selected_index.unwrap_or(0);
-            self.selected_index = Some(selected.min(self.episodes.len() - 1));
-        }
+        self.restore_selected_episode(selected_key, previous_index);
     }
 
     /// Mark this buffer as holding a smart playlist (dynamic filter result).
@@ -75,12 +76,35 @@ impl PlaylistDetailBuffer {
 
     /// Populate the buffer with the episodes returned by smart playlist evaluation.
     pub fn set_evaluated_episodes(&mut self, episodes: Vec<crate::playlist::PlaylistEpisode>) {
+        let selected_key = self
+            .selected_episode()
+            .map(|episode| EpisodeKey::new(episode.podcast_id.clone(), episode.episode_id.clone()));
+        let previous_index = self.list_state.selected().unwrap_or(0);
         self.episodes = episodes;
+        self.restore_selected_episode(selected_key, previous_index);
+    }
+
+    fn restore_selected_episode(
+        &mut self,
+        selected_key: Option<EpisodeKey>,
+        previous_index: usize,
+    ) {
         if self.episodes.is_empty() {
-            self.selected_index = None;
+            self.list_state.select(None);
+            self.visible_rows = 0;
         } else {
-            let selected = self.selected_index.unwrap_or(0);
-            self.selected_index = Some(selected.min(self.episodes.len() - 1));
+            let selected = selected_key
+                .and_then(|key| {
+                    self.episodes.iter().position(|episode| {
+                        episode.podcast_id == key.podcast_id && episode.episode_id == key.episode_id
+                    })
+                })
+                .unwrap_or_else(|| previous_index.min(self.episodes.len() - 1));
+            self.list_state.select(Some(selected));
+            *self.list_state.offset_mut() = self
+                .list_state
+                .offset()
+                .min(self.episodes.len().saturating_sub(1));
         }
     }
 
@@ -99,31 +123,79 @@ impl PlaylistDetailBuffer {
         Ok(())
     }
 
-    fn selected_episode(&self) -> Option<&crate::playlist::PlaylistEpisode> {
-        self.selected_index
+    pub fn selected_episode(&self) -> Option<&crate::playlist::PlaylistEpisode> {
+        self.list_state
+            .selected()
             .and_then(|index| self.episodes.get(index))
+    }
+
+    pub fn select_episode(&mut self, key: &EpisodeKey) -> bool {
+        let Some(index) = self.episodes.iter().position(|episode| {
+            episode.podcast_id == key.podcast_id && episode.episode_id == key.episode_id
+        }) else {
+            return false;
+        };
+        self.list_state.select(Some(index));
+        true
     }
 
     fn select_previous(&mut self) {
         if self.episodes.is_empty() {
             return;
         }
-        self.selected_index = match self.selected_index {
+        let selected = match self.list_state.selected() {
             Some(0) => Some(self.episodes.len() - 1),
             Some(index) => Some(index - 1),
             None => Some(0),
         };
+        self.list_state.select(selected);
     }
 
     fn select_next(&mut self) {
         if self.episodes.is_empty() {
             return;
         }
-        self.selected_index = match self.selected_index {
+        let selected = match self.list_state.selected() {
             Some(index) if index >= self.episodes.len() - 1 => Some(0),
             Some(index) => Some(index + 1),
             None => Some(0),
         };
+        self.list_state.select(selected);
+    }
+
+    fn select_page(&mut self, down: bool) {
+        let len = self.episodes.len();
+        if len == 0 || self.visible_rows == 0 {
+            return;
+        }
+
+        let selected = self.list_state.selected().unwrap_or(0);
+        let next = if down {
+            selected.saturating_add(self.visible_rows).min(len - 1)
+        } else {
+            selected.saturating_sub(self.visible_rows)
+        };
+        self.list_state.select(Some(next));
+    }
+
+    fn reorder_selected(&mut self, to_index: usize) -> UIAction {
+        let Some(from_index) = self.list_state.selected() else {
+            return UIAction::None;
+        };
+        if to_index >= self.episodes.len() || from_index == to_index {
+            return UIAction::None;
+        }
+
+        self.episodes.swap(from_index, to_index);
+        for (index, episode) in self.episodes.iter_mut().enumerate() {
+            episode.order = index + 1;
+        }
+        self.list_state.select(Some(to_index));
+        UIAction::TriggerReorderPlaylist {
+            playlist_id: self.playlist_id.clone(),
+            from_idx: from_index,
+            to_idx: to_index,
+        }
     }
 }
 
@@ -185,6 +257,26 @@ impl UIComponent for PlaylistDetailBuffer {
                 self.select_next();
                 UIAction::Render
             }
+            UIAction::PageUp => {
+                self.select_page(false);
+                UIAction::Render
+            }
+            UIAction::PageDown => {
+                self.select_page(true);
+                UIAction::Render
+            }
+            UIAction::MoveToTop => {
+                self.list_state
+                    .select((!self.episodes.is_empty()).then_some(0));
+                *self.list_state.offset_mut() = 0;
+                UIAction::Render
+            }
+            UIAction::MoveToBottom => {
+                self.list_state.select(
+                    (!self.episodes.is_empty()).then_some(self.episodes.len().saturating_sub(1)),
+                );
+                UIAction::Render
+            }
             UIAction::SelectItem => {
                 if let Some(episode) = self.selected_episode() {
                     UIAction::OpenEpisodeDetailById {
@@ -227,15 +319,8 @@ impl UIComponent for PlaylistDetailBuffer {
                         "Smart playlists cannot be reordered".to_string(),
                     );
                 }
-                match self.selected_index {
-                    Some(index) if index > 0 => {
-                        self.selected_index = Some(index - 1);
-                        UIAction::TriggerReorderPlaylist {
-                            playlist_id: self.playlist_id.clone(),
-                            from_idx: index,
-                            to_idx: index - 1,
-                        }
-                    }
+                match self.list_state.selected() {
+                    Some(index) if index > 0 => self.reorder_selected(index - 1),
                     _ => UIAction::None,
                 }
             }
@@ -250,14 +335,9 @@ impl UIComponent for PlaylistDetailBuffer {
                         "Smart playlists cannot be reordered".to_string(),
                     );
                 }
-                match self.selected_index {
+                match self.list_state.selected() {
                     Some(index) if index + 1 < self.episodes.len() => {
-                        self.selected_index = Some(index + 1);
-                        UIAction::TriggerReorderPlaylist {
-                            playlist_id: self.playlist_id.clone(),
-                            from_idx: index,
-                            to_idx: index + 1,
-                        }
+                        self.reorder_selected(index + 1)
                     }
                     _ => UIAction::None,
                 }
@@ -314,14 +394,33 @@ impl UIComponent for PlaylistDetailBuffer {
             self.theme.border_style()
         };
 
+        let title = if self.is_smart {
+            format!("⚡ Playlist: {}", self.playlist_name)
+        } else {
+            format!("Playlist: {}", self.playlist_name)
+        };
+        let block = Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(border_style)
+            .title_style(self.theme.title_style());
+        let inner = block.inner(area);
+        self.visible_rows = inner.height as usize;
+
+        if inner.width == 0 || inner.height == 0 {
+            frame.render_widget(block, area);
+            return;
+        }
+
         let items: Vec<ListItem> = if self.episodes.is_empty() {
+            self.list_state.select(None);
             vec![ListItem::new("Playlist is empty")]
         } else {
             self.episodes
                 .iter()
                 .enumerate()
                 .map(|(index, episode)| {
-                    let selected = self.selected_index == Some(index);
+                    let selected = self.list_state.selected() == Some(index);
                     let marker = if selected { "► " } else { "  " };
                     let display_name = episode
                         .episode_title
@@ -338,19 +437,8 @@ impl UIComponent for PlaylistDetailBuffer {
                 .collect()
         };
 
-        let title = if self.is_smart {
-            format!("⚡ Playlist: {}", self.playlist_name)
-        } else {
-            format!("Playlist: {}", self.playlist_name)
-        };
-        let list = List::new(items).block(
-            Block::default()
-                .title(title)
-                .borders(Borders::ALL)
-                .border_style(border_style)
-                .title_style(self.theme.title_style()),
-        );
-        frame.render_widget(list, area);
+        let list = List::new(items).block(block);
+        frame.render_stateful_widget(list, area, &mut self.list_state);
     }
 
     fn title(&self) -> String {
@@ -371,6 +459,63 @@ mod tests {
     use super::*;
     use crate::storage::{EpisodeId, PodcastId};
     use chrono::Utc;
+
+    fn make_episode(index: usize) -> crate::playlist::PlaylistEpisode {
+        crate::playlist::PlaylistEpisode {
+            podcast_id: PodcastId::new(),
+            episode_id: EpisodeId::new(),
+            episode_title: Some(format!("Episode {index:02}")),
+            added_at: Utc::now(),
+            order: index + 1,
+            file_synced: false,
+            filename: None,
+        }
+    }
+
+    #[test]
+    fn test_playlist_detail_scrolls_selected_row_into_view() {
+        let playlist_id = PlaylistId::new();
+        let mut buffer = PlaylistDetailBuffer::new(
+            playlist_id.clone(),
+            "Long Playlist".to_string(),
+            PlaylistType::User,
+        );
+        let episodes = (0..12).map(make_episode).collect::<Vec<_>>();
+        let selected_episode = episodes[6].clone();
+        buffer.set_playlist(Playlist {
+            id: playlist_id.clone(),
+            name: "Long Playlist".to_string(),
+            description: None,
+            playlist_type: PlaylistType::User,
+            episodes,
+            created: Utc::now(),
+            last_updated: Utc::now(),
+            smart_rules: None,
+        });
+        for _ in 0..6 {
+            buffer.handle_action(UIAction::MoveDown);
+        }
+
+        let backend = ratatui::backend::TestBackend::new(50, 6);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| buffer.render(frame, frame.area()))
+            .unwrap();
+
+        let screen = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(screen.contains("Episode 06"));
+        assert!(!screen.contains("Episode 00"));
+        assert_eq!(
+            buffer.selected_episode().map(|episode| &episode.episode_id),
+            Some(&selected_episode.episode_id)
+        );
+    }
 
     #[test]
     fn test_select_item_opens_episode_detail_by_id() {

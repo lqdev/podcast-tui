@@ -298,6 +298,18 @@ impl BufferManager {
         self.buffer_order.clone()
     }
 
+    pub fn open_playlist_detail_ids(&self) -> std::collections::HashSet<PlaylistId> {
+        self.buffers
+            .values()
+            .filter_map(|buffer| {
+                buffer
+                    .as_any()
+                    .downcast_ref::<crate::ui::buffers::playlist_detail::PlaylistDetailBuffer>()
+                    .map(|detail| detail.playlist_id().clone())
+            })
+            .collect()
+    }
+
     /// Find a buffer ID by its display name
     pub fn find_buffer_id_by_name(&self, name: &str) -> Option<BufferId> {
         self.buffer_order.iter().find_map(|id| {
@@ -423,11 +435,43 @@ impl BufferManager {
         playlists: Vec<(PlaylistId, String, usize)>,
         podcast_id: crate::storage::PodcastId,
         episode_id: crate::storage::EpisodeId,
+        origin_buffer_id: BufferId,
     ) {
         let picker = crate::ui::buffers::playlist_picker::PlaylistPickerBuffer::new(
-            playlists, podcast_id, episode_id,
+            playlists,
+            podcast_id,
+            episode_id,
+            origin_buffer_id,
         );
         let _ = self.add_buffer(Box::new(picker));
+    }
+
+    pub fn create_episode_membership_buffer(
+        &mut self,
+        playlists: Vec<(PlaylistId, String, usize)>,
+        origin_buffer_id: BufferId,
+        membership_stale: bool,
+        membership_error: Option<String>,
+    ) {
+        let picker =
+            crate::ui::buffers::playlist_picker::PlaylistPickerBuffer::new_episode_membership(
+                playlists,
+                origin_buffer_id,
+                membership_stale,
+                membership_error,
+            );
+        let _ = self.add_buffer(Box::new(picker));
+    }
+
+    pub fn playlist_picker_origin_buffer_id(&self) -> Option<BufferId> {
+        self.buffers
+            .get("playlist-picker")
+            .and_then(|buffer| {
+                buffer
+                    .as_any()
+                    .downcast_ref::<crate::ui::buffers::playlist_picker::PlaylistPickerBuffer>()
+            })
+            .map(|picker| picker.origin_buffer_id().clone())
     }
 
     /// Get mutable reference to podcast list buffer

@@ -78,6 +78,7 @@ use ratatui::{
 
 use crate::{
     download::DownloadManager,
+    playlist::{EpisodeKey, PlaylistMembershipSnapshot},
     podcast::{subscription::SubscriptionManager, Episode},
     storage::{JsonStorage, PodcastId, Storage},
     ui::{
@@ -108,6 +109,9 @@ pub struct EpisodeListBuffer {
     filtered_indices: Vec<usize>,
     /// Current sort order applied to `episodes`.
     sort: EpisodeSort,
+    playlist_membership: Option<Arc<PlaylistMembershipSnapshot>>,
+    playlist_membership_stale: bool,
+    playlist_membership_error: Option<String>,
 }
 
 /// Map `EpisodeStatus` to a numeric sort key for the DownloadStatus sort field.
@@ -140,7 +144,40 @@ impl EpisodeListBuffer {
             filter: EpisodeFilter::default(),
             filtered_indices: Vec::new(),
             sort: EpisodeSort::default(),
+            playlist_membership: None,
+            playlist_membership_stale: false,
+            playlist_membership_error: None,
         }
+    }
+
+    pub fn set_playlist_membership(
+        &mut self,
+        snapshot: Option<Arc<PlaylistMembershipSnapshot>>,
+        stale: bool,
+        error: Option<String>,
+    ) {
+        self.playlist_membership = snapshot;
+        self.playlist_membership_stale = stale;
+        self.playlist_membership_error = error;
+    }
+
+    fn playlist_membership_indicator(&self, episode: &Episode) -> String {
+        let Some(snapshot) = &self.playlist_membership else {
+            return if self.playlist_membership_error.is_some() {
+                "[P:!]".to_string()
+            } else {
+                "[P:?]".to_string()
+            };
+        };
+        let count = snapshot.count_for(&EpisodeKey::from_episode(episode));
+        format!(
+            "[P:{count}{}]",
+            if self.playlist_membership_stale {
+                "!"
+            } else {
+                ""
+            }
+        )
     }
 
     /// Set managers
@@ -366,6 +403,7 @@ impl Buffer for EpisodeListBuffer {
             super::KeyHint::new("m", "played"),
             super::KeyHint::new("*", "favorite"),
             super::KeyHint::new("p", "playlist"),
+            super::KeyHint::new("L", "show playlists"),
         ];
         if self.filter.is_active() {
             hints.push(super::KeyHint::new("F6", "clear filter"));
@@ -384,6 +422,7 @@ impl Buffer for EpisodeListBuffer {
             "  m         Mark as played".to_string(),
             "  u         Mark as unplayed".to_string(),
             "  *         Toggle favorite (★)".to_string(),
+            "  L         Show playlists containing the episode".to_string(),
             "  o         Cycle sort field (Date → Title → Duration → Status)".to_string(),
             "  O         Toggle sort direction (↑ ↓)".to_string(),
             "  /         Search episodes".to_string(),
@@ -422,6 +461,13 @@ impl UIComponent for EpisodeListBuffer {
                     UIAction::None
                 }
             }
+            UIAction::ShowEpisodePlaylists => self
+                .selected_episode()
+                .map(|episode| UIAction::OpenEpisodePlaylists {
+                    podcast_id: episode.podcast_id.clone(),
+                    episode_id: episode.id.clone(),
+                })
+                .unwrap_or(UIAction::ShowMessage("No episode selected".to_string())),
             UIAction::MoveToTop => {
                 if self.visible_count() > 0 {
                     self.selected_index = Some(0);
@@ -731,8 +777,11 @@ impl UIComponent for EpisodeListBuffer {
                     };
 
                     let fav_indicator = if episode.favorited { "★ " } else { "" };
-                    let content =
-                        format!(" {} {}{}", status_indicator, fav_indicator, title_with_info);
+                    let membership_indicator = self.playlist_membership_indicator(episode);
+                    let content = format!(
+                        " {} {}{} {}",
+                        status_indicator, fav_indicator, title_with_info, membership_indicator
+                    );
 
                     if Some(display_pos) == self.selected_index {
                         ListItem::new(content).style(self.theme.selected_style())
@@ -838,7 +887,70 @@ impl UIComponent for EpisodeListBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::playlist::{
+        EpisodeKey, PlaylistId, PlaylistMembershipKind, PlaylistMembershipSnapshot, PlaylistSummary,
+    };
     use crate::storage::PodcastId;
+    use chrono::Utc;
+    use std::{collections::HashMap, sync::Arc};
+
+    #[test]
+    fn test_episode_rows_show_playlist_membership_count_and_stale_state() {
+        let podcast_id = PodcastId::new();
+        let included = Episode::new(
+            podcast_id.clone(),
+            "Included".to_string(),
+            "https://example.com/included.mp3".to_string(),
+            Utc::now(),
+        );
+        let not_included = Episode::new(
+            podcast_id.clone(),
+            "Not included".to_string(),
+            "https://example.com/not-included.mp3".to_string(),
+            Utc::now(),
+        );
+        let playlist_id = PlaylistId::new();
+        let snapshot = PlaylistMembershipSnapshot {
+            playlists: vec![PlaylistSummary {
+                id: playlist_id.clone(),
+                name: "Favorites".to_string(),
+                kind: PlaylistMembershipKind::Manual,
+                effective_episode_count: 1,
+            }],
+            by_episode: HashMap::from([(EpisodeKey::from_episode(&included), vec![playlist_id])]),
+            evaluated_at: Utc::now(),
+            next_dynamic_change: None,
+        };
+        let mut buffer = EpisodeListBuffer::new("Test Podcast".to_string(), podcast_id);
+        buffer.set_episodes(vec![included, not_included]);
+        buffer.set_playlist_membership(Some(Arc::new(snapshot)), true, None);
+
+        let backend = ratatui::backend::TestBackend::new(80, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                buffer.render(frame, area);
+            })
+            .unwrap();
+        let screen = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+
+        assert!(screen.contains("[P:1!]"));
+        assert!(screen.contains("[P:0!]"));
+        assert_eq!(
+            buffer.handle_action(UIAction::ShowEpisodePlaylists),
+            UIAction::OpenEpisodePlaylists {
+                podcast_id: buffer.selected_episode().unwrap().podcast_id.clone(),
+                episode_id: buffer.selected_episode().unwrap().id.clone(),
+            }
+        );
+    }
 
     #[test]
     fn test_episode_list_buffer_creation() {

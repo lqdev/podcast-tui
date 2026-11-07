@@ -167,6 +167,14 @@ impl KeyHandler {
         self.bind_key(KeyChord::none(KeyCode::Char('s')), UIAction::SyncToDevice);
         self.bind_key(KeyChord::none(KeyCode::Char('c')), UIAction::CreatePlaylist);
         self.bind_key(KeyChord::none(KeyCode::Char('p')), UIAction::AddToPlaylist);
+        self.bind_key(
+            KeyChord::none(KeyCode::Char('L')),
+            UIAction::ShowEpisodePlaylists,
+        );
+        self.bind_key(
+            KeyChord::shift(KeyCode::Char('L')),
+            UIAction::ShowEpisodePlaylists,
+        );
         self.bind_key(KeyChord::none(KeyCode::Char('r')), UIAction::RefreshPodcast);
         self.bind_key(KeyChord::shift(KeyCode::Char('R')), UIAction::RefreshAll);
         self.bind_key(
@@ -468,6 +476,7 @@ impl KeyHandler {
         // Playlist
         self.override_binding(&keys.create_playlist, UIAction::CreatePlaylist);
         self.override_binding(&keys.add_to_playlist, UIAction::AddToPlaylist);
+        self.override_binding(&keys.show_episode_playlists, UIAction::ShowEpisodePlaylists);
 
         // OPML
         self.override_binding(&keys.import_opml, UIAction::ImportOpml);
@@ -641,6 +650,33 @@ mod tests {
         let key_event = KeyEvent::new(KeyCode::F(7), KeyModifiers::NONE);
         let action = handler.handle_key(key_event);
         assert_eq!(action, UIAction::OpenPlaylistList);
+    }
+
+    #[test]
+    fn test_episode_playlists_keys_and_config_override() {
+        let mut handler = KeyHandler::new();
+        assert_eq!(
+            handler.handle_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::NONE,)),
+            UIAction::ShowEpisodePlaylists
+        );
+        assert_eq!(
+            handler.handle_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::SHIFT,)),
+            UIAction::ShowEpisodePlaylists
+        );
+
+        let config = KeybindingConfig {
+            global: GlobalKeys {
+                show_episode_playlists: vec!["C-l".to_string()],
+                ..GlobalKeys::default()
+            },
+            ..KeybindingConfig::default()
+        };
+        let handler = KeyHandler::from_config(&config);
+        assert_eq!(
+            handler.lookup(&KeyChord::ctrl(KeyCode::Char('l'))),
+            Some(&UIAction::ShowEpisodePlaylists)
+        );
+        assert_eq!(handler.lookup(&KeyChord::none(KeyCode::Char('L'))), None);
     }
 
     #[test]

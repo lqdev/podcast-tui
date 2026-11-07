@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Playlist buffers now scroll and picker navigation preserves its origin** — The playlist list, playlist detail, and add-to-playlist picker now support stateful scrolling with page, top, and bottom navigation. Selecting a playlist, cancelling, or closing the picker returns to the buffer that opened it instead of falling back to Help; asynchronous add completion no longer changes the current buffer.
+
+### Added
+
+- **Episode playlist membership is visible and navigable** — Episode rows show the number of playlists containing each episode, and episode details list their playlist names. `L` or `S-L` opens a read-only list that includes manual, Today, and smart playlists; `Enter` opens a playlist. Stale membership and refresh failures are surfaced rather than silently presented as current data.
+
 ---
 
 ## [1.16.0] - 2026-09-20

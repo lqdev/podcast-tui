@@ -213,11 +213,9 @@ impl Minibuffer {
                     *completion_index = None; // Reset completion when editing
                 }
             }
-            MinibufferContent::Command { input, cursor_pos } => {
-                if *cursor_pos > 0 {
-                    *cursor_pos -= 1;
-                    input.remove(*cursor_pos);
-                }
+            MinibufferContent::Command { input, cursor_pos } if *cursor_pos > 0 => {
+                *cursor_pos -= 1;
+                input.remove(*cursor_pos);
             }
             _ => {}
         }
@@ -236,10 +234,8 @@ impl Minibuffer {
                     *cursor_pos -= 1;
                 }
             }
-            MinibufferContent::Command { cursor_pos, .. } => {
-                if *cursor_pos > 0 {
-                    *cursor_pos -= 1;
-                }
+            MinibufferContent::Command { cursor_pos, .. } if *cursor_pos > 0 => {
+                *cursor_pos -= 1;
             }
             _ => {}
         }
@@ -262,10 +258,8 @@ impl Minibuffer {
                     *cursor_pos += 1;
                 }
             }
-            MinibufferContent::Command { input, cursor_pos } => {
-                if *cursor_pos < input.len() {
-                    *cursor_pos += 1;
-                }
+            MinibufferContent::Command { input, cursor_pos } if *cursor_pos < input.len() => {
+                *cursor_pos += 1;
             }
             _ => {}
         }

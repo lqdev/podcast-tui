@@ -10,6 +10,8 @@ use async_trait::async_trait;
 /// allowing for different backend implementations (JSON, SQLite, etc.)
 /// while maintaining a consistent interface for the application logic.
 #[cfg_attr(test, mockall::automock(type Error = StorageError;))]
+// `async_trait` marks each generated future must-use, as is its `Result` output.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Storage: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;

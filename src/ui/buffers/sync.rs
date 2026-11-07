@@ -338,7 +338,7 @@ impl SyncBuffer {
 
         // Sort by last_used descending and cap at MAX_SAVED_TARGETS
         self.saved_targets
-            .sort_by(|a, b| b.last_used.cmp(&a.last_used));
+            .sort_by_key(|a| std::cmp::Reverse(a.last_used));
         self.saved_targets.truncate(MAX_SAVED_TARGETS);
         self.persist_targets();
 
@@ -1185,7 +1185,7 @@ impl SyncBuffer {
             });
         }
         self.saved_targets
-            .sort_by(|a, b| b.last_used.cmp(&a.last_used));
+            .sort_by_key(|a| std::cmp::Reverse(a.last_used));
         self.saved_targets.truncate(MAX_SAVED_TARGETS);
         self.persist_targets();
     }

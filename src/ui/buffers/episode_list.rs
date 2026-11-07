@@ -241,11 +241,10 @@ impl EpisodeListBuffer {
     fn apply_sort(&mut self) {
         match self.sort.field {
             EpisodeSortField::Date => {
-                self.episodes.sort_by(|a, b| a.published.cmp(&b.published));
+                self.episodes.sort_by_key(|a| a.published);
             }
             EpisodeSortField::Title => {
-                self.episodes
-                    .sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+                self.episodes.sort_by_key(|a| a.title.to_lowercase());
             }
             EpisodeSortField::Duration => {
                 // Episodes without a duration sort last (treat None as u32::MAX)
@@ -256,8 +255,7 @@ impl EpisodeListBuffer {
                 });
             }
             EpisodeSortField::DownloadStatus => {
-                self.episodes
-                    .sort_by(|a, b| status_sort_key(&a.status).cmp(&status_sort_key(&b.status)));
+                self.episodes.sort_by_key(|a| status_sort_key(&a.status));
             }
         }
         if self.sort.direction == SortDirection::Descending {

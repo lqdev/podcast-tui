@@ -260,12 +260,12 @@ impl SmartPlaylistRule {
             Some(SmartSort {
                 field: SmartSortField::Date,
                 direction: SmartSortDirection::Ascending,
-            }) => result.sort_by(|a, b| a.published.cmp(&b.published)),
+            }) => result.sort_by_key(|a| a.published),
             Some(SmartSort {
                 field: SmartSortField::Date,
                 direction: SmartSortDirection::Descending,
             })
-            | None => result.sort_by(|a, b| b.published.cmp(&a.published)),
+            | None => result.sort_by_key(|a| std::cmp::Reverse(a.published)),
             Some(SmartSort {
                 field: SmartSortField::Title,
                 direction: SmartSortDirection::Ascending,
@@ -277,11 +277,11 @@ impl SmartPlaylistRule {
             Some(SmartSort {
                 field: SmartSortField::Duration,
                 direction: SmartSortDirection::Ascending,
-            }) => result.sort_by(|a, b| a.duration.cmp(&b.duration)),
+            }) => result.sort_by_key(|a| a.duration),
             Some(SmartSort {
                 field: SmartSortField::Duration,
                 direction: SmartSortDirection::Descending,
-            }) => result.sort_by(|a, b| b.duration.cmp(&a.duration)),
+            }) => result.sort_by_key(|a| std::cmp::Reverse(a.duration)),
         }
 
         if let Some(limit) = self.limit {

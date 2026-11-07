@@ -138,7 +138,7 @@ impl TodayGenerator {
                 }
             }
         }
-        eligible.sort_by(|a, b| b.1.published.cmp(&a.1.published));
+        eligible.sort_by_key(|a| std::cmp::Reverse(a.1.published));
 
         let published_map: HashMap<_, _> = eligible
             .iter()

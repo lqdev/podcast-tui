@@ -55,6 +55,8 @@ pub enum ScrobblerError {
 /// Implementations:
 /// - [`ListenBrainzClient`]: real HTTP client with retry queue + circuit breaker
 /// - [`NoopScrobbler`]: silent discard (used when scrobbling is disabled)
+// `async_trait` marks each generated future must-use, as is its `Result` output.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Scrobbler: Send + Sync {
     /// Notify the server that playback has started (ephemeral, not stored in history).

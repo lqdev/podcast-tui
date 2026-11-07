@@ -5282,7 +5282,7 @@ impl UIApp {
                     }
 
                     // Sort by publication date (newest first)
-                    all_episodes.sort_by(|a, b| b.episode.published.cmp(&a.episode.published));
+                    all_episodes.sort_by_key(|a| std::cmp::Reverse(a.episode.published));
 
                     // Apply episode limit
                     all_episodes.truncate(episode_limit);

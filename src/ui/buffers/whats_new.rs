@@ -116,7 +116,7 @@ impl WhatsNewBuffer {
             }
 
             // Sort by published date in descending order (newest first)
-            all_episodes.sort_by(|a, b| b.episode.published.cmp(&a.episode.published));
+            all_episodes.sort_by_key(|a| std::cmp::Reverse(a.episode.published));
 
             // Limit to max_episodes
             all_episodes.truncate(self.max_episodes);

@@ -81,7 +81,7 @@ impl<S: Storage> SubscriptionManager<S> {
         }
 
         // Sort by last updated (newest first)
-        podcasts.sort_by(|a, b| b.last_updated.cmp(&a.last_updated));
+        podcasts.sort_by_key(|a| std::cmp::Reverse(a.last_updated));
         Ok(podcasts)
     }
 

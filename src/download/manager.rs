@@ -619,7 +619,7 @@ impl<S: Storage> DownloadManager<S> {
                                                 if first_error.is_none() {
                                                     first_error = Some(format!(
                                                         "Failed to save episode '{}' (podcast {}): {}",
-                                                        &episode.title, podcast_id, e
+                                                        episode.title, podcast_id, e
                                                     ));
                                                 }
                                             }
@@ -649,7 +649,7 @@ impl<S: Storage> DownloadManager<S> {
                             if first_error.is_none() {
                                 first_error = Some(format!(
                                     "Failed to save episode '{}' (podcast {}): {}",
-                                    &episode.title, podcast_id, e
+                                    episode.title, podcast_id, e
                                 ));
                             }
                         }

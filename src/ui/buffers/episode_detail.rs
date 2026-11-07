@@ -13,6 +13,7 @@ use ratatui::{
 };
 
 use crate::{
+    playlist::{EpisodeKey, PlaylistMembershipSnapshot},
     podcast::Episode,
     storage::{EpisodeId, PodcastId},
     ui::{
@@ -21,6 +22,7 @@ use crate::{
         UIAction, UIComponent,
     },
 };
+use std::sync::Arc;
 
 /// Buffer for displaying detailed episode information
 pub struct EpisodeDetailBuffer {
@@ -31,6 +33,9 @@ pub struct EpisodeDetailBuffer {
     scroll_offset: usize,
     focused: bool,
     theme: Theme,
+    playlist_membership: Option<Arc<PlaylistMembershipSnapshot>>,
+    playlist_membership_stale: bool,
+    playlist_membership_error: Option<String>,
 }
 
 impl EpisodeDetailBuffer {
@@ -48,7 +53,21 @@ impl EpisodeDetailBuffer {
             scroll_offset: 0,
             focused: false,
             theme: Theme::default(),
+            playlist_membership: None,
+            playlist_membership_stale: false,
+            playlist_membership_error: None,
         }
+    }
+
+    pub fn set_playlist_membership(
+        &mut self,
+        snapshot: Option<Arc<PlaylistMembershipSnapshot>>,
+        stale: bool,
+        error: Option<String>,
+    ) {
+        self.playlist_membership = snapshot;
+        self.playlist_membership_stale = stale;
+        self.playlist_membership_error = error;
     }
 
     /// Set the theme for this buffer
@@ -93,6 +112,42 @@ impl EpisodeDetailBuffer {
             Span::styled("Status: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(format!("{}", self.episode.status)),
         ]));
+
+        let playlist_status = if self.playlist_membership_stale {
+            " (stale)"
+        } else {
+            ""
+        };
+        let playlist_text = match &self.playlist_membership {
+            Some(snapshot) => {
+                let names = snapshot
+                    .playlists_for(&EpisodeKey::from_episode(&self.episode))
+                    .into_iter()
+                    .map(|playlist| playlist.name.as_str())
+                    .collect::<Vec<_>>();
+                if names.is_empty() {
+                    "None".to_string()
+                } else {
+                    names.join(", ")
+                }
+            }
+            None => self.playlist_membership_error.as_ref().map_or_else(
+                || "Loading...".to_string(),
+                |error| format!("Unavailable: {error}"),
+            ),
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("Playlists{playlist_status}: "),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(playlist_text),
+        ]));
+        if self.playlist_membership_stale {
+            if let Some(error) = &self.playlist_membership_error {
+                lines.push(Line::from(format!("Refresh failed: {error}")));
+            }
+        }
 
         // Duration
         if self.episode.duration.is_some() {
@@ -255,6 +310,7 @@ impl Buffer for EpisodeDetailBuffer {
     fn key_hints(&self) -> Vec<super::KeyHint> {
         vec![
             super::KeyHint::new("S-D", "download"),
+            super::KeyHint::new("L", "show playlists"),
             super::KeyHint::new("↑↓", "scroll"),
             super::KeyHint::new("C-k", "close"),
         ]
@@ -271,6 +327,7 @@ impl Buffer for EpisodeDetailBuffer {
             "  End, >    Scroll to bottom".to_string(),
             "  D         Download episode".to_string(),
             "  p         Add episode to a playlist".to_string(),
+            "  L         Show playlists containing this episode".to_string(),
             "  q, C-k    Close buffer".to_string(),
             "  C-h       Show help".to_string(),
         ]
@@ -341,6 +398,10 @@ impl UIComponent for EpisodeDetailBuffer {
                     }
                 }
             }
+            UIAction::ShowEpisodePlaylists => UIAction::OpenEpisodePlaylists {
+                podcast_id: self.episode.podcast_id.clone(),
+                episode_id: self.episode.id.clone(),
+            },
             _ => UIAction::None,
         }
     }
@@ -394,8 +455,57 @@ impl UIComponent for EpisodeDetailBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::playlist::{
+        EpisodeKey, PlaylistId, PlaylistMembershipKind, PlaylistMembershipSnapshot, PlaylistSummary,
+    };
     use crate::storage::PodcastId;
     use chrono::Utc;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_playlist_membership_details_and_action_are_available() {
+        let episode = Episode::new(
+            PodcastId::new(),
+            "Test Episode".to_string(),
+            "https://example.com/audio.mp3".to_string(),
+            Utc::now(),
+        );
+        let playlist_id = PlaylistId::new();
+        let key = EpisodeKey::from_episode(&episode);
+        let snapshot = PlaylistMembershipSnapshot {
+            playlists: vec![PlaylistSummary {
+                id: playlist_id.clone(),
+                name: "Manual".to_string(),
+                kind: PlaylistMembershipKind::Manual,
+                effective_episode_count: 1,
+            }],
+            by_episode: HashMap::from([(key, vec![playlist_id])]),
+            evaluated_at: Utc::now(),
+            next_dynamic_change: None,
+        };
+        let mut buffer = EpisodeDetailBuffer::new(episode.clone());
+        buffer.set_playlist_membership(
+            Some(Arc::new(snapshot)),
+            true,
+            Some("storage temporarily unavailable".to_string()),
+        );
+
+        let content = buffer
+            .generate_content()
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert!(content.contains("Playlists (stale): Manual"));
+        assert!(content.contains("Refresh failed: storage temporarily unavailable"));
+        assert_eq!(
+            buffer.handle_action(UIAction::ShowEpisodePlaylists),
+            UIAction::OpenEpisodePlaylists {
+                podcast_id: episode.podcast_id,
+                episode_id: episode.id,
+            }
+        );
+    }
 
     #[test]
     fn test_episode_detail_buffer_creation() {

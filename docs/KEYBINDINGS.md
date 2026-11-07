@@ -123,11 +123,17 @@ the full reference lives in the auto-generated help buffer above.
 | `*`, `S-*` | Toggle favorite |
 | `c` | Create playlist |
 | `p` | Add to playlist |
+| `L`, `S-L` | Show playlists containing the selected episode |
 | `S-A` | Import OPML |
 | `S-E` | Export OPML |
 | `s` | Sync to device |
 | `[` | Previous tab |
 | `]` | Next tab |
+
+Episode rows show playlist membership as `[P:n]`, where `n` is the number of playlists.
+`[P:?]` means membership is still loading; `!` marks stale or unavailable data. Open an
+episode and press `L` or `S-L` to see the playlist names. The list includes manual,
+Today, and smart playlists; press `Enter` to open a playlist.
 
 ### Audio Playback
 

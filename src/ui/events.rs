@@ -339,6 +339,14 @@ pub enum AppEvent {
         episode_title: String,
         error: String,
     },
+    PlaylistMembershipRefreshed {
+        generation: u64,
+        build: crate::playlist::membership::PlaylistMembershipBuild,
+    },
+    PlaylistMembershipRefreshFailed {
+        generation: u64,
+        error: String,
+    },
     EpisodeRemovedFromPlaylist {
         playlist_name: String,
         episode_title: String,
@@ -349,9 +357,11 @@ pub enum AppEvent {
         error: String,
     },
     PlaylistReordered {
+        playlist_id: crate::playlist::PlaylistId,
         name: String,
     },
     PlaylistReorderFailed {
+        playlist_id: crate::playlist::PlaylistId,
         name: String,
         error: String,
     },
@@ -445,18 +455,6 @@ pub enum AppEvent {
         error: String,
     },
 
-    /// Smart playlist evaluated — episodes computed from filter rules
-    SmartPlaylistEvaluated {
-        detail_buffer_id: String,
-        episodes: Vec<crate::playlist::PlaylistEpisode>,
-    },
-
-    /// Smart playlist evaluation failed
-    SmartPlaylistEvaluationFailed {
-        playlist_name: String,
-        error: String,
-    },
-
     /// Discovery results loaded (search or trending)
     DiscoveryResultsLoaded {
         buffer_id: String,
@@ -545,6 +543,7 @@ pub struct DownloadEntry {
     pub episode_id: crate::storage::EpisodeId,
     pub podcast_name: String,
     pub episode_title: String,
+    pub published: chrono::DateTime<chrono::Utc>,
     pub status: crate::download::DownloadStatus,
     pub file_path: Option<std::path::PathBuf>,
     pub file_size: Option<u64>,

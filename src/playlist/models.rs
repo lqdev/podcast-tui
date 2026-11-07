@@ -156,6 +156,15 @@ impl SmartFilter {
     /// `podcasts` is required for filters that inspect podcast-level data
     /// (e.g., [`SmartFilter::Tag`]).
     pub fn matches(&self, episode: &Episode, podcasts: &[Podcast]) -> bool {
+        self.matches_at(episode, podcasts, Utc::now())
+    }
+
+    pub(crate) fn matches_at(
+        &self,
+        episode: &Episode,
+        podcasts: &[Podcast],
+        now: DateTime<Utc>,
+    ) -> bool {
         match self {
             SmartFilter::Downloaded => {
                 matches!(episode.status, EpisodeStatus::Downloaded)
@@ -170,11 +179,15 @@ impl SmartFilter {
                 episode.podcast_id.to_string() == *podcast_id_str
             }
             SmartFilter::NewerThan(days) => {
-                let cutoff = Utc::now() - chrono::Duration::days(*days as i64);
-                episode.published >= cutoff
+                now.signed_duration_since(episode.published)
+                    <= chrono::Duration::days(i64::from(*days))
             }
-            SmartFilter::And(filters) => filters.iter().all(|f| f.matches(episode, podcasts)),
-            SmartFilter::Or(filters) => filters.iter().any(|f| f.matches(episode, podcasts)),
+            SmartFilter::And(filters) => {
+                filters.iter().all(|f| f.matches_at(episode, podcasts, now))
+            }
+            SmartFilter::Or(filters) => {
+                filters.iter().any(|f| f.matches_at(episode, podcasts, now))
+            }
         }
     }
 
@@ -227,9 +240,18 @@ impl SmartPlaylistRule {
     /// Evaluate the rule against the given episode + podcast sets and return
     /// the ordered, limited list of matching episodes.
     pub fn evaluate(&self, episodes: &[Episode], podcasts: &[Podcast]) -> Vec<Episode> {
+        self.evaluate_at(episodes, podcasts, Utc::now())
+    }
+
+    pub(crate) fn evaluate_at(
+        &self,
+        episodes: &[Episode],
+        podcasts: &[Podcast],
+        now: DateTime<Utc>,
+    ) -> Vec<Episode> {
         let mut result: Vec<Episode> = episodes
             .iter()
-            .filter(|e| self.filter.matches(e, podcasts))
+            .filter(|e| self.filter.matches_at(e, podcasts, now))
             .cloned()
             .collect();
 

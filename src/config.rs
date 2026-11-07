@@ -481,6 +481,7 @@ pub struct GlobalKeys {
     // ── Playlist ─────────────────────────────────────────────────────────────
     pub create_playlist: Vec<String>,
     pub add_to_playlist: Vec<String>,
+    pub show_episode_playlists: Vec<String>,
 
     // ── OPML ─────────────────────────────────────────────────────────────────
     pub import_opml: Vec<String>,
@@ -551,6 +552,7 @@ impl Default for GlobalKeys {
             toggle_sort_direction: vec![],
             create_playlist: vec![],
             add_to_playlist: vec![],
+            show_episode_playlists: vec![],
             import_opml: vec![],
             export_opml: vec![],
             sync_to_device: vec![],
@@ -630,6 +632,7 @@ impl GlobalKeys {
             // Playlist
             create_playlist: ["c"].map(String::from).to_vec(),
             add_to_playlist: ["p"].map(String::from).to_vec(),
+            show_episode_playlists: ["L", "S-L"].map(String::from).to_vec(),
 
             // OPML
             import_opml: ["S-A"].map(String::from).to_vec(),
@@ -1119,6 +1122,7 @@ mod tests {
         assert_eq!(keys.toggle_favorite, vec!["*", "S-*"]);
         assert_eq!(keys.create_playlist, vec!["c"]);
         assert_eq!(keys.add_to_playlist, vec!["p"]);
+        assert_eq!(keys.show_episode_playlists, vec!["L", "S-L"]);
         assert_eq!(keys.import_opml, vec!["S-A"]);
         assert_eq!(keys.export_opml, vec!["S-E"]);
         assert_eq!(keys.sync_to_device, vec!["s"]);

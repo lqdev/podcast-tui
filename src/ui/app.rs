@@ -1077,10 +1077,12 @@ impl UIApp {
                                 let options: Vec<_> = playlists
                                     .into_iter()
                                     .filter_map(|playlist| {
-                                        if matches!(
-                                            playlist.playlist_type,
-                                            crate::playlist::PlaylistType::User
-                                        ) {
+                                        if !playlist.is_smart()
+                                            && matches!(
+                                                playlist.playlist_type,
+                                                crate::playlist::PlaylistType::User
+                                            )
+                                        {
                                             Some((
                                                 playlist.id,
                                                 playlist.name,
@@ -1851,6 +1853,7 @@ impl UIApp {
             AppEvent::PodcastSubscribed { podcast } => {
                 // Trigger background refresh of podcast list
                 self.trigger_background_refresh(BufferRefreshType::PodcastList);
+                self.trigger_playlist_membership_refresh();
                 self.show_message(format!("Successfully subscribed to: {}", podcast.title));
             }
             AppEvent::PodcastSubscriptionFailed { url: _, error } => {
@@ -2071,6 +2074,7 @@ impl UIApp {
             AppEvent::OpmlImportCompleted { result, log_path } => {
                 // Trigger background refresh of podcast list to show newly imported podcasts
                 self.trigger_background_refresh(BufferRefreshType::PodcastList);
+                self.trigger_playlist_membership_refresh();
 
                 // Build summary message
                 let mut summary = format!(
@@ -2086,6 +2090,7 @@ impl UIApp {
                 self.show_message(summary);
             }
             AppEvent::OpmlImportFailed { source: _, error } => {
+                self.trigger_playlist_membership_refresh();
                 self.show_error(format!("Could not import OPML: {}", error));
             }
             AppEvent::OpmlExportStarted { path } => {
@@ -2204,14 +2209,33 @@ impl UIApp {
                     episode_title, playlist_name, error
                 ));
             }
-            AppEvent::PlaylistReordered { name } => {
+            AppEvent::PlaylistReordered { playlist_id, name } => {
                 self.load_playlists_into_buffer().await;
-                self.refresh_open_playlist_detail_buffers().await;
-                self.show_message(format!("Playlist reordered: {}", name));
+                match self.reload_playlist_detail_buffer(&playlist_id).await {
+                    Ok(_) => self.show_message(format!("Playlist reordered: {}", name)),
+                    Err(error) => self.show_error(format!(
+                        "Playlist reordered, but could not reload '{}': {}",
+                        name, error
+                    )),
+                }
             }
-            AppEvent::PlaylistReorderFailed { name, error } => {
-                self.show_error(format!("Could not reorder playlist '{}': {}", name, error));
-            }
+            AppEvent::PlaylistReorderFailed {
+                playlist_id,
+                name,
+                error,
+            } => match self.reload_playlist_detail_buffer(&playlist_id).await {
+                Ok(true) => self.show_error(format!(
+                    "Could not reorder playlist '{}': {}. The playlist was reloaded.",
+                    name, error
+                )),
+                Ok(false) => {
+                    self.show_error(format!("Could not reorder playlist '{}': {}", name, error))
+                }
+                Err(reload_error) => self.show_error(format!(
+                    "Could not reorder playlist '{}': {}. Could not reload it: {}",
+                    name, error, reload_error
+                )),
+            },
             AppEvent::PlaylistRebuilt {
                 name,
                 rebuilt,
@@ -2344,6 +2368,7 @@ impl UIApp {
             } => {
                 self.trigger_background_refresh(BufferRefreshType::AllEpisodeBuffers);
                 self.trigger_background_refresh(BufferRefreshType::Downloads);
+                self.trigger_playlist_membership_refresh();
                 if deleted_count > 0 {
                     self.show_message(format!(
                         "Cleaned up {} episode(s) older than {}",
@@ -2359,6 +2384,7 @@ impl UIApp {
             AppEvent::DownloadCleanupFailed { error } => {
                 self.trigger_background_refresh(BufferRefreshType::AllEpisodeBuffers);
                 self.trigger_background_refresh(BufferRefreshType::Downloads);
+                self.trigger_playlist_membership_refresh();
                 self.show_error(format!("Could not clean up downloads: {}", error));
             }
             AppEvent::CacheRebuilt {
@@ -2612,17 +2638,7 @@ impl UIApp {
                 } else {
                     // Close current buffer
                     if let Some(current_id) = self.buffer_manager.current_buffer_id() {
-                        match self.buffer_manager.remove_buffer(&current_id) {
-                            Ok(_) => {
-                                self.update_status_bar();
-                                self.show_message(format!("Closed buffer: {}", current_id));
-                                Ok(true)
-                            }
-                            Err(e) => {
-                                self.show_error(format!("Cannot close buffer: {}", e));
-                                Ok(true)
-                            }
-                        }
+                        self.close_buffer_by_id(&current_id, &current_id)
                     } else {
                         self.show_message("No buffer to close".to_string());
                         Ok(true)
@@ -3584,32 +3600,12 @@ impl UIApp {
 
         // Try exact match first (by ID)
         if buffer_names.iter().any(|(id, _)| id == &buffer_name) {
-            match self.buffer_manager.remove_buffer(&buffer_name) {
-                Ok(_) => {
-                    self.update_status_bar();
-                    self.show_message(format!("Closed buffer: {}", buffer_name));
-                    return Ok(true);
-                }
-                Err(e) => {
-                    self.show_error(format!("Cannot close buffer: {}", e));
-                    return Ok(true);
-                }
-            }
+            return self.close_buffer_by_id(&buffer_name, &buffer_name);
         }
 
         // Try exact match by display name
         if let Some((id, _)) = buffer_names.iter().find(|(_, name)| name == &buffer_name) {
-            match self.buffer_manager.remove_buffer(id) {
-                Ok(_) => {
-                    self.update_status_bar();
-                    self.show_message(format!("Closed buffer: {}", buffer_name));
-                    return Ok(true);
-                }
-                Err(e) => {
-                    self.show_error(format!("Cannot close buffer: {}", e));
-                    return Ok(true);
-                }
-            }
+            return self.close_buffer_by_id(id, &buffer_name);
         }
 
         // Try partial match (case insensitive)
@@ -3629,17 +3625,7 @@ impl UIApp {
             }
             1 => {
                 let (id, _) = matches[0];
-                match self.buffer_manager.remove_buffer(id) {
-                    Ok(_) => {
-                        self.update_status_bar();
-                        self.show_message(format!("Closed buffer: {}", buffer_name));
-                        Ok(true)
-                    }
-                    Err(e) => {
-                        self.show_error(format!("Cannot close buffer: {}", e));
-                        Ok(true)
-                    }
-                }
+                self.close_buffer_by_id(id, &buffer_name)
             }
             _ => {
                 let mut msg = format!("Multiple buffers match '{}':\n", buffer_name);
@@ -3652,6 +3638,25 @@ impl UIApp {
                 }
                 msg.push_str("\nSpecify the exact buffer name to close.");
                 self.show_message(msg);
+                Ok(true)
+            }
+        }
+    }
+
+    fn close_buffer_by_id(&mut self, buffer_id: &String, display_name: &str) -> UIResult<bool> {
+        if buffer_id == "playlist-picker" {
+            self.close_playlist_picker(true);
+            return Ok(true);
+        }
+
+        match self.buffer_manager.remove_buffer(buffer_id) {
+            Ok(_) => {
+                self.update_status_bar();
+                self.show_message(format!("Closed buffer: {}", display_name));
+                Ok(true)
+            }
+            Err(error) => {
+                self.show_error(format!("Cannot close buffer: {}", error));
                 Ok(true)
             }
         }
@@ -3722,6 +3727,18 @@ impl UIApp {
                     .get_episode_detail_buffer_mut_by_id(&buffer_id)
                 {
                     buffer.set_playlist_membership(snapshot.clone(), stale, error.clone());
+                }
+            } else if buffer_id == "playlist-picker" {
+                if let Some(buffer) = self
+                    .buffer_manager
+                    .get_buffer(&"playlist-picker".to_string())
+                    .and_then(|buffer| {
+                        buffer
+                            .as_any_mut()
+                            .downcast_mut::<crate::ui::buffers::playlist_picker::PlaylistPickerBuffer>()
+                    })
+                {
+                    buffer.update_episode_membership(snapshot.as_deref(), stale, error.clone());
                 }
             }
         }
@@ -3830,8 +3847,12 @@ impl UIApp {
         podcast_id: crate::storage::PodcastId,
         episode_id: crate::storage::EpisodeId,
     ) {
-        let Some(snapshot) = self.playlist_membership.clone() else {
+        if (self.playlist_membership.is_none() || self.playlist_membership_stale)
+            && !self.playlist_membership_refresh_running
+        {
             self.trigger_playlist_membership_refresh();
+        }
+        let Some(snapshot) = self.playlist_membership.clone() else {
             if let Some(error) = &self.playlist_membership_error {
                 self.show_error(format!("Playlist membership is unavailable: {error}"));
             } else {
@@ -3867,6 +3888,7 @@ impl UIApp {
         }
         self.buffer_manager.create_episode_membership_buffer(
             playlists,
+            key,
             origin_buffer_id,
             self.playlist_membership_stale,
             self.playlist_membership_error.clone(),
@@ -4611,17 +4633,58 @@ impl UIApp {
             {
                 Ok(_) => {
                     let _ = app_event_tx.send(AppEvent::PlaylistReordered {
+                        playlist_id: playlist_id.clone(),
                         name: playlist_name,
                     });
                 }
                 Err(e) => {
                     let _ = app_event_tx.send(AppEvent::PlaylistReorderFailed {
+                        playlist_id,
                         name: playlist_name,
                         error: e.to_string(),
                     });
                 }
             }
         });
+    }
+
+    async fn reload_playlist_detail_buffer(
+        &mut self,
+        playlist_id: &crate::playlist::PlaylistId,
+    ) -> Result<bool, String> {
+        let buffer_id = self
+            .buffer_manager
+            .get_buffer_ids()
+            .into_iter()
+            .find(|buffer_id| {
+                self.buffer_manager
+                    .get_buffer(buffer_id)
+                    .and_then(|buffer| {
+                        buffer
+                            .as_any()
+                            .downcast_ref::<crate::ui::buffers::playlist_detail::PlaylistDetailBuffer>()
+                    })
+                    .is_some_and(|buffer| buffer.playlist_id() == playlist_id)
+            });
+        let Some(buffer_id) = buffer_id else {
+            return Ok(false);
+        };
+
+        let playlist = self
+            .playlist_manager
+            .get_playlist(playlist_id)
+            .await
+            .map_err(|error| error.to_string())?;
+        if let Some(buffer) = self
+            .buffer_manager
+            .get_playlist_detail_buffer_mut_by_id(&buffer_id)
+        {
+            buffer.set_playlist(playlist);
+            buffer.set_reorder_pending(false);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     fn trigger_async_rebuild_playlist(&mut self, playlist_id: crate::playlist::PlaylistId) {
@@ -6727,7 +6790,7 @@ mod tests {
             },
             podcast::Episode,
             storage::JsonStorage,
-            ui::buffers::playlist_picker::PlaylistPickerBuffer,
+            ui::buffers::{playlist_picker::PlaylistPickerBuffer, Buffer},
         };
         use chrono::Utc;
         use std::collections::HashMap;
@@ -6789,7 +6852,11 @@ mod tests {
         }));
         app.open_episode_detail_buffer(episode.clone());
 
+        app.playlist_membership_stale = true;
+        app.playlist_membership_refresh_running = false;
+        app.playlist_membership_refresh_pending = false;
         app.open_episode_playlists(podcast_id.clone(), episode.id.clone());
+        assert!(app.playlist_membership_refresh_running);
         assert_eq!(
             app.buffer_manager.current_buffer_id(),
             Some("playlist-picker".to_string())
@@ -6803,6 +6870,59 @@ mod tests {
             picker.selected_playlist().map(|(_, name, _)| name.as_str()),
             Some("Episode Mix")
         );
+
+        let additional_playlist = app
+            .playlist_manager
+            .create_playlist("Additional Mix", None)
+            .await
+            .expect("additional playlist should be created");
+        let episode_key = EpisodeKey::from_episode(&episode);
+        let mut refreshed_by_episode = HashMap::new();
+        refreshed_by_episode.insert(
+            episode_key,
+            vec![playlist.id.clone(), additional_playlist.id.clone()],
+        );
+        app.playlist_membership = Some(Arc::new(PlaylistMembershipSnapshot {
+            playlists: vec![
+                PlaylistSummary {
+                    id: playlist.id.clone(),
+                    name: playlist.name.clone(),
+                    kind: PlaylistMembershipKind::Manual,
+                    effective_episode_count: 1,
+                },
+                PlaylistSummary {
+                    id: additional_playlist.id.clone(),
+                    name: additional_playlist.name.clone(),
+                    kind: PlaylistMembershipKind::Manual,
+                    effective_episode_count: 1,
+                },
+            ],
+            by_episode: refreshed_by_episode,
+            evaluated_at: Utc::now(),
+            next_dynamic_change: None,
+        }));
+        app.playlist_membership_stale = true;
+        app.playlist_membership_error = Some("refresh failed".to_string());
+        app.apply_playlist_membership_to_open_episode_buffers();
+        let picker = app
+            .buffer_manager
+            .get_buffer(&"playlist-picker".to_string())
+            .and_then(|buffer| buffer.as_any_mut().downcast_mut::<PlaylistPickerBuffer>())
+            .expect("membership picker should remain open");
+        assert_eq!(
+            picker.selected_playlist().map(|(id, _, _)| id.clone()),
+            Some(playlist.id.clone())
+        );
+        assert!(picker
+            .help_text()
+            .iter()
+            .any(|line| line.contains("Membership data may be stale")));
+        picker.handle_action(UIAction::MoveDown);
+        assert_eq!(
+            picker.selected_playlist().map(|(_, name, _)| name.as_str()),
+            Some("Additional Mix")
+        );
+        picker.handle_action(UIAction::MoveUp);
 
         app.handle_action(UIAction::SelectItem).await.unwrap();
         assert_eq!(
@@ -6836,6 +6956,267 @@ mod tests {
         assert_eq!(
             app.buffer_manager.current_buffer_id(),
             Some(origin_buffer_id)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_add_to_playlist_picker_excludes_smart_playlists_and_keeps_empty_state() {
+        use crate::{podcast::Episode, storage::PodcastId};
+
+        let (mut app, _storage) = make_test_app_with_storage().await;
+        let manual_playlist = app
+            .playlist_manager
+            .create_playlist("Manual Destination", None)
+            .await
+            .expect("manual playlist should be created");
+        let smart_rule = parse_smart_playlist_args(&["--filter", "downloaded"])
+            .expect("smart playlist rule should parse");
+        app.playlist_manager
+            .create_smart_playlist("Smart Destination", None, smart_rule)
+            .await
+            .expect("smart playlist should be created");
+
+        let episode = Episode::new(
+            PodcastId::new(),
+            "Picker target".to_string(),
+            "https://example.com/picker-target.mp3".to_string(),
+            chrono::Utc::now(),
+        );
+        let origin_buffer_id = format!("episode-detail-{}", episode.id);
+        app.open_episode_detail_buffer(episode);
+        app.handle_action(UIAction::AddToPlaylist)
+            .await
+            .expect("opening add-to-playlist picker should succeed");
+
+        let picker = app
+            .buffer_manager
+            .get_buffer(&"playlist-picker".to_string())
+            .and_then(|buffer| {
+                buffer
+                    .as_any_mut()
+                    .downcast_mut::<crate::ui::buffers::playlist_picker::PlaylistPickerBuffer>()
+            })
+            .expect("picker should be open");
+        assert_eq!(
+            picker.selected_playlist().map(|(id, _, _)| id.clone()),
+            Some(manual_playlist.id.clone())
+        );
+        picker.handle_action(UIAction::MoveDown);
+        assert_eq!(
+            picker.selected_playlist().map(|(id, _, _)| id.clone()),
+            Some(manual_playlist.id.clone())
+        );
+
+        app.execute_command_direct("close-buffer".to_string())
+            .expect("picker should close");
+        app.playlist_manager
+            .delete_playlist(&manual_playlist.id)
+            .await
+            .expect("manual playlist should be deleted");
+        app.handle_action(UIAction::AddToPlaylist)
+            .await
+            .expect("empty destination check should succeed");
+        assert_eq!(
+            app.buffer_manager.current_buffer_id(),
+            Some(origin_buffer_id)
+        );
+        assert!(app.minibuffer.is_visible());
+    }
+
+    #[tokio::test]
+    async fn test_close_playlist_picker_commands_restore_the_origin_buffer() {
+        use crate::{podcast::Episode, storage::PodcastId};
+
+        let mut app = make_test_app().await;
+        let episode = Episode::new(
+            PodcastId::new(),
+            "Picker origin".to_string(),
+            "https://example.com/picker-origin.mp3".to_string(),
+            chrono::Utc::now(),
+        );
+        let origin_buffer_id = format!("episode-detail-{}", episode.id);
+        let episode_key = EpisodeKey::from_episode(&episode);
+        app.open_episode_detail_buffer(episode.clone());
+        app.buffer_manager.create_episode_membership_buffer(
+            Vec::new(),
+            episode_key.clone(),
+            origin_buffer_id.clone(),
+            false,
+            None,
+        );
+        app.buffer_manager
+            .switch_to_buffer(&"playlist-picker".to_string())
+            .expect("picker should be selected");
+
+        app.execute_command_direct("close-buffer playlist-picker".to_string())
+            .expect("named close command should succeed");
+        assert_eq!(
+            app.buffer_manager.current_buffer_id(),
+            Some(origin_buffer_id.clone())
+        );
+
+        app.buffer_manager.create_episode_membership_buffer(
+            Vec::new(),
+            episode_key,
+            origin_buffer_id.clone(),
+            false,
+            None,
+        );
+        app.buffer_manager
+            .switch_to_buffer(&"playlist-picker".to_string())
+            .expect("picker should be selected again");
+        app.execute_command_direct("kill-buffer".to_string())
+            .expect("current-buffer close command should succeed");
+        assert_eq!(
+            app.buffer_manager.current_buffer_id(),
+            Some(origin_buffer_id)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_membership_refresh_is_requested_after_relevant_events() {
+        async fn assert_refresh_requested(app: &mut UIApp, event: AppEvent) {
+            app.playlist_membership_refresh_running = false;
+            app.playlist_membership_refresh_pending = false;
+            app.handle_app_event(event)
+                .await
+                .expect("event handling should succeed");
+            assert!(app.playlist_membership_refresh_running);
+        }
+
+        let mut app = make_test_app().await;
+        assert_refresh_requested(
+            &mut app,
+            AppEvent::PodcastSubscribed {
+                podcast: crate::podcast::Podcast::new(
+                    "Subscribed".to_string(),
+                    "https://example.com/feed.xml".to_string(),
+                ),
+            },
+        )
+        .await;
+        assert_refresh_requested(
+            &mut app,
+            AppEvent::OpmlImportCompleted {
+                result: crate::podcast::opml::ImportResult::new(0),
+                log_path: "import.log".to_string(),
+            },
+        )
+        .await;
+        assert_refresh_requested(
+            &mut app,
+            AppEvent::OpmlImportFailed {
+                source: "import.opml".to_string(),
+                error: "partial import failure".to_string(),
+            },
+        )
+        .await;
+        assert_refresh_requested(
+            &mut app,
+            AppEvent::DownloadCleanupCompleted {
+                deleted_count: 1,
+                duration_label: "30 days".to_string(),
+            },
+        )
+        .await;
+        assert_refresh_requested(
+            &mut app,
+            AppEvent::DownloadCleanupFailed {
+                error: "cleanup failed".to_string(),
+            },
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_failed_playlist_reorder_reloads_persisted_order() {
+        use crate::{
+            playlist::PlaylistEpisode,
+            storage::{EpisodeId, PodcastId, Storage},
+        };
+        use chrono::Utc;
+
+        let (mut app, storage) = make_test_app_with_storage().await;
+        let mut playlist = app
+            .playlist_manager
+            .create_playlist("Reorder Recovery", None)
+            .await
+            .expect("playlist should be created");
+        let first = PlaylistEpisode {
+            podcast_id: PodcastId::new(),
+            episode_id: EpisodeId::new(),
+            episode_title: Some("Episode One".to_string()),
+            added_at: Utc::now(),
+            order: 1,
+            file_synced: false,
+            filename: None,
+        };
+        let second = PlaylistEpisode {
+            podcast_id: PodcastId::new(),
+            episode_id: EpisodeId::new(),
+            episode_title: Some("Episode Two".to_string()),
+            added_at: Utc::now(),
+            order: 2,
+            file_synced: false,
+            filename: None,
+        };
+        playlist.episodes = vec![first.clone(), second.clone()];
+        storage
+            .save_playlist(&playlist)
+            .await
+            .expect("playlist state should be stored");
+        app.open_playlist_detail_buffer(playlist.id.clone(), playlist.name.clone())
+            .await;
+        let detail_id = "playlist-reorder-recovery".to_string();
+        let detail = app
+            .buffer_manager
+            .get_playlist_detail_buffer_mut_by_id(&detail_id)
+            .expect("playlist detail should be open");
+        assert!(matches!(
+            detail.handle_action(UIAction::MoveEpisodeDown),
+            UIAction::TriggerReorderPlaylist { .. }
+        ));
+        assert!(matches!(
+            detail.handle_action(UIAction::MoveEpisodeUp),
+            UIAction::ShowMessage(_)
+        ));
+
+        app.handle_app_event(AppEvent::PlaylistReorderFailed {
+            playlist_id: playlist.id.clone(),
+            name: playlist.name.clone(),
+            error: "simulated persistence failure".to_string(),
+        })
+        .await
+        .expect("reorder failure event should be handled");
+
+        let detail = app
+            .buffer_manager
+            .get_playlist_detail_buffer_mut_by_id(&detail_id)
+            .expect("playlist detail should remain open");
+        let backend = ratatui::backend::TestBackend::new(60, 8);
+        let mut terminal =
+            ratatui::Terminal::new(backend).expect("test terminal should initialize");
+        terminal
+            .draw(|frame| detail.render(frame, frame.area()))
+            .expect("playlist detail should render");
+        let screen = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(
+            screen.find("Episode One").expect("first episode rendered")
+                < screen.find("Episode Two").expect("second episode rendered")
+        );
+        assert!(matches!(
+            detail.handle_action(UIAction::MoveEpisodeDown),
+            UIAction::TriggerReorderPlaylist { .. }
+        ));
+        assert_eq!(
+            detail.selected_episode().map(|episode| &episode.episode_id),
+            Some(&first.episode_id)
         );
     }
 

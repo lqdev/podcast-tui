@@ -449,6 +449,7 @@ impl BufferManager {
     pub fn create_episode_membership_buffer(
         &mut self,
         playlists: Vec<(PlaylistId, String, usize)>,
+        episode_key: crate::playlist::EpisodeKey,
         origin_buffer_id: BufferId,
         membership_stale: bool,
         membership_error: Option<String>,
@@ -456,6 +457,7 @@ impl BufferManager {
         let picker =
             crate::ui::buffers::playlist_picker::PlaylistPickerBuffer::new_episode_membership(
                 playlists,
+                episode_key,
                 origin_buffer_id,
                 membership_stale,
                 membership_error,

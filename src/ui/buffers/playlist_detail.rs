@@ -27,6 +27,7 @@ pub struct PlaylistDetailBuffer {
     playlist_manager: Option<Arc<PlaylistManager>>,
     /// True when this buffer holds a smart (dynamic) playlist
     is_smart: bool,
+    reorder_pending: bool,
 }
 
 impl PlaylistDetailBuffer {
@@ -51,6 +52,7 @@ impl PlaylistDetailBuffer {
             theme: Theme::default(),
             playlist_manager: None,
             is_smart: false,
+            reorder_pending: false,
         }
     }
 
@@ -110,6 +112,10 @@ impl PlaylistDetailBuffer {
 
     pub fn playlist_id(&self) -> &PlaylistId {
         &self.playlist_id
+    }
+
+    pub fn set_reorder_pending(&mut self, pending: bool) {
+        self.reorder_pending = pending;
     }
 
     pub async fn load_playlist(&mut self) -> Result<(), String> {
@@ -179,6 +185,9 @@ impl PlaylistDetailBuffer {
     }
 
     fn reorder_selected(&mut self, to_index: usize) -> UIAction {
+        if self.reorder_pending {
+            return UIAction::ShowMessage("A playlist reorder is already in progress".to_string());
+        }
         let Some(from_index) = self.list_state.selected() else {
             return UIAction::None;
         };
@@ -191,6 +200,7 @@ impl PlaylistDetailBuffer {
             episode.order = index + 1;
         }
         self.list_state.select(Some(to_index));
+        self.reorder_pending = true;
         UIAction::TriggerReorderPlaylist {
             playlist_id: self.playlist_id.clone(),
             from_idx: from_index,
@@ -514,6 +524,56 @@ mod tests {
         assert_eq!(
             buffer.selected_episode().map(|episode| &episode.episode_id),
             Some(&selected_episode.episode_id)
+        );
+    }
+
+    #[test]
+    fn test_pending_playlist_reorder_blocks_another_move_until_reloaded() {
+        let playlist_id = PlaylistId::new();
+        let first = make_episode(0);
+        let second = make_episode(1);
+        let playlist = Playlist {
+            id: playlist_id.clone(),
+            name: "Reorder".to_string(),
+            description: None,
+            playlist_type: PlaylistType::User,
+            episodes: vec![first.clone(), second.clone()],
+            created: Utc::now(),
+            last_updated: Utc::now(),
+            smart_rules: None,
+        };
+        let mut buffer = PlaylistDetailBuffer::new(
+            playlist_id.clone(),
+            "Reorder".to_string(),
+            PlaylistType::User,
+        );
+        buffer.set_playlist(playlist.clone());
+
+        let action = buffer.handle_action(UIAction::MoveEpisodeDown);
+        assert_eq!(
+            action,
+            UIAction::TriggerReorderPlaylist {
+                playlist_id,
+                from_idx: 0,
+                to_idx: 1,
+            }
+        );
+        assert!(buffer.reorder_pending);
+        assert_eq!(buffer.episodes[0].episode_id, second.episode_id);
+
+        assert_eq!(
+            buffer.handle_action(UIAction::MoveEpisodeUp),
+            UIAction::ShowMessage("A playlist reorder is already in progress".to_string())
+        );
+        assert_eq!(buffer.episodes[0].episode_id, second.episode_id);
+
+        buffer.set_playlist(playlist);
+        buffer.set_reorder_pending(false);
+        assert!(!buffer.reorder_pending);
+        assert_eq!(buffer.episodes[0].episode_id, first.episode_id);
+        assert_eq!(
+            buffer.selected_episode().map(|episode| &episode.episode_id),
+            Some(&first.episode_id)
         );
     }
 

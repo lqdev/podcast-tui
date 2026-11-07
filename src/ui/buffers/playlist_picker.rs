@@ -5,7 +5,7 @@ use ratatui::{
 };
 
 use crate::{
-    playlist::PlaylistId,
+    playlist::{membership::PlaylistMembershipSnapshot, EpisodeKey, PlaylistId},
     storage::{EpisodeId, PodcastId},
     ui::{
         buffers::{Buffer, BufferId},
@@ -20,7 +20,9 @@ enum PickerMode {
         podcast_id: PodcastId,
         episode_id: EpisodeId,
     },
-    EpisodeMembership,
+    EpisodeMembership {
+        episode_key: EpisodeKey,
+    },
 }
 
 pub struct PlaylistPickerBuffer {
@@ -57,13 +59,14 @@ impl PlaylistPickerBuffer {
 
     pub fn new_episode_membership(
         playlists: Vec<(PlaylistId, String, usize)>,
+        episode_key: EpisodeKey,
         origin_buffer_id: BufferId,
         membership_stale: bool,
         membership_error: Option<String>,
     ) -> Self {
         Self::with_mode(
             playlists,
-            PickerMode::EpisodeMembership,
+            PickerMode::EpisodeMembership { episode_key },
             origin_buffer_id,
             membership_stale,
             membership_error,
@@ -99,6 +102,66 @@ impl PlaylistPickerBuffer {
 
     pub fn origin_buffer_id(&self) -> &BufferId {
         &self.origin_buffer_id
+    }
+
+    pub fn update_episode_membership(
+        &mut self,
+        snapshot: Option<&PlaylistMembershipSnapshot>,
+        stale: bool,
+        error: Option<String>,
+    ) {
+        let PickerMode::EpisodeMembership { episode_key } = &self.mode else {
+            return;
+        };
+        let episode_key = episode_key.clone();
+        let selected_id = self.selected_playlist().map(|(id, _, _)| id.clone());
+        let previous_index = self.list_state.selected().unwrap_or(0);
+
+        if let Some(snapshot) = snapshot {
+            self.playlists = snapshot
+                .playlists_for(&episode_key)
+                .into_iter()
+                .map(|playlist| {
+                    (
+                        playlist.id.clone(),
+                        playlist.name.clone(),
+                        playlist.effective_episode_count,
+                    )
+                })
+                .collect();
+            let selected = if self.playlists.is_empty() {
+                None
+            } else {
+                Some(
+                    selected_id
+                        .and_then(|id| {
+                            self.playlists
+                                .iter()
+                                .position(|(playlist_id, _, _)| playlist_id == &id)
+                        })
+                        .unwrap_or_else(|| previous_index.min(self.playlists.len() - 1)),
+                )
+            };
+            self.list_state.select(selected);
+            if let Some(selected) = selected {
+                let offset = self.list_state.offset();
+                let offset = if selected < offset {
+                    selected
+                } else if self.visible_rows > 0
+                    && selected >= offset.saturating_add(self.visible_rows)
+                {
+                    selected + 1 - self.visible_rows
+                } else {
+                    offset
+                };
+                *self.list_state.offset_mut() = offset;
+            } else {
+                *self.list_state.offset_mut() = 0;
+            }
+        }
+
+        self.membership_stale = stale;
+        self.membership_error = error;
     }
 
     fn select_previous(&mut self) {
@@ -149,7 +212,7 @@ impl Buffer for PlaylistPickerBuffer {
     fn name(&self) -> String {
         match &self.mode {
             PickerMode::AddEpisode { .. } => "Playlist Picker".to_string(),
-            PickerMode::EpisodeMembership => "Episode Playlists".to_string(),
+            PickerMode::EpisodeMembership { .. } => "Episode Playlists".to_string(),
         }
     }
 
@@ -173,7 +236,7 @@ impl Buffer for PlaylistPickerBuffer {
                 "  Enter    Add episode to selected playlist".to_string(),
                 "  Esc      Cancel".to_string(),
             ],
-            PickerMode::EpisodeMembership => {
+            PickerMode::EpisodeMembership { .. } => {
                 let mut help = vec![
                     "Episode Playlists Commands:".to_string(),
                     "  ↑/↓      Navigate playlists".to_string(),
@@ -231,7 +294,7 @@ impl UIComponent for PlaylistPickerBuffer {
                             podcast_id: podcast_id.clone(),
                             episode_id: episode_id.clone(),
                         },
-                        PickerMode::EpisodeMembership => UIAction::OpenPlaylistDetail {
+                        PickerMode::EpisodeMembership { .. } => UIAction::OpenPlaylistDetail {
                             playlist_id: playlist_id.clone(),
                             playlist_name: name.clone(),
                         },
@@ -245,7 +308,7 @@ impl UIComponent for PlaylistPickerBuffer {
                 PickerMode::AddEpisode { .. } => {
                     UIAction::PromptInput("Create playlist: ".to_string())
                 }
-                PickerMode::EpisodeMembership => UIAction::None,
+                PickerMode::EpisodeMembership { .. } => UIAction::None,
             },
             _ => UIAction::None,
         }
@@ -261,10 +324,10 @@ impl UIComponent for PlaylistPickerBuffer {
         let block = Block::default()
             .title(match &self.mode {
                 PickerMode::AddEpisode { .. } => "Add to Playlist".to_string(),
-                PickerMode::EpisodeMembership if self.membership_stale => {
+                PickerMode::EpisodeMembership { .. } if self.membership_stale => {
                     "Episode Playlists (stale)".to_string()
                 }
-                PickerMode::EpisodeMembership => "Episode Playlists".to_string(),
+                PickerMode::EpisodeMembership { .. } => "Episode Playlists".to_string(),
             })
             .borders(Borders::ALL)
             .border_style(border_style)
@@ -281,10 +344,10 @@ impl UIComponent for PlaylistPickerBuffer {
             self.list_state.select(None);
             let empty_text = match (&self.mode, &self.membership_error) {
                 (PickerMode::AddEpisode { .. }, _) => "No playlists available".to_string(),
-                (PickerMode::EpisodeMembership, Some(error)) => {
+                (PickerMode::EpisodeMembership { .. }, Some(error)) => {
                     format!("Membership unavailable: {error}")
                 }
-                (PickerMode::EpisodeMembership, None) => {
+                (PickerMode::EpisodeMembership { .. }, None) => {
                     "This episode is not in any playlists".to_string()
                 }
             };
@@ -316,7 +379,7 @@ impl UIComponent for PlaylistPickerBuffer {
     fn title(&self) -> String {
         match &self.mode {
             PickerMode::AddEpisode { .. } => "Add to Playlist".to_string(),
-            PickerMode::EpisodeMembership => "Episode Playlists".to_string(),
+            PickerMode::EpisodeMembership { .. } => "Episode Playlists".to_string(),
         }
     }
 
@@ -332,12 +395,16 @@ impl UIComponent for PlaylistPickerBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::playlist::membership::{PlaylistMembershipKind, PlaylistSummary};
+    use chrono::Utc;
+    use std::collections::HashMap;
 
     #[test]
     fn test_episode_membership_picker_is_read_only_and_opens_selected_playlist() {
         let playlist_id = PlaylistId::new();
         let mut buffer = PlaylistPickerBuffer::new_episode_membership(
             vec![(playlist_id.clone(), "Favorite Episodes".to_string(), 3)],
+            EpisodeKey::new(PodcastId::new(), EpisodeId::new()),
             "episode-detail-test".to_string(),
             false,
             None,
@@ -357,6 +424,63 @@ mod tests {
         assert_eq!(
             buffer.handle_action(UIAction::HideMinibuffer),
             UIAction::CloseBuffer("playlist-picker".to_string())
+        );
+    }
+
+    #[test]
+    fn test_episode_membership_picker_refreshes_rows_and_preserves_selection() {
+        let episode_key = EpisodeKey::new(PodcastId::new(), EpisodeId::new());
+        let first_id = PlaylistId::new();
+        let second_id = PlaylistId::new();
+        let mut buffer = PlaylistPickerBuffer::new_episode_membership(
+            vec![
+                (first_id.clone(), "First".to_string(), 1),
+                (second_id.clone(), "Second".to_string(), 2),
+            ],
+            episode_key.clone(),
+            "episode-detail-test".to_string(),
+            false,
+            None,
+        );
+        buffer.handle_action(UIAction::MoveDown);
+
+        let snapshot = PlaylistMembershipSnapshot {
+            playlists: vec![
+                PlaylistSummary {
+                    id: first_id.clone(),
+                    name: "First updated".to_string(),
+                    kind: PlaylistMembershipKind::Manual,
+                    effective_episode_count: 3,
+                },
+                PlaylistSummary {
+                    id: second_id.clone(),
+                    name: "Second updated".to_string(),
+                    kind: PlaylistMembershipKind::Smart,
+                    effective_episode_count: 4,
+                },
+            ],
+            by_episode: HashMap::from([(episode_key, vec![first_id.clone(), second_id.clone()])]),
+            evaluated_at: Utc::now(),
+            next_dynamic_change: None,
+        };
+
+        buffer.update_episode_membership(Some(&snapshot), true, Some("refresh failed".to_string()));
+
+        let selected = buffer
+            .selected_playlist()
+            .expect("second playlist should remain selected");
+        assert_eq!(selected.0, second_id);
+        assert_eq!(selected.1, "Second updated");
+        assert_eq!(selected.2, 4);
+        assert!(buffer
+            .help_text()
+            .iter()
+            .any(|line| line.contains("Membership data may be stale")));
+
+        buffer.update_episode_membership(None, true, Some("still stale".to_string()));
+        assert_eq!(
+            buffer.selected_playlist().map(|(id, _, _)| id),
+            Some(&second_id)
         );
     }
 

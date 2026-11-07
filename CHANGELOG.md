@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Playlist buffers now scroll and picker navigation preserves its origin** — The playlist list, playlist detail, and add-to-playlist picker now support stateful scrolling with page, top, and bottom navigation. Selecting a playlist, cancelling, or closing the picker returns to the buffer that opened it instead of falling back to Help; asynchronous add completion no longer changes the current buffer.
+- **Playlist membership stays current and visible** — Add-to-playlist omits read-only smart playlists; open membership pickers update their rows and stale state, opening stale data requests a refresh, and subscription, OPML-import, and download-cleanup events refresh membership. Count badges appear before episode titles so long titles cannot clip them.
+- **Picker closure and playlist reorder failures recover correctly** — `:close-buffer` and `:kill-buffer` restore the originating buffer when closing the playlist picker. Playlist details block another reorder while one is pending and reload the stored order after a failure.
 
 ### Added
 

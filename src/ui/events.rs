@@ -357,9 +357,11 @@ pub enum AppEvent {
         error: String,
     },
     PlaylistReordered {
+        playlist_id: crate::playlist::PlaylistId,
         name: String,
     },
     PlaylistReorderFailed {
+        playlist_id: crate::playlist::PlaylistId,
         name: String,
         error: String,
     },

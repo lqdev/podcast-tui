@@ -780,7 +780,7 @@ impl UIComponent for EpisodeListBuffer {
                     let membership_indicator = self.playlist_membership_indicator(episode);
                     let content = format!(
                         " {} {}{} {}",
-                        status_indicator, fav_indicator, title_with_info, membership_indicator
+                        status_indicator, fav_indicator, membership_indicator, title_with_info
                     );
 
                     if Some(display_pos) == self.selected_index {
@@ -899,7 +899,7 @@ mod tests {
         let podcast_id = PodcastId::new();
         let included = Episode::new(
             podcast_id.clone(),
-            "Included".to_string(),
+            format!("Included {}", "x".repeat(80)),
             "https://example.com/included.mp3".to_string(),
             Utc::now(),
         );
@@ -925,7 +925,7 @@ mod tests {
         buffer.set_episodes(vec![included, not_included]);
         buffer.set_playlist_membership(Some(Arc::new(snapshot)), true, None);
 
-        let backend = ratatui::backend::TestBackend::new(80, 10);
+        let backend = ratatui::backend::TestBackend::new(30, 10);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         terminal
             .draw(|frame| {
